@@ -9,6 +9,9 @@
 # Node dependencies
 node_modules/
 
+# Local knowledge store
+InternalKnowledge/
+
 # User-specific files
 *.rsuser
 *.suo
