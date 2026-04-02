@@ -1,0 +1,355 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "build company brain",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.csproj",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build company brain",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.csproj",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build company brain",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.csproj",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "test company brain",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"test",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "test company brain",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"test",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build docker image",
+			"type": "shell",
+			"command": "docker",
+			"args": [
+				"build",
+				"-t",
+				"company-brain:local",
+				"."
+			],
+			"isBackground": false
+		},
+		{
+			"label": "curl swagger",
+			"type": "shell",
+			"command": "curl",
+			"args": [
+				"-I",
+				"http://127.0.0.1:8080/swagger"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "docker logs company brain",
+			"type": "shell",
+			"command": "docker",
+			"args": [
+				"logs",
+				"company-brain-smoke"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "build company brain",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build and test solution",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"test",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "rebuild docker image",
+			"type": "shell",
+			"command": "docker",
+			"args": [
+				"build",
+				"-t",
+				"company-brain:local",
+				"."
+			],
+			"isBackground": false
+		},
+		{
+			"label": "build all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "test all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"test",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "build all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
+			"label": "install mcp inspector",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"install",
+				"--save-dev",
+				"@modelcontextprotocol/inspector"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}

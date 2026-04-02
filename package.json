@@ -1,0 +1,12 @@
+{
+  "name": "internalknowledgecompany",
+  "private": true,
+  "scripts": {
+    "dev": "npx @modelcontextprotocol/inspector --cli dotnet run --project src/CompanyBrain.Mcp/CompanyBrain.Mcp.csproj",
+    "inspect:mcp": "npx @modelcontextprotocol/inspector dotnet run --project src/CompanyBrain.Mcp/CompanyBrain.Mcp.csproj",
+    "inspect:mcp:cli": "npx @modelcontextprotocol/inspector --cli dotnet run --project src/CompanyBrain.Mcp/CompanyBrain.Mcp.csproj"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/inspector": "^0.21.1"
+  }
+}

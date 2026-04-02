@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CompanyBrain.Core/CompanyBrain.Core.csproj" />
+    <Project Path="src/CompanyBrain/CompanyBrain.csproj" />
+    <Project Path="src/CompanyBrain.Mcp/CompanyBrain.Mcp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CompanyBrain.Tests/CompanyBrain.Tests.csproj" />
+  </Folder>
+</Solution>

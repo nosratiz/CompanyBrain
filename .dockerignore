@@ -1,0 +1,12 @@
+.git
+.gitignore
+.vscode
+**/bin
+**/obj
+tests
+InternalKnowledge
+README.md
+*.user
+*.suo
+*.swp
+*.tmp
