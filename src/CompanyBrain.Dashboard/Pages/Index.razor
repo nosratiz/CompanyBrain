@@ -1,45 +1,36 @@
 @page "/"
-@inject TenantApiClient Api
+@inject KnowledgeApiClient Api
 
 <PageTitle>Dashboard - Company Brain</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-4">Dashboard</MudText>
+<MudText Typo="Typo.h4" Class="mb-4">Knowledge Base Dashboard</MudText>
 
 @if (_loading)
 {
     <MudProgressCircular Indeterminate="true" />
 }
-else if (_tenant is not null)
+else
 {
     <MudGrid>
-        <!-- MCP Connection Status Card -->
-        <MudItem xs="12" md="6" lg="4">
+        <!-- Total Documents Card -->
+        <MudItem xs="12" md="6" lg="3">
             <MudCard>
                 <MudCardHeader>
                     <CardHeaderAvatar>
-                        <MudAvatar Color="@(_mcpConnected ? Color.Success : Color.Error)">
-                            <MudIcon Icon="@Icons.Material.Filled.CloudQueue" />
+                        <MudAvatar Color="Color.Primary">
+                            <MudIcon Icon="@Icons.Material.Filled.Description" />
                         </MudAvatar>
                     </CardHeaderAvatar>
                     <CardHeaderContent>
-                        <MudText Typo="Typo.h6">MCP Connection</MudText>
-                        <MudText Typo="Typo.body2" Color="@(_mcpConnected ? Color.Success : Color.Error)">
-                            @(_mcpConnected ? "Connected" : "Disconnected")
-                        </MudText>
+                        <MudText Typo="Typo.h6">Documents</MudText>
+                        <MudText Typo="Typo.h4">@_resources.Count</MudText>
                     </CardHeaderContent>
                 </MudCardHeader>
-                <MudCardContent>
-                    <MudText Typo="Typo.body2" Class="mb-2">Server: @(_mcpInfo?.ServerUrl ?? "N/A")</MudText>
-                    <MudText Typo="Typo.body2">Protocol: @(_mcpInfo?.Protocol ?? "N/A")</MudText>
-                </MudCardContent>
-                <MudCardActions>
-                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/mcp-status">View Details</MudButton>
-                </MudCardActions>
             </MudCard>
         </MudItem>
 
-        <!-- Storage Usage Card -->
-        <MudItem xs="12" md="6" lg="4">
+        <!-- Total Size Card -->
+        <MudItem xs="12" md="6" lg="3">
             <MudCard>
                 <MudCardHeader>
                     <CardHeaderAvatar>
@@ -48,141 +39,113 @@ else if (_tenant is not null)
                         </MudAvatar>
                     </CardHeaderAvatar>
                     <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Storage</MudText>
-                        <MudText Typo="Typo.body2">@(_storageStats?.DocumentCount ?? 0) documents</MudText>
+                        <MudText Typo="Typo.h6">Total Size</MudText>
+                        <MudText Typo="Typo.h4">@FormatBytes(_resources.Sum(r => r.SizeBytes))</MudText>
                     </CardHeaderContent>
                 </MudCardHeader>
-                <MudCardContent>
-                    <MudText Typo="Typo.body2" Class="mb-2">
-                        @(_storageStats?.FormattedSize ?? "0 B") used
-                    </MudText>
-                    <div class="usage-bar">
-                        <div class="usage-bar-fill @GetUsageClass(_storageStats?.UsagePercentage ?? 0)"
-                             style="width: @(Math.Min(_storageStats?.UsagePercentage ?? 0, 100))%"></div>
-                    </div>
-                    <MudText Typo="Typo.caption" Class="mt-1">
-                        @((_storageStats?.UsagePercentage ?? 0).ToString("F1"))% of quota used
-                    </MudText>
-                </MudCardContent>
-                <MudCardActions>
-                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/documents">Manage Documents</MudButton>
-                </MudCardActions>
             </MudCard>
         </MudItem>
 
-        <!-- API Keys Card -->
-        <MudItem xs="12" md="6" lg="4">
+        <!-- Markdown Files Card -->
+        <MudItem xs="12" md="6" lg="3">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderAvatar>
+                        <MudAvatar Color="Color.Success">
+                            <MudIcon Icon="@Icons.Material.Filled.Article" />
+                        </MudAvatar>
+                    </CardHeaderAvatar>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Markdown</MudText>
+                        <MudText Typo="Typo.h4">@_resources.Count(r => r.MimeType == "text/markdown")</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+            </MudCard>
+        </MudItem>
+
+        <!-- Recent Updates Card -->
+        <MudItem xs="12" md="6" lg="3">
             <MudCard>
                 <MudCardHeader>
                     <CardHeaderAvatar>
                         <MudAvatar Color="Color.Warning">
-                            <MudIcon Icon="@Icons.Material.Filled.Key" />
+                            <MudIcon Icon="@Icons.Material.Filled.Update" />
                         </MudAvatar>
                     </CardHeaderAvatar>
                     <CardHeaderContent>
-                        <MudText Typo="Typo.h6">API Keys</MudText>
-                        <MudText Typo="Typo.body2">@_tenant.ActiveApiKeys active</MudText>
+                        <MudText Typo="Typo.h6">Last Updated</MudText>
+                        <MudText Typo="Typo.body1">@(_resources.MaxBy(r => r.LastModified)?.LastModified.ToLocalTime().ToString("g") ?? "N/A")</MudText>
                     </CardHeaderContent>
                 </MudCardHeader>
-                <MudCardContent>
-                    <MudText Typo="Typo.body2">
-                        @_tenant.ActiveApiKeys / @_tenant.MaxApiKeys keys used
-                    </MudText>
-                    <MudProgressLinear Value="@((double)_tenant.ActiveApiKeys / _tenant.MaxApiKeys * 100)"
-                                       Color="Color.Warning" Class="mt-2" />
-                </MudCardContent>
-                <MudCardActions>
-                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/licenses">Manage Keys</MudButton>
-                </MudCardActions>
             </MudCard>
         </MudItem>
 
-        <!-- Plan Info Card -->
-        <MudItem xs="12" md="6" lg="4">
-            <MudCard>
-                <MudCardHeader>
-                    <CardHeaderAvatar>
-                        <MudAvatar Color="Color.Primary">
-                            <MudIcon Icon="@Icons.Material.Filled.CreditCard" />
-                        </MudAvatar>
-                    </CardHeaderAvatar>
-                    <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Current Plan</MudText>
-                        <MudChip T="string" Color="@GetPlanColor(_tenant.Plan)" Size="Size.Small">@_tenant.Plan</MudChip>
-                    </CardHeaderContent>
-                </MudCardHeader>
-                <MudCardContent>
-                    <MudText Typo="Typo.body2">Max Documents: @_tenant.MaxDocuments.ToString("N0")</MudText>
-                    <MudText Typo="Typo.body2">Max API Keys: @_tenant.MaxApiKeys</MudText>
-                </MudCardContent>
-                <MudCardActions>
-                    <MudButton Variant="Variant.Text" Color="Color.Primary">Upgrade Plan</MudButton>
-                </MudCardActions>
-            </MudCard>
+        <!-- Recent Documents Table -->
+        <MudItem xs="12">
+            <MudPaper Class="pa-4">
+                <div class="d-flex justify-space-between align-center mb-4">
+                    <MudText Typo="Typo.h6">Recent Documents</MudText>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/documents">View All</MudButton>
+                </div>
+                <MudTable Items="@_resources.OrderByDescending(r => r.LastModified).Take(5)" Hover="true" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Type</MudTh>
+                        <MudTh>Size</MudTh>
+                        <MudTh>Last Modified</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Name">
+                            <MudLink Href="@($"/documents/{Uri.EscapeDataString(context.FileName)}")">@context.FileName</MudLink>
+                        </MudTd>
+                        <MudTd DataLabel="Type">
+                            <MudChip T="string" Size="Size.Small" Color="@GetMimeTypeColor(context.MimeType)">@GetMimeTypeLabel(context.MimeType)</MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Size">@FormatBytes(context.SizeBytes)</MudTd>
+                        <MudTd DataLabel="Last Modified">@context.LastModified.ToLocalTime().ToString("g")</MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText>No documents found. <MudLink Href="/import">Import your first document</MudLink>.</MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            </MudPaper>
         </MudItem>
-    </MudGrid>
 
-    <!-- Quick Actions -->
-    <MudText Typo="Typo.h5" Class="mt-6 mb-4">Quick Actions</MudText>
-    <MudGrid>
-        <MudItem xs="12" sm="6" md="3">
-            <MudButton Variant="Variant.Outlined" Color="Color.Primary" FullWidth="true"
-                       StartIcon="@Icons.Material.Filled.Upload" Href="/documents">
-                Upload Document
-            </MudButton>
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" FullWidth="true"
-                       StartIcon="@Icons.Material.Filled.Add" Href="/licenses">
-                Create API Key
-            </MudButton>
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudButton Variant="Variant.Outlined" Color="Color.Info" FullWidth="true"
-                       StartIcon="@Icons.Material.Filled.Link" Href="/mcp-status">
-                Connection Setup
-            </MudButton>
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudButton Variant="Variant.Outlined" Color="Color.Default" FullWidth="true"
-                       StartIcon="@Icons.Material.Filled.Help">
-                Documentation
-            </MudButton>
+        <!-- Quick Actions -->
+        <MudItem xs="12">
+            <MudText Typo="Typo.h6" Class="mb-3">Quick Actions</MudText>
+            <MudGrid>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.Search" Href="/search">
+                        Search Knowledge
+                    </MudButton>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.Link" Href="/import">
+                        Import from Wiki
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
         </MudItem>
     </MudGrid>
-}
-else
-{
-    <MudAlert Severity="Severity.Warning">No tenant selected. Please select a tenant first.</MudAlert>
 }
 
 @code {
     private bool _loading = true;
-    private TenantResponse? _tenant;
-    private TenantStorageStatsResponse? _storageStats;
-    private McpConnectionInfoResponse? _mcpInfo;
-    private bool _mcpConnected = false;
-
-    // TODO: Get from auth context or route
-    private Guid _tenantId = Guid.Empty;
+    private List<KnowledgeResourceDescriptor> _resources = [];
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            var tenants = await Api.ListTenantsAsync();
-            if (tenants?.Tenants.FirstOrDefault() is { } first)
-            {
-                _tenantId = first.Id;
-                _tenant = await Api.GetTenantAsync(_tenantId);
-                _storageStats = await Api.GetStorageStatsAsync(_tenantId);
-                _mcpInfo = await Api.GetMcpConnectionInfoAsync(_tenantId);
-                _mcpConnected = true; // TODO: Implement actual health check
-            }
+            var response = await Api.ListResourcesAsync();
+            _resources = response?.ToList() ?? [];
         }
-        catch (Exception)
+        catch
         {
-            // Handle error
+            // Handle error silently
         }
         finally
         {
@@ -190,22 +153,32 @@ else
         }
     }
 
-    private static string GetUsageClass(double percentage)
+    private static string FormatBytes(long bytes)
     {
-        if (percentage < 50) return "low";
-        if (percentage < 80) return "medium";
-        return "high";
+        string[] sizes = ["B", "KB", "MB", "GB"];
+        int order = 0;
+        double size = bytes;
+        while (size >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            size /= 1024;
+        }
+        return $"{size:0.##} {sizes[order]}";
     }
 
-    private static Color GetPlanColor(string plan)
+    private static Color GetMimeTypeColor(string mimeType) => mimeType switch
     {
-        return plan switch
-        {
-            "Free" => Color.Default,
-            "Starter" => Color.Info,
-            "Professional" => Color.Primary,
-            "Enterprise" => Color.Secondary,
-            _ => Color.Default
-        };
-    }
+        "text/markdown" => Color.Primary,
+        "text/plain" => Color.Default,
+        "text/html" => Color.Info,
+        _ => Color.Default
+    };
+
+    private static string GetMimeTypeLabel(string mimeType) => mimeType switch
+    {
+        "text/markdown" => "Markdown",
+        "text/plain" => "Text",
+        "text/html" => "HTML",
+        _ => mimeType
+    };
 }

@@ -1,0 +1,273 @@
+@page "/licenses"
+@layout MainLayout
+
+<PageTitle>My Licenses - CompanyBrain</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    @* Header *@
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-6">
+        <div>
+            <MudText Typo="Typo.h4" Style="font-weight: 700;">My Licenses</MudText>
+            <MudText Typo="Typo.body1" Style="color: #6b7280;">Manage your subscription plans and billing</MudText>
+        </div>
+        <MudButton Variant="Variant.Filled" OnClick="ShowPurchaseDialog"
+                   Style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px;">
+            <MudIcon Icon="@Icons.Material.Filled.Add" Class="mr-2" />
+            Get New Plan
+        </MudButton>
+    </MudStack>
+
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Style="border-radius: 8px;" />
+    }
+    else if (_licenses.Count == 0)
+    {
+        <MudPaper Class="pa-12 text-center modern-card">
+            <div style="width: 80px; height: 80px; background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%); border-radius: 20px; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem;">
+                <MudIcon Icon="@Icons.Material.Filled.WorkspacePremium" Size="Size.Large" Style="color: #667eea;" />
+            </div>
+            <MudText Typo="Typo.h5" Style="font-weight: 600; margin-bottom: 0.5rem;">No Licenses Yet</MudText>
+            <MudText Typo="Typo.body1" Style="color: #6b7280; margin-bottom: 1.5rem;">
+                Choose a plan to unlock the full power of CompanyBrain.
+            </MudText>
+            <MudButton Variant="Variant.Filled" OnClick="ShowPurchaseDialog"
+                       Style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px;">
+                View Plans
+            </MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        <MudGrid>
+            @foreach (var license in _licenses)
+            {
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-6 modern-card" Style="position: relative; overflow: hidden;">
+                        @if (license.IsActive)
+                        {
+                            <div style="position: absolute; top: 0; right: 0; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; padding: 6px 16px; border-radius: 0 0 0 12px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase;">
+                                Active
+                            </div>
+                        }
+                        
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-4">
+                            <div style="width: 56px; height: 56px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 14px; display: flex; align-items: center; justify-content: center;">
+                                <MudIcon Icon="@GetTierIcon(license.Tier)" Style="color: white;" Size="Size.Medium" />
+                            </div>
+                            <div>
+                                <MudText Typo="Typo.h5" Style="font-weight: 700;">@license.PlanName</MudText>
+                                <MudText Typo="Typo.caption" Style="color: #6b7280;">@license.Tier</MudText>
+                            </div>
+                        </MudStack>
+
+                        <MudGrid>
+                            <MudItem xs="6">
+                                <MudText Typo="Typo.caption" Style="color: #9ca3af; text-transform: uppercase; font-size: 0.7rem;">Purchased</MudText>
+                                <MudText Typo="Typo.body1" Style="font-weight: 500;">@license.PurchasedAt.ToString("MMM dd, yyyy")</MudText>
+                            </MudItem>
+                            <MudItem xs="6">
+                                <MudText Typo="Typo.caption" Style="color: #9ca3af; text-transform: uppercase; font-size: 0.7rem;">Expires</MudText>
+                                <MudText Typo="Typo.body1" Style="font-weight: 500;">@(license.ExpiresAt?.ToString("MMM dd, yyyy") ?? "Never")</MudText>
+                            </MudItem>
+                            <MudItem xs="6">
+                                <MudText Typo="Typo.caption" Style="color: #9ca3af; text-transform: uppercase; font-size: 0.7rem;">API Keys</MudText>
+                                <MudText Typo="Typo.body1" Style="font-weight: 500;">@license.MaxApiKeys</MudText>
+                            </MudItem>
+                            <MudItem xs="6">
+                                <MudText Typo="Typo.caption" Style="color: #9ca3af; text-transform: uppercase; font-size: 0.7rem;">Documents</MudText>
+                                <MudText Typo="Typo.body1" Style="font-weight: 500;">@license.MaxDocuments.ToString("N0")</MudText>
+                            </MudItem>
+                        </MudGrid>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+
+    @* Pricing Section *@
+    <MudText Typo="Typo.h5" Style="font-weight: 600; margin: 3rem 0 1.5rem;">
+        <MudIcon Icon="@Icons.Material.Filled.LocalOffer" Class="mr-2" Style="color: #667eea;" />
+        Available Plans
+    </MudText>
+
+    <MudGrid>
+        @foreach (var plan in _availablePlans)
+        {
+            <MudItem xs="12" sm="6" md="3">
+                <div class="pricing-card @(plan.IsPopular ? "popular" : "") modern-card">
+                    <MudText Typo="Typo.h6" Style="font-weight: 600; color: #1a1a2e;">@plan.Name</MudText>
+                    <MudText Typo="Typo.h3" Style="font-weight: 700; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 1rem 0;">
+                        @plan.Price
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="color: #9ca3af;">per month</MudText>
+                    
+                    <MudDivider Class="my-4" />
+
+                    <MudStack Spacing="2" Class="mb-4">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Style="color: #11998e;" />
+                            <MudText Typo="Typo.body2">@plan.ApiKeys API Keys</MudText>
+                        </MudStack>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Style="color: #11998e;" />
+                            <MudText Typo="Typo.body2">@plan.Documents Documents</MudText>
+                        </MudStack>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Style="color: #11998e;" />
+                            <MudText Typo="Typo.body2">@plan.Storage Storage</MudText>
+                        </MudStack>
+                    </MudStack>
+
+                    <MudButton Variant="@(plan.IsPopular ? Variant.Filled : Variant.Outlined)" 
+                               FullWidth="true"
+                               OnClick="() => SelectAndPurchase(plan.Tier)"
+                               Disabled="_isPurchasing"
+                               Style="@(plan.IsPopular ? "background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px;" : "border-radius: 10px;")">
+                        Get @plan.Name
+                    </MudButton>
+                </div>
+            </MudItem>
+        }
+    </MudGrid>
+</MudContainer>
+
+@* Purchase Dialog *@
+<MudDialog @bind-Visible="_showPurchaseDialog" Options="new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true }">
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.WorkspacePremium" Class="mr-2" />
+            Choose Your Plan
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudGrid>
+            @foreach (var plan in _availablePlans.Where(p => p.Tier != LicenseTier.Free))
+            {
+                <MudItem xs="12" md="4">
+                    <MudPaper Class="pa-4 text-center" Elevation="0"
+                              Style="@($"border: 2px solid {(_selectedTier == plan.Tier ? "#667eea" : "#e5e7eb")}; border-radius: 16px; cursor: pointer; transition: all 0.2s;")"
+                              @onclick="() => _selectedTier = plan.Tier">
+                        @if (_selectedTier == plan.Tier)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Style="color: #667eea; position: absolute; top: 8px; right: 8px;" />
+                        }
+                        <MudText Typo="Typo.h6" Style="font-weight: 600;">@plan.Name</MudText>
+                        <MudText Typo="Typo.h4" Style="font-weight: 700; color: #667eea; margin: 0.5rem 0;">@plan.Price</MudText>
+                        <MudText Typo="Typo.body2" Style="color: #6b7280;">@plan.ApiKeys keys · @plan.Documents docs</MudText>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showPurchaseDialog = false">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" OnClick="PurchaseLicenseAsync" Disabled="_isPurchasing"
+                   Style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+            @if (_isPurchasing)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Inherit" Class="mr-2" />
+            }
+            Purchase Plan
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Inject] private ILicenseService LicenseService { get; set; } = default!;
+    [Inject] private AuthStateProvider AuthState { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    private List<UserLicense> _licenses = [];
+    private bool _isLoading = true;
+    private bool _showPurchaseDialog = false;
+    private bool _isPurchasing = false;
+    private LicenseTier _selectedTier = LicenseTier.Starter;
+
+    private readonly List<PlanInfo> _availablePlans =
+    [
+        new("Free", LicenseTier.Free, "$0", "3", "100", "1 GB", false),
+        new("Starter", LicenseTier.Starter, "$19", "10", "500", "5 GB", false),
+        new("Professional", LicenseTier.Professional, "$49", "25", "2,000", "25 GB", true),
+        new("Enterprise", LicenseTier.Enterprise, "$199", "100", "50,000", "100 GB", false)
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await AuthState.IsAuthenticatedAsync())
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadLicensesAsync();
+    }
+
+    private async Task LoadLicensesAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _licenses = (await LicenseService.GetMyLicensesAsync()).ToList();
+        }
+        catch
+        {
+            Snackbar.Add("Failed to load licenses", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void ShowPurchaseDialog()
+    {
+        _selectedTier = LicenseTier.Professional;
+        _showPurchaseDialog = true;
+    }
+
+    private void SelectAndPurchase(LicenseTier tier)
+    {
+        _selectedTier = tier;
+        _showPurchaseDialog = true;
+    }
+
+    private async Task PurchaseLicenseAsync()
+    {
+        _isPurchasing = true;
+        try
+        {
+            var result = await LicenseService.PurchaseLicenseAsync(_selectedTier);
+            if (result is not null)
+            {
+                Snackbar.Add("🎉 License purchased successfully!", Severity.Success);
+                _showPurchaseDialog = false;
+                await LoadLicensesAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to purchase license", Severity.Error);
+            }
+        }
+        catch
+        {
+            Snackbar.Add("An error occurred", Severity.Error);
+        }
+        finally
+        {
+            _isPurchasing = false;
+        }
+    }
+
+    private static string GetTierIcon(LicenseTier tier) => tier switch
+    {
+        LicenseTier.Free => Icons.Material.Filled.Star,
+        LicenseTier.Starter => Icons.Material.Filled.Bolt,
+        LicenseTier.Professional => Icons.Material.Filled.Diamond,
+        LicenseTier.Enterprise => Icons.Material.Filled.Business,
+        _ => Icons.Material.Filled.Star
+    };
+
+    private sealed record PlanInfo(string Name, LicenseTier Tier, string Price, string ApiKeys, string Documents, string Storage, bool IsPopular);
+}

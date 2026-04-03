@@ -1,0 +1,179 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="_theme" IsDarkMode="_isDarkMode" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+@if (_isAuthenticated)
+{
+    <MudLayout>
+        <MudAppBar Elevation="0" Style="background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(0,0,0,0.05);">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Primary" Edge="Edge.Start" OnClick="@ToggleDrawer" />
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudIcon Icon="@Icons.Material.Filled.Bolt" Color="Color.Primary" Size="Size.Large" />
+                <MudText Typo="Typo.h6" Style="font-weight: 700; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                    CompanyBrain
+                </MudText>
+            </MudStack>
+            <MudSpacer />
+            <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                           Color="Color.Primary" OnClick="ToggleDarkMode" />
+            <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                <ActivatorContent>
+                    <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" 
+                             Style="cursor: pointer; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        <MudAvatar Size="Size.Small" Style="background: rgba(255,255,255,0.2); color: white;">
+                            @(_userEmail?[0].ToString().ToUpper() ?? "U")
+                        </MudAvatar>
+                        <MudText Class="ml-2" Style="color: white;">@_userEmail</MudText>
+                    </MudChip>
+                </ActivatorContent>
+                <ChildContent>
+                    <MudMenuItem Href="/profile" Icon="@Icons.Material.Filled.Person">Profile</MudMenuItem>
+                    <MudDivider />
+                    <MudMenuItem OnClick="LogoutAsync" Icon="@Icons.Material.Filled.Logout" IconColor="Color.Error">
+                        Sign Out
+                    </MudMenuItem>
+                </ChildContent>
+            </MudMenu>
+        </MudAppBar>
+
+        <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" 
+                   Style="background: linear-gradient(180deg, #667eea 0%, #764ba2 100%); border-right: none;">
+            <div style="padding: 1.5rem 1rem; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <MudAvatar Size="Size.Large" Style="background: rgba(255,255,255,0.2); color: white; font-size: 1.5rem; margin-bottom: 0.5rem;">
+                    @(_userEmail?[0].ToString().ToUpper() ?? "U")
+                </MudAvatar>
+                <MudText Typo="Typo.body1" Style="color: white; font-weight: 600;">@_userName</MudText>
+                <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.7);">@_userEmail</MudText>
+            </div>
+            <MudNavMenu Style="padding: 1rem 0.5rem;">
+                <MudNavLink Href="/" Match="NavLinkMatch.All" 
+                            Icon="@Icons.Material.Filled.Dashboard"
+                            Style="color: white; margin: 4px 8px; border-radius: 12px;"
+                            ActiveClass="nav-active">
+                    Dashboard
+                </MudNavLink>
+                <MudNavLink Href="/licenses" Match="NavLinkMatch.Prefix" 
+                            Icon="@Icons.Material.Filled.WorkspacePremium"
+                            Style="color: white; margin: 4px 8px; border-radius: 12px;"
+                            ActiveClass="nav-active">
+                    My Licenses
+                </MudNavLink>
+                <MudNavLink Href="/api-keys" Match="NavLinkMatch.Prefix" 
+                            Icon="@Icons.Material.Filled.VpnKey"
+                            Style="color: white; margin: 4px 8px; border-radius: 12px;"
+                            ActiveClass="nav-active">
+                    API Keys
+                </MudNavLink>
+                <MudNavLink Href="/profile" Match="NavLinkMatch.Prefix" 
+                            Icon="@Icons.Material.Filled.AccountCircle"
+                            Style="color: white; margin: 4px 8px; border-radius: 12px;"
+                            ActiveClass="nav-active">
+                    Profile
+                </MudNavLink>
+            </MudNavMenu>
+            <MudSpacer />
+            <div style="padding: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                <MudButton Variant="Variant.Outlined" FullWidth="true" OnClick="LogoutAsync"
+                           Style="color: white; border-color: rgba(255,255,255,0.3); border-radius: 12px;">
+                    <MudIcon Icon="@Icons.Material.Filled.Logout" Class="mr-2" />
+                    Sign Out
+                </MudButton>
+            </div>
+        </MudDrawer>
+
+        <MudMainContent Class="pt-16 px-4" Style="background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%); min-height: 100vh;">
+            <div class="fade-in">
+                @Body
+            </div>
+        </MudMainContent>
+    </MudLayout>
+}
+else
+{
+    @Body
+}
+
+<style>
+    .nav-active { 
+        background: rgba(255,255,255,0.2) !important; 
+        font-weight: 600;
+    }
+    .mud-nav-link:hover {
+        background: rgba(255,255,255,0.1) !important;
+    }
+</style>
+
+@code {
+    [Inject] private AuthStateProvider AuthState { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private IAuthService AuthService { get; set; } = default!;
+
+    private bool _drawerOpen = true;
+    private bool _isDarkMode = false;
+    private bool _isAuthenticated = false;
+    private string? _userEmail;
+    private string? _userName;
+
+    private readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#667eea",
+            Secondary = "#764ba2",
+            Tertiary = "#f093fb",
+            AppbarBackground = "transparent",
+            Background = "#f5f7fa",
+            Surface = "#ffffff",
+            DrawerBackground = "#667eea"
+        },
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#90CAF9",
+            Secondary = "#ce93d8",
+            Background = "#121212",
+            Surface = "#1e1e1e"
+        },
+        LayoutProperties = new LayoutProperties
+        {
+            DefaultBorderRadius = "12px"
+        }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        AuthState.OnChange += StateHasChanged;
+        await CheckAuthenticationAsync();
+    }
+
+    private async Task CheckAuthenticationAsync()
+    {
+        _isAuthenticated = await AuthState.IsAuthenticatedAsync();
+        if (_isAuthenticated)
+        {
+            var user = await AuthState.GetUserAsync();
+            _userEmail = user?.Email;
+            _userName = user?.FullName ?? "User";
+        }
+    }
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+    private void ToggleDarkMode() => _isDarkMode = !_isDarkMode;
+
+    private async Task LogoutAsync()
+    {
+        await AuthService.LogoutAsync();
+        _isAuthenticated = false;
+        _userEmail = null;
+        _userName = null;
+        Navigation.NavigateTo("/login");
+    }
+
+    public void Dispose()
+    {
+        AuthState.OnChange -= StateHasChanged;
+    }
+}
+}

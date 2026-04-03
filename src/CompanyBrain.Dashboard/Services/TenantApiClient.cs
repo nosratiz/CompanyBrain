@@ -2,142 +2,82 @@ using System.Net.Http.Json;
 
 namespace CompanyBrain.Dashboard.Services;
 
-public sealed class TenantApiClient(HttpClient httpClient)
+public sealed class KnowledgeApiClient(HttpClient httpClient)
 {
-    // === Tenant Operations ===
+    // === Knowledge Resources ===
 
-    public Task<TenantListResponse?> ListTenantsAsync() =>
-        httpClient.GetFromJsonAsync<TenantListResponse>("/api/tenants");
+    public Task<IReadOnlyList<KnowledgeResourceDescriptor>?> ListResourcesAsync() =>
+        httpClient.GetFromJsonAsync<IReadOnlyList<KnowledgeResourceDescriptor>>("/api/knowledge/resources");
 
-    public Task<TenantResponse?> GetTenantAsync(Guid tenantId) =>
-        httpClient.GetFromJsonAsync<TenantResponse>($"/api/tenants/{tenantId}");
+    public Task<KnowledgeResourceContent?> GetResourceAsync(string fileName) =>
+        httpClient.GetFromJsonAsync<KnowledgeResourceContent>($"/api/knowledge/resources/{Uri.EscapeDataString(fileName)}");
 
-    public async Task<TenantResponse?> CreateTenantAsync(CreateTenantRequest request)
+    public Task<SearchResponse?> SearchAsync(string query) =>
+        httpClient.GetFromJsonAsync<SearchResponse>($"/api/knowledge/search?query={Uri.EscapeDataString(query)}");
+
+    // === Ingestion ===
+
+    public async Task<IngestResultResponse?> IngestWikiAsync(string url, string name)
     {
-        var response = await httpClient.PostAsJsonAsync("/api/tenants", request);
+        var response = await httpClient.PostAsJsonAsync("/api/knowledge/wiki", new { Url = url, Name = name });
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<TenantResponse>();
+        return await response.Content.ReadFromJsonAsync<IngestResultResponse>();
     }
 
-    public async Task<TenantResponse?> UpdateTenantPlanAsync(Guid tenantId, string plan)
+    public async Task<IngestWikiBatchResponse?> IngestWikiBatchAsync(string url, string? linkSelector = null)
     {
-        var response = await httpClient.PutAsJsonAsync($"/api/tenants/{tenantId}/plan", new { Plan = plan });
+        var response = await httpClient.PostAsJsonAsync("/api/knowledge/wiki/batch", new { Url = url, LinkSelector = linkSelector });
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<TenantResponse>();
+        return await response.Content.ReadFromJsonAsync<IngestWikiBatchResponse>();
     }
 
-    public async Task SuspendTenantAsync(Guid tenantId, string? reason = null)
+    public async Task<IngestResultResponse?> IngestDocumentPathAsync(string filePath, string? name = null)
     {
-        var response = await httpClient.PostAsJsonAsync($"/api/tenants/{tenantId}/suspend", new { Reason = reason });
+        var response = await httpClient.PostAsJsonAsync("/api/knowledge/documents/path", new { FilePath = filePath, Name = name });
         response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<IngestResultResponse>();
     }
-
-    // === API Key Operations ===
-
-    public Task<ApiKeyListResponse?> ListApiKeysAsync(Guid tenantId, bool includeRevoked = false) =>
-        httpClient.GetFromJsonAsync<ApiKeyListResponse>($"/api/tenants/{tenantId}/api-keys?includeRevoked={includeRevoked}");
-
-    public async Task<ApiKeyCreatedResponse?> CreateApiKeyAsync(Guid tenantId, CreateApiKeyRequest request)
-    {
-        var response = await httpClient.PostAsJsonAsync($"/api/tenants/{tenantId}/api-keys", request);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<ApiKeyCreatedResponse>();
-    }
-
-    public async Task RevokeApiKeyAsync(Guid tenantId, Guid keyId, string? reason = null)
-    {
-        var response = await httpClient.DeleteAsync($"/api/tenants/{tenantId}/api-keys/{keyId}");
-        response.EnsureSuccessStatusCode();
-    }
-
-    public async Task<ApiKeyCreatedResponse?> RegenerateApiKeyAsync(Guid tenantId, Guid keyId)
-    {
-        var response = await httpClient.PostAsync($"/api/tenants/{tenantId}/api-keys/{keyId}/regenerate", null);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<ApiKeyCreatedResponse>();
-    }
-
-    // === Storage Stats ===
-
-    public Task<TenantStorageStatsResponse?> GetStorageStatsAsync(Guid tenantId) =>
-        httpClient.GetFromJsonAsync<TenantStorageStatsResponse>($"/api/tenants/{tenantId}/storage");
-
-    // === MCP Connection ===
-
-    public Task<McpConnectionInfoResponse?> GetMcpConnectionInfoAsync(Guid tenantId) =>
-        httpClient.GetFromJsonAsync<McpConnectionInfoResponse>($"/api/tenants/{tenantId}/mcp-connection");
 }
 
 // === DTO Records ===
 
-public sealed record TenantListResponse(IReadOnlyList<TenantResponse> Tenants);
+public sealed record KnowledgeResourceDescriptor(
+    string FileName,
+    string ResourceUri,
+    string MimeType,
+    long SizeBytes,
+    DateTime LastModified);
 
-public sealed record TenantResponse(
-    Guid Id,
-    string Name,
-    string Slug,
-    string? Description,
-    string Status,
-    string Plan,
-    int MaxDocuments,
-    int MaxApiKeys,
-    long MaxStorageBytes,
-    DateTime CreatedAt,
-    int ActiveApiKeys,
-    int ActiveUsers,
-    int DocumentCount = 0);
+public sealed record KnowledgeResourceContent(
+    string FileName,
+    string ResourceUri,
+    string MimeType,
+    string Content);
 
-public sealed record CreateTenantRequest(
-    string Name,
-    string Slug,
-    string Plan = "Free",
-    string? Description = null);
+public sealed record SearchResponse(
+    string Query,
+    IReadOnlyList<SearchMatch> Matches);
 
-public sealed record ApiKeyListResponse(IReadOnlyList<ApiKeyResponse> ApiKeys);
+public sealed record SearchMatch(
+    string FileName,
+    string ResourceUri,
+    string Snippet,
+    double Score);
 
-public sealed record ApiKeyResponse(
-    Guid Id,
-    string Name,
-    string KeyPrefix,
-    string Scope,
-    DateTime CreatedAt,
-    DateTime? ExpiresAt,
-    DateTime? LastUsedAt,
-    bool IsRevoked,
-    int RequestsPerMinute,
-    int RequestsPerDay);
+public sealed record IngestResultResponse(
+    string FileName,
+    string ResourceUri,
+    bool Existed);
 
-public sealed record CreateApiKeyRequest(
-    string Name,
-    string Scope = "ReadOnly",
-    DateTime? ExpiresAt = null);
+public sealed record IngestWikiBatchResponse(
+    int TotalDiscovered,
+    int SuccessCount,
+    int FailedCount,
+    IReadOnlyList<IngestWikiBatchItemResult> Results);
 
-public sealed record ApiKeyCreatedResponse(
-    Guid Id,
-    string Name,
-    string KeyPrefix,
-    string PlainKey,
-    string Scope,
-    DateTime CreatedAt,
-    DateTime? ExpiresAt,
-    string Warning);
-
-public sealed record TenantStorageStatsResponse(
-    int DocumentCount,
-    long TotalBytes,
-    string FormattedSize,
-    long MaxBytes,
-    double UsagePercentage);
-
-public sealed record McpConnectionInfoResponse(
-    string ServerUrl,
-    string Protocol,
-    string Transport,
-    IReadOnlyList<McpToolInfo> AvailableTools,
-    IReadOnlyList<McpResourceInfo> AvailableResources,
-    IReadOnlyList<string> SupportedClients,
-    string Instructions);
-
-public sealed record McpToolInfo(string Name, string Description);
-
-public sealed record McpResourceInfo(string Uri, string MimeType);
+public sealed record IngestWikiBatchItemResult(
+    string Url,
+    bool Success,
+    string? FileName,
+    string? ResourceUri,
+    string? Error);

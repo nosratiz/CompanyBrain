@@ -1,0 +1,182 @@
+@page "/profile"
+@layout MainLayout
+
+<PageTitle>Profile - CompanyBrain</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-6">
+    @* Header *@
+    <MudText Typo="Typo.h4" Style="font-weight: 700; margin-bottom: 0.5rem;">My Profile</MudText>
+    <MudText Typo="Typo.body1" Style="color: #6b7280; margin-bottom: 2rem;">
+        Manage your account information and preferences
+    </MudText>
+
+    @if (_user is not null)
+    {
+        <MudGrid>
+            @* Profile Card *@
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-6 text-center modern-card">
+                    <div style="width: 100px; height: 100px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; font-size: 2.5rem; color: white; font-weight: 700;">
+                        @_user.FullName.FirstOrDefault().ToString().ToUpper()
+                    </div>
+                    <MudText Typo="Typo.h5" Style="font-weight: 600;">@_user.FullName</MudText>
+                    <MudText Typo="Typo.body2" Style="color: #6b7280;">@_user.Email</MudText>
+                    
+                    <MudDivider Class="my-4" />
+                    
+                    <MudStack Spacing="2">
+                        <MudStack Row="true" Justify="Justify.SpaceBetween">
+                            <MudText Typo="Typo.caption" Style="color: #9ca3af;">Member Since</MudText>
+                            <MudText Typo="Typo.body2" Style="font-weight: 500;">@_user.CreatedAt.ToString("MMM yyyy")</MudText>
+                        </MudStack>
+                        <MudStack Row="true" Justify="Justify.SpaceBetween">
+                            <MudText Typo="Typo.caption" Style="color: #9ca3af;">Current Plan</MudText>
+                            <MudChip T="string" Size="Size.Small" Style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%); color: #667eea;">
+                                @(_activeLicense?.PlanName ?? "Free")
+                            </MudChip>
+                        </MudStack>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+
+            @* Account Details *@
+            <MudItem xs="12" md="8">
+                <MudPaper Class="pa-6 modern-card">
+                    <MudText Typo="Typo.h6" Style="font-weight: 600; margin-bottom: 1.5rem;">
+                        <MudIcon Icon="@Icons.Material.Filled.Person" Class="mr-2" Style="color: #667eea;" />
+                        Account Details
+                    </MudText>
+
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField Value="@_user.FullName" Label="Full Name" Variant="Variant.Outlined" ReadOnly="true"
+                                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Badge" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField Value="@_user.Email" Label="Email Address" Variant="Variant.Outlined" ReadOnly="true"
+                                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Email" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField Value="@_user.CreatedAt.ToString("MMMM dd, yyyy")" Label="Member Since" Variant="Variant.Outlined" ReadOnly="true"
+                                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.CalendarMonth" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField Value="@_user.Id.ToString()[..8]" Label="User ID" Variant="Variant.Outlined" ReadOnly="true"
+                                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Fingerprint" />
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+
+                @* Stats *@
+                <MudPaper Class="pa-6 modern-card mt-4">
+                    <MudText Typo="Typo.h6" Style="font-weight: 600; margin-bottom: 1.5rem;">
+                        <MudIcon Icon="@Icons.Material.Filled.BarChart" Class="mr-2" Style="color: #667eea;" />
+                        Usage Statistics
+                    </MudText>
+
+                    <MudGrid>
+                        <MudItem xs="6" sm="3">
+                            <div style="text-align: center;">
+                                <MudText Typo="Typo.h4" Style="font-weight: 700; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                                    @_apiKeyCount
+                                </MudText>
+                                <MudText Typo="Typo.caption" Style="color: #6b7280;">API Keys</MudText>
+                            </div>
+                        </MudItem>
+                        <MudItem xs="6" sm="3">
+                            <div style="text-align: center;">
+                                <MudText Typo="Typo.h4" Style="font-weight: 700; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                                    @_licenseCount
+                                </MudText>
+                                <MudText Typo="Typo.caption" Style="color: #6b7280;">Licenses</MudText>
+                            </div>
+                        </MudItem>
+                        <MudItem xs="6" sm="3">
+                            <div style="text-align: center;">
+                                <MudText Typo="Typo.h4" Style="font-weight: 700; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                                    @(_activeLicense?.MaxDocuments.ToString("N0") ?? "0")
+                                </MudText>
+                                <MudText Typo="Typo.caption" Style="color: #6b7280;">Doc Limit</MudText>
+                            </div>
+                        </MudItem>
+                        <MudItem xs="6" sm="3">
+                            <div style="text-align: center;">
+                                <MudText Typo="Typo.h4" Style="font-weight: 700; background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                                    @FormatStorage(_activeLicense?.MaxStorageBytes ?? 0)
+                                </MudText>
+                                <MudText Typo="Typo.caption" Style="color: #6b7280;">Storage</MudText>
+                            </div>
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+
+                @* Quick Links *@
+                <MudPaper Class="pa-6 modern-card mt-4">
+                    <MudText Typo="Typo.h6" Style="font-weight: 600; margin-bottom: 1rem;">
+                        <MudIcon Icon="@Icons.Material.Filled.Link" Class="mr-2" Style="color: #667eea;" />
+                        Quick Links
+                    </MudText>
+
+                    <MudStack Row="true" Spacing="2">
+                        <MudButton Variant="Variant.Outlined" Href="/licenses" StartIcon="@Icons.Material.Filled.WorkspacePremium"
+                                   Style="border-radius: 10px;">
+                            Manage Licenses
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Href="/api-keys" StartIcon="@Icons.Material.Filled.VpnKey"
+                                   Style="border-radius: 10px;">
+                            Manage API Keys
+                        </MudButton>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+</MudContainer>
+
+@code {
+    [Inject] private AuthStateProvider AuthState { get; set; } = default!;
+    [Inject] private ILicenseService LicenseService { get; set; } = default!;
+    [Inject] private IApiKeyService ApiKeyService { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+
+    private UserInfo? _user;
+    private UserLicense? _activeLicense;
+    private int _apiKeyCount;
+    private int _licenseCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await AuthState.IsAuthenticatedAsync())
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        _user = await AuthState.GetUserAsync();
+        await LoadStatsAsync();
+    }
+
+    private async Task LoadStatsAsync()
+    {
+        try
+        {
+            var licenses = await LicenseService.GetMyLicensesAsync();
+            _licenseCount = licenses.Count();
+            _activeLicense = licenses.FirstOrDefault(l => l.IsActive);
+
+            var apiKeys = await ApiKeyService.GetMyApiKeysAsync();
+            _apiKeyCount = apiKeys.Count(k => !k.IsRevoked);
+        }
+        catch
+        {
+            // Silently handle
+        }
+    }
+
+    private static string FormatStorage(long bytes)
+    {
+        if (bytes >= 1_073_741_824) return $"{bytes / 1_073_741_824} GB";
+        if (bytes >= 1_048_576) return $"{bytes / 1_048_576} MB";
+        return $"{bytes / 1024} KB";
+    }
+}

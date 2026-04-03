@@ -7,7 +7,7 @@ namespace CompanyBrain.MultiTenant.Services;
 /// </summary>
 public sealed class TenantContextAccessor : ITenantContextAccessor
 {
-    private static readonly AsyncLocal<TenantHolder> CurrentHolder = new();
+    private static readonly AsyncLocal<TenantHolder?> CurrentHolder = new();
 
     public Guid? TenantId => CurrentHolder.Value?.TenantId;
     public string? TenantSlug => CurrentHolder.Value?.TenantSlug;

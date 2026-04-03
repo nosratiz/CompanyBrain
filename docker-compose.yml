@@ -1,0 +1,90 @@
+# CompanyBrain Docker Compose
+# Run all services: docker compose up -d
+# Run specific service: docker compose up -d api
+
+services:
+  # CompanyBrain API - Main knowledge base API with MCP server
+  api:
+    build:
+      context: .
+      dockerfile: src/CompanyBrain/Dockerfile
+    image: companybrain-api:latest
+    container_name: companybrain-api
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+    volumes:
+      - api-data:/app/data
+      - ./InternalKnowledge:/app/InternalKnowledge:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # CompanyBrain UserPortal - User management and licensing portal
+  userportal:
+    build:
+      context: .
+      dockerfile: src/CompanyBrain.UserPortal.Server/Dockerfile
+    image: companybrain-userportal:latest
+    container_name: companybrain-userportal
+    ports:
+      - "8082:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__UserDb=Data Source=/app/data/userportal.db
+      - Jwt__Key=CompanyBrain_UserPortal_Docker_Secret_Key_Min32Chars!
+      - Jwt__Issuer=CompanyBrain.UserPortal
+    volumes:
+      - userportal-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # CompanyBrain MultiTenant - Multi-tenant management API
+  multitenant:
+    build:
+      context: .
+      dockerfile: src/CompanyBrain.MultiTenant/Dockerfile
+    image: companybrain-multitenant:latest
+    container_name: companybrain-multitenant
+    ports:
+      - "8083:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__TenantDb=Data Source=/app/data/tenants.db
+      - Storage__BasePath=/app/data/tenants
+      - Jwt__Key=CompanyBrain_MultiTenant_Docker_Secret_Key_Min32Chars!
+      - Jwt__Issuer=CompanyBrain.MultiTenant
+    volumes:
+      - multitenant-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  api-data:
+    driver: local
+  userportal-data:
+    driver: local
+  multitenant-data:
+    driver: local
+
+networks:
+  default:
+    name: companybrain-network

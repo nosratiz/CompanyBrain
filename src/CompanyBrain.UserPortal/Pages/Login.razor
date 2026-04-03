@@ -1,0 +1,137 @@
+@page "/login"
+
+<PageTitle>Sign In - CompanyBrain</PageTitle>
+
+<div class="auth-container">
+    <div class="auth-card slide-up">
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <div style="display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 16px; margin-bottom: 1rem;">
+                <MudIcon Icon="@Icons.Material.Filled.Bolt" Size="Size.Large" Style="color: white;" />
+            </div>
+            <MudText Typo="Typo.h4" Style="font-weight: 700; color: #1a1a2e;">Welcome back</MudText>
+            <MudText Typo="Typo.body1" Style="color: #6b7280; margin-top: 0.5rem;">Sign in to your CompanyBrain account</MudText>
+        </div>
+
+        <EditForm Model="_model" OnValidSubmit="HandleLoginAsync">
+            <DataAnnotationsValidator />
+
+            <div style="margin-bottom: 1.25rem;">
+                <MudTextField @bind-Value="_model.Email"
+                              Label="Email address"
+                              Variant="Variant.Outlined"
+                              InputType="InputType.Email"
+                              Required="true"
+                              Immediate="true"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Email"
+                              Style="border-radius: 12px;" />
+            </div>
+
+            <div style="margin-bottom: 1.5rem;">
+                <MudTextField @bind-Value="_model.Password"
+                              Label="Password"
+                              Variant="Variant.Outlined"
+                              InputType="@(_showPassword ? InputType.Text : InputType.Password)"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@(_showPassword ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                              OnAdornmentClick="() => _showPassword = !_showPassword"
+                              Required="true"
+                              Style="border-radius: 12px;" />
+            </div>
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" 
+                          Class="mb-4" Style="border-radius: 12px;">
+                    @_errorMessage
+                </MudAlert>
+            }
+
+            <MudButton ButtonType="ButtonType.Submit"
+                       Variant="Variant.Filled"
+                       FullWidth="true"
+                       Size="Size.Large"
+                       Disabled="_isLoading"
+                       Style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; height: 52px; font-weight: 600; text-transform: none; font-size: 1rem; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
+                @if (_isLoading)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Inherit" Class="mr-2" />
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Login" Class="mr-2" />
+                }
+                Sign In
+            </MudButton>
+        </EditForm>
+
+        <div style="display: flex; align-items: center; margin: 1.5rem 0;">
+            <div style="flex: 1; height: 1px; background: #e5e7eb;"></div>
+            <MudText Typo="Typo.caption" Style="padding: 0 1rem; color: #9ca3af;">or</MudText>
+            <div style="flex: 1; height: 1px; background: #e5e7eb;"></div>
+        </div>
+
+        <div style="text-align: center;">
+            <MudText Typo="Typo.body1" Style="color: #6b7280;">
+                Don't have an account?
+                <MudLink Href="/register" Style="color: #667eea; font-weight: 600; text-decoration: none;">
+                    Create one
+                </MudLink>
+            </MudText>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Inject] private IAuthService AuthService { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private AuthStateProvider AuthState { get; set; } = default!;
+
+    private LoginModel _model = new();
+    private bool _showPassword = false;
+    private bool _isLoading = false;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (await AuthState.IsAuthenticatedAsync())
+        {
+            Navigation.NavigateTo("/");
+        }
+    }
+
+    private async Task HandleLoginAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            var request = new LoginRequest(_model.Email!, _model.Password!);
+            var result = await AuthService.LoginAsync(request);
+
+            if (result is not null)
+            {
+                Navigation.NavigateTo("/");
+            }
+            else
+            {
+                _errorMessage = "Invalid email or password.";
+            }
+        }
+        catch (Exception)
+        {
+            _errorMessage = "An error occurred. Please try again.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private sealed class LoginModel
+    {
+        public string? Email { get; set; }
+        public string? Password { get; set; }
+    }
+}

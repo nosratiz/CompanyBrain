@@ -1,0 +1,301 @@
+@page "/import"
+@inject KnowledgeApiClient Api
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>Import - Company Brain</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Import Documents</MudText>
+
+<MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6">
+    <MudTabPanel Text="Wiki URL" Icon="@Icons.Material.Filled.Link">
+        <MudText Typo="Typo.h6" Class="mb-4">Import from Wiki URL</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+            Import a single wiki page by providing its URL. The page will be converted to Markdown and stored in the knowledge base.
+        </MudText>
+        
+        <MudTextField @bind-Value="_wikiUrl"
+                      Label="Wiki URL"
+                      Placeholder="https://wiki.example.com/page"
+                      Variant="Variant.Outlined"
+                      FullWidth="true"
+                      Class="mb-4" />
+        
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.CloudDownload"
+                   OnClick="ImportWikiUrl"
+                   Disabled="@(string.IsNullOrWhiteSpace(_wikiUrl) || _importing)">
+            @if (_importing && _activeTab == "wiki")
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Importing...</span>
+            }
+            else
+            {
+                <span>Import Wiki Page</span>
+            }
+        </MudButton>
+    </MudTabPanel>
+    
+    <MudTabPanel Text="Batch Import" Icon="@Icons.Material.Filled.PlaylistAdd">
+        <MudText Typo="Typo.h6" Class="mb-4">Batch Import Wiki URLs</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+            Import multiple wiki pages at once. Enter one URL per line.
+        </MudText>
+        
+        <MudTextField @bind-Value="_batchUrls"
+                      Label="Wiki URLs (one per line)"
+                      Placeholder="https://wiki.example.com/page1&#10;https://wiki.example.com/page2&#10;https://wiki.example.com/page3"
+                      Variant="Variant.Outlined"
+                      Lines="8"
+                      FullWidth="true"
+                      Class="mb-4" />
+        
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.CloudDownload"
+                   OnClick="ImportBatchWiki"
+                   Disabled="@(string.IsNullOrWhiteSpace(_batchUrls) || _importing)">
+            @if (_importing && _activeTab == "batch")
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Importing...</span>
+            }
+            else
+            {
+                <span>Import All</span>
+            }
+        </MudButton>
+        
+        @if (_batchResults is not null)
+        {
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Import Results</MudText>
+            <MudSimpleTable Dense="true" Bordered="true">
+                <thead>
+                    <tr>
+                        <th>URL</th>
+                        <th>Status</th>
+                        <th>File</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var result in _batchResults.Results)
+                    {
+                        <tr>
+                            <td><code style="font-size: 0.85em;">@TruncateUrl(result.Url, 50)</code></td>
+                            <td>
+                                @if (result.Success)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Success">Success</MudChip>
+                                }
+                                else
+                                {
+                                    <MudTooltip Text="@result.ErrorMessage">
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Error">Failed</MudChip>
+                                    </MudTooltip>
+                                }
+                            </td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(result.FileName))
+                                {
+                                    <MudLink Href="@($"/documents/{Uri.EscapeDataString(result.FileName)}")">@result.FileName</MudLink>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+            <MudText Typo="Typo.caption" Class="mt-2">
+                Total: @_batchResults.TotalCount | 
+                Success: @_batchResults.SuccessCount | 
+                Failed: @_batchResults.FailureCount
+            </MudText>
+        }
+    </MudTabPanel>
+    
+    <MudTabPanel Text="File Path" Icon="@Icons.Material.Filled.FolderOpen">
+        <MudText Typo="Typo.h6" Class="mb-4">Import from File Path</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+            Import documents from a local file path. Supports various document formats including Office documents, PDFs, and plain text files.
+        </MudText>
+        
+        <MudTextField @bind-Value="_filePath"
+                      Label="File Path"
+                      Placeholder="/path/to/document.docx or /path/to/folder"
+                      Variant="Variant.Outlined"
+                      FullWidth="true"
+                      Class="mb-4" />
+        
+        <MudAlert Severity="Severity.Info" Class="mb-4">
+            <MudText Typo="Typo.body2">
+                Supported formats: .docx, .doc, .pdf, .txt, .md, .html, .rtf
+            </MudText>
+        </MudAlert>
+        
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Upload"
+                   OnClick="ImportFilePath"
+                   Disabled="@(string.IsNullOrWhiteSpace(_filePath) || _importing)">
+            @if (_importing && _activeTab == "path")
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Importing...</span>
+            }
+            else
+            {
+                <span>Import from Path</span>
+            }
+        </MudButton>
+    </MudTabPanel>
+</MudTabs>
+
+@if (_lastResult is not null)
+{
+    <MudPaper Class="pa-4 mt-4">
+        <MudAlert Severity="@(_lastResult.Success ? Severity.Success : Severity.Error)">
+            @if (_lastResult.Success)
+            {
+                <span>Successfully imported: <strong>@_lastResult.FileName</strong></span>
+                <MudButton Variant="Variant.Text" 
+                           Size="Size.Small" 
+                           Class="ml-2"
+                           Href="@($"/documents/{Uri.EscapeDataString(_lastResult.FileName ?? "")}")">
+                    View Document
+                </MudButton>
+            }
+            else
+            {
+                <span>Import failed: @_lastResult.ErrorMessage</span>
+            }
+        </MudAlert>
+    </MudPaper>
+}
+
+@code {
+    private string _wikiUrl = "";
+    private string _batchUrls = "";
+    private string _filePath = "";
+    private bool _importing = false;
+    private string _activeTab = "";
+    
+    private IngestResultResponse? _lastResult;
+    private IngestWikiBatchResponse? _batchResults;
+
+    private async Task ImportWikiUrl()
+    {
+        if (string.IsNullOrWhiteSpace(_wikiUrl)) return;
+
+        _importing = true;
+        _activeTab = "wiki";
+        _lastResult = null;
+        
+        try
+        {
+            _lastResult = await Api.IngestWikiAsync(_wikiUrl);
+            if (_lastResult?.Success == true)
+            {
+                Snackbar.Add($"Successfully imported {_lastResult.FileName}", Severity.Success);
+                _wikiUrl = "";
+            }
+            else
+            {
+                Snackbar.Add($"Import failed: {_lastResult?.ErrorMessage}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
+            _lastResult = new IngestResultResponse { Success = false, ErrorMessage = ex.Message };
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    private async Task ImportBatchWiki()
+    {
+        if (string.IsNullOrWhiteSpace(_batchUrls)) return;
+
+        _importing = true;
+        _activeTab = "batch";
+        _batchResults = null;
+        _lastResult = null;
+        
+        try
+        {
+            var urls = _batchUrls
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(u => u.Trim())
+                .Where(u => !string.IsNullOrWhiteSpace(u))
+                .ToList();
+
+            if (!urls.Any())
+            {
+                Snackbar.Add("Please enter at least one URL", Severity.Warning);
+                return;
+            }
+
+            _batchResults = await Api.IngestWikiBatchAsync(urls);
+            
+            if (_batchResults.SuccessCount > 0)
+            {
+                Snackbar.Add($"Successfully imported {_batchResults.SuccessCount} of {_batchResults.TotalCount} documents", 
+                    _batchResults.FailureCount > 0 ? Severity.Warning : Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("All imports failed", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Batch import failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    private async Task ImportFilePath()
+    {
+        if (string.IsNullOrWhiteSpace(_filePath)) return;
+
+        _importing = true;
+        _activeTab = "path";
+        _lastResult = null;
+        
+        try
+        {
+            _lastResult = await Api.IngestDocumentPathAsync(_filePath);
+            if (_lastResult?.Success == true)
+            {
+                Snackbar.Add($"Successfully imported {_lastResult.FileName}", Severity.Success);
+                _filePath = "";
+            }
+            else
+            {
+                Snackbar.Add($"Import failed: {_lastResult?.ErrorMessage}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
+            _lastResult = new IngestResultResponse { Success = false, ErrorMessage = ex.Message };
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    private static string TruncateUrl(string url, int maxLength)
+    {
+        if (url.Length <= maxLength) return url;
+        return url[..(maxLength - 3)] + "...";
+    }
+}

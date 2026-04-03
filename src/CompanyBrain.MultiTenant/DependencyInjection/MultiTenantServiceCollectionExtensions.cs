@@ -3,6 +3,7 @@ using CompanyBrain.MultiTenant.Data;
 using CompanyBrain.MultiTenant.Middleware;
 using CompanyBrain.MultiTenant.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CompanyBrain.MultiTenant.DependencyInjection;
@@ -28,6 +29,8 @@ public static class MultiTenantServiceCollectionExtensions
         // Core services
         services.AddScoped<TenantService>();
         services.AddScoped<ApiKeyService>();
+        services.AddScoped<IUserService, UserService>();
+        services.AddSingleton<IJwtService, JwtService>();
 
         // Tenant-scoped knowledge store factory
         services.AddSingleton(sp => new TenantKnowledgeStoreFactory(

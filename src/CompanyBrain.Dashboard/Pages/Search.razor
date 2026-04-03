@@ -1,0 +1,138 @@
+@page "/search"
+@inject KnowledgeApiClient Api
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>Search - Company Brain</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Search Knowledge Base</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudTextField @bind-Value="_query"
+                  Label="Search Query"
+                  Placeholder="Enter search terms..."
+                  Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Search"
+                  Variant="Variant.Outlined"
+                  FullWidth="true"
+                  OnKeyUp="HandleKeyUp" />
+    
+    <div class="d-flex align-center mt-4 gap-4">
+        <MudNumericField @bind-Value="_maxResults"
+                         Label="Max Results"
+                         Min="1"
+                         Max="100"
+                         Style="width: 150px;" />
+        
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Search"
+                   OnClick="ExecuteSearch"
+                   Disabled="@(string.IsNullOrWhiteSpace(_query) || _searching)">
+            @if (_searching)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Searching...</span>
+            }
+            else
+            {
+                <span>Search</span>
+            }
+        </MudButton>
+    </div>
+</MudPaper>
+
+@if (_searchPerformed)
+{
+    <MudPaper Class="pa-4">
+        @if (_results is not null && _results.Matches.Any())
+        {
+            <MudText Typo="Typo.subtitle1" Class="mb-4">
+                Found @_results.Matches.Count() match(es) for "@_lastQuery"
+            </MudText>
+            
+            <MudList T="SearchMatch" Class="py-0">
+                @foreach (var match in _results.Matches)
+                {
+                    <MudListItem Class="pa-0 mb-4">
+                        <MudCard Outlined="true">
+                            <MudCardHeader>
+                                <CardHeaderContent>
+                                    <MudLink Href="@($"/documents/{Uri.EscapeDataString(match.FileName)}")" Typo="Typo.h6">
+                                        @match.FileName
+                                    </MudLink>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        Best match at line @match.BestMatchStartLine • Score: @match.Score.ToString("P0")
+                                    </MudText>
+                                </CardHeaderContent>
+                                <CardHeaderActions>
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary">
+                                        @match.Score.ToString("P0") match
+                                    </MudChip>
+                                </CardHeaderActions>
+                            </MudCardHeader>
+                            <MudCardContent>
+                                <MudText Typo="Typo.body2" Style="font-family: monospace; white-space: pre-wrap; background-color: var(--mud-palette-background-grey); padding: 12px; border-radius: 4px;">@match.BestMatchSnippet</MudText>
+                            </MudCardContent>
+                            <MudCardActions>
+                                <MudButton Variant="Variant.Text"
+                                           Color="Color.Primary"
+                                           Size="Size.Small"
+                                           StartIcon="@Icons.Material.Filled.OpenInNew"
+                                           Href="@($"/documents/{Uri.EscapeDataString(match.FileName)}")">
+                                    View Document
+                                </MudButton>
+                            </MudCardActions>
+                        </MudCard>
+                    </MudListItem>
+                }
+            </MudList>
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Info" Icon="@Icons.Material.Filled.SearchOff">
+                No results found for "@_lastQuery". Try different search terms.
+            </MudAlert>
+        }
+    </MudPaper>
+}
+
+@code {
+    private string _query = "";
+    private string _lastQuery = "";
+    private int _maxResults = 10;
+    private bool _searching = false;
+    private bool _searchPerformed = false;
+    private SearchResponse? _results;
+
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_query))
+        {
+            await ExecuteSearch();
+        }
+    }
+
+    private async Task ExecuteSearch()
+    {
+        if (string.IsNullOrWhiteSpace(_query)) return;
+
+        _searching = true;
+        _searchPerformed = false;
+        
+        try
+        {
+            _results = await Api.SearchAsync(_query, _maxResults);
+            _lastQuery = _query;
+            _searchPerformed = true;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Search failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _searching = false;
+        }
+    }
+}

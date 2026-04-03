@@ -1,0 +1,236 @@
+@page "/"
+@layout MainLayout
+
+<PageTitle>Dashboard - CompanyBrain</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    @* Hero Section *@
+    <div class="hero-section mb-6 slide-up">
+        <MudGrid>
+            <MudItem xs="12" md="8">
+                <MudText Typo="Typo.h3" Style="font-weight: 700; color: white; margin-bottom: 0.5rem;">
+                    Welcome back, @_userName! 👋
+                </MudText>
+                <MudText Typo="Typo.body1" Style="color: rgba(255,255,255,0.8); max-width: 500px;">
+                    Manage your licenses, API keys, and access the powerful CompanyBrain MCP server.
+                </MudText>
+            </MudItem>
+            <MudItem xs="12" md="4" Style="display: flex; align-items: center; justify-content: flex-end;">
+                <MudButton Variant="Variant.Filled" Href="/api-keys"
+                           Style="background: rgba(255,255,255,0.2); color: white; border-radius: 12px; backdrop-filter: blur(10px);">
+                    <MudIcon Icon="@Icons.Material.Filled.Add" Class="mr-2" />
+                    Create API Key
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </div>
+
+    @* Stats Grid *@
+    <MudGrid Class="mb-6">
+        <MudItem xs="12" sm="6" md="3">
+            <div class="stat-card primary modern-card fade-in" style="animation-delay: 0.1s;">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
+                    <div>
+                        <MudText Typo="Typo.body2" Style="color: #6b7280; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px;">Current Plan</MudText>
+                        <MudText Typo="Typo.h4" Style="font-weight: 700; color: #1a1a2e; margin-top: 0.25rem;">
+                            @(_activeLicense?.PlanName ?? "None")
+                        </MudText>
+                    </div>
+                    <div style="width: 48px; height: 48px; background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                        <MudIcon Icon="@Icons.Material.Filled.WorkspacePremium" Style="color: #667eea;" />
+                    </div>
+                </MudStack>
+                <MudText Typo="Typo.caption" Style="color: #9ca3af; margin-top: 0.75rem;">
+                    @if (_activeLicense?.ExpiresAt is not null)
+                    {
+                        <span>Expires @_activeLicense.ExpiresAt?.ToString("MMM dd, yyyy")</span>
+                    }
+                    else
+                    {
+                        <span>Never expires</span>
+                    }
+                </MudText>
+            </div>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <div class="stat-card secondary modern-card fade-in" style="animation-delay: 0.2s;">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
+                    <div>
+                        <MudText Typo="Typo.body2" Style="color: #6b7280; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px;">API Keys</MudText>
+                        <MudText Typo="Typo.h4" Style="font-weight: 700; color: #1a1a2e; margin-top: 0.25rem;">
+                            @_apiKeyCount
+                        </MudText>
+                    </div>
+                    <div style="width: 48px; height: 48px; background: linear-gradient(135deg, rgba(240, 147, 251, 0.15) 0%, rgba(245, 87, 108, 0.15) 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                        <MudIcon Icon="@Icons.Material.Filled.VpnKey" Style="color: #f093fb;" />
+                    </div>
+                </MudStack>
+                <MudText Typo="Typo.caption" Style="color: #9ca3af; margin-top: 0.75rem;">
+                    of @(_activeLicense?.MaxApiKeys ?? 0) allowed
+                </MudText>
+            </div>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <div class="stat-card success modern-card fade-in" style="animation-delay: 0.3s;">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
+                    <div>
+                        <MudText Typo="Typo.body2" Style="color: #6b7280; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px;">Documents</MudText>
+                        <MudText Typo="Typo.h4" Style="font-weight: 700; color: #1a1a2e; margin-top: 0.25rem;">
+                            @_documentCount
+                        </MudText>
+                    </div>
+                    <div style="width: 48px; height: 48px; background: linear-gradient(135deg, rgba(17, 153, 142, 0.15) 0%, rgba(56, 239, 125, 0.15) 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                        <MudIcon Icon="@Icons.Material.Filled.Description" Style="color: #11998e;" />
+                    </div>
+                </MudStack>
+                <MudText Typo="Typo.caption" Style="color: #9ca3af; margin-top: 0.75rem;">
+                    of @(_activeLicense?.MaxDocuments.ToString("N0") ?? "0") allowed
+                </MudText>
+            </div>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <div class="stat-card warning modern-card fade-in" style="animation-delay: 0.4s;">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
+                    <div>
+                        <MudText Typo="Typo.body2" Style="color: #6b7280; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px;">Storage</MudText>
+                        <MudText Typo="Typo.h4" Style="font-weight: 700; color: #1a1a2e; margin-top: 0.25rem;">
+                            @FormatStorage(_activeLicense?.MaxStorageBytes ?? 0)
+                        </MudText>
+                    </div>
+                    <div style="width: 48px; height: 48px; background: linear-gradient(135deg, rgba(242, 153, 74, 0.15) 0%, rgba(242, 201, 76, 0.15) 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                        <MudIcon Icon="@Icons.Material.Filled.CloudQueue" Style="color: #f2994a;" />
+                    </div>
+                </MudStack>
+                <MudText Typo="Typo.caption" Style="color: #9ca3af; margin-top: 0.75rem;">
+                    available storage
+                </MudText>
+            </div>
+        </MudItem>
+    </MudGrid>
+
+    @* Quick Actions & Getting Started *@
+    <MudGrid>
+        <MudItem xs="12" md="8">
+            <MudPaper Class="pa-6 modern-card">
+                <MudText Typo="Typo.h6" Style="font-weight: 600; margin-bottom: 1.5rem;">
+                    <MudIcon Icon="@Icons.Material.Filled.RocketLaunch" Class="mr-2" Style="color: #667eea;" />
+                    Getting Started
+                </MudText>
+                
+                <MudStepper @bind-ActiveIndex="_stepperIndex" Style="--mud-palette-primary: #667eea;">
+                    <MudStep Title="Get a License"
+                             Completed="@(_activeLicense is not null)">
+                        <MudText>Choose a plan that fits your needs to unlock API access.</MudText>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/licenses" Class="mt-3">
+                            View Plans
+                        </MudButton>
+                    </MudStep>
+                    <MudStep Title="Create API Key"
+                             Completed="@(_apiKeyCount > 0)">
+                        <MudText>Generate API keys to authenticate with the MCP server.</MudText>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/api-keys" Class="mt-3">
+                            Create Key
+                        </MudButton>
+                    </MudStep>
+                    <MudStep Title="Connect to MCP">
+                        <MudText>Use your API key to connect to the CompanyBrain MCP server.</MudText>
+                        <MudAlert Severity="Severity.Info" Class="mt-3" Dense="true">
+                            MCP Endpoint: <code>https://api.companybrain.io/mcp</code>
+                        </MudAlert>
+                    </MudStep>
+                </MudStepper>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-6 modern-card" Style="height: 100%;">
+                <MudText Typo="Typo.h6" Style="font-weight: 600; margin-bottom: 1rem;">
+                    <MudIcon Icon="@Icons.Material.Filled.Speed" Class="mr-2" Style="color: #667eea;" />
+                    Quick Actions
+                </MudText>
+
+                <MudStack Spacing="3">
+                    <MudButton Variant="Variant.Outlined" FullWidth="true" Href="/api-keys"
+                               Style="justify-content: flex-start; border-radius: 12px; padding: 1rem;">
+                        <MudIcon Icon="@Icons.Material.Filled.Add" Class="mr-3" />
+                        New API Key
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" FullWidth="true" Href="/licenses"
+                               Style="justify-content: flex-start; border-radius: 12px; padding: 1rem;">
+                        <MudIcon Icon="@Icons.Material.Filled.Upgrade" Class="mr-3" />
+                        Upgrade Plan
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" FullWidth="true" Href="/profile"
+                               Style="justify-content: flex-start; border-radius: 12px; padding: 1rem;">
+                        <MudIcon Icon="@Icons.Material.Filled.Settings" Class="mr-3" />
+                        Account Settings
+                    </MudButton>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    [Inject] private AuthStateProvider AuthState { get; set; } = default!;
+    [Inject] private ILicenseService LicenseService { get; set; } = default!;
+    [Inject] private IApiKeyService ApiKeyService { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+
+    private string _userName = "User";
+    private UserLicense? _activeLicense;
+    private int _apiKeyCount = 0;
+    private int _documentCount = 0;
+    private int _stepperIndex = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await AuthState.IsAuthenticatedAsync())
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        var user = await AuthState.GetUserAsync();
+        if (user is not null)
+        {
+            _userName = user.FullName.Split(' ').FirstOrDefault() ?? user.FullName;
+        }
+
+        await LoadDashboardDataAsync();
+        UpdateStepperIndex();
+    }
+
+    private async Task LoadDashboardDataAsync()
+    {
+        try
+        {
+            var licenses = await LicenseService.GetMyLicensesAsync();
+            _activeLicense = licenses.FirstOrDefault(l => l.IsActive);
+
+            var apiKeys = await ApiKeyService.GetMyApiKeysAsync();
+            _apiKeyCount = apiKeys.Count(k => !k.IsRevoked);
+        }
+        catch
+        {
+            // Handle error silently for dashboard
+        }
+    }
+
+    private void UpdateStepperIndex()
+    {
+        if (_activeLicense is null) _stepperIndex = 0;
+        else if (_apiKeyCount == 0) _stepperIndex = 1;
+        else _stepperIndex = 2;
+    }
+
+    private static string FormatStorage(long bytes)
+    {
+        if (bytes >= 1_073_741_824) return $"{bytes / 1_073_741_824} GB";
+        if (bytes >= 1_048_576) return $"{bytes / 1_048_576} MB";
+        return $"{bytes / 1024} KB";
+    }
+}

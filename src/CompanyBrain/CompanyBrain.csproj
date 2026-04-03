@@ -6,14 +6,11 @@
     <Nullable>enable</Nullable>
     <RootNamespace>CompanyBrain</RootNamespace>
     <AssemblyName>CompanyBrain</AssemblyName>
-    <PublishAot>true</PublishAot>
-    <InvariantGlobalization>true</InvariantGlobalization>
-    <TrimMode>full</TrimMode>
-    <StripSymbols>true</StripSymbols>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.0" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.2.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="8.1.1" />
   </ItemGroup>
 

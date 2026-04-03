@@ -1,6 +1,8 @@
 using CompanyBrain.Api;
 using CompanyBrain.Api.Serialization;
 using CompanyBrain.DependencyInjection;
+using CompanyBrain.Mcp.Resources;
+using CompanyBrain.Mcp.Tools;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,9 +26,17 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "Company Brain API",
         Version = "v1",
-        Description = "HTTP API for ingesting internal knowledge, browsing stored Markdown resources, and searching the company knowledge base.",
+        Description = "HTTP API for ingesting internal knowledge, browsing stored Markdown resources, and searching the company knowledge base. Also serves as an MCP server.",
     });
 });
+
+// Configure MCP Server
+builder.Services
+    .AddMcpServer()
+    .WithHttpTransport()
+    .WithTools<CompanyBrainTools>()
+    .WithListResourcesHandler(KnowledgeResourceHandlers.ListResourcesAsync)
+    .WithReadResourceHandler(KnowledgeResourceHandlers.ReadResourceAsync);
 
 var app = builder.Build();
 
@@ -35,5 +45,6 @@ app.UseSwaggerUI();
 
 app.MapGet("/", () => Results.Redirect("/swagger"));
 app.MapCompanyBrainApi();
+app.MapMcp();
 
 app.Run();

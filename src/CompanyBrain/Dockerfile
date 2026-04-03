@@ -1,10 +1,4 @@
-# Default Dockerfile - builds CompanyBrain API + MCP Server
-# For individual services, use the Dockerfiles in each project directory:
-#   - src/CompanyBrain/Dockerfile          (API + MCP)
-#   - src/CompanyBrain.UserPortal.Server/Dockerfile (UserPortal)
-#
-# Or use docker-compose.yml to build all services
-
+# CompanyBrain API + MCP Server Dockerfile
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 

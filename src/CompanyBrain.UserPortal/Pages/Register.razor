@@ -1,0 +1,167 @@
+@page "/register"
+
+<PageTitle>Create Account - CompanyBrain</PageTitle>
+
+<div class="auth-container">
+    <div class="auth-card slide-up" style="max-width: 480px;">
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <div style="display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 16px; margin-bottom: 1rem;">
+                <MudIcon Icon="@Icons.Material.Filled.PersonAdd" Size="Size.Large" Style="color: white;" />
+            </div>
+            <MudText Typo="Typo.h4" Style="font-weight: 700; color: #1a1a2e;">Create your account</MudText>
+            <MudText Typo="Typo.body1" Style="color: #6b7280; margin-top: 0.5rem;">Start your journey with CompanyBrain</MudText>
+        </div>
+
+        <EditForm Model="_model" OnValidSubmit="HandleRegisterAsync">
+            <DataAnnotationsValidator />
+
+            <div style="margin-bottom: 1.25rem;">
+                <MudTextField @bind-Value="_model.FullName"
+                              Label="Full Name"
+                              Variant="Variant.Outlined"
+                              Required="true"
+                              Immediate="true"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Person" />
+            </div>
+
+            <div style="margin-bottom: 1.25rem;">
+                <MudTextField @bind-Value="_model.Email"
+                              Label="Email address"
+                              Variant="Variant.Outlined"
+                              InputType="InputType.Email"
+                              Required="true"
+                              Immediate="true"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Email" />
+            </div>
+
+            <div style="margin-bottom: 1.25rem;">
+                <MudTextField @bind-Value="_model.Password"
+                              Label="Password"
+                              Variant="Variant.Outlined"
+                              InputType="@(_showPassword ? InputType.Text : InputType.Password)"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@(_showPassword ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                              OnAdornmentClick="() => _showPassword = !_showPassword"
+                              Required="true"
+                              HelperText="Minimum 8 characters" />
+            </div>
+
+            <div style="margin-bottom: 1.5rem;">
+                <MudTextField @bind-Value="_model.ConfirmPassword"
+                              Label="Confirm Password"
+                              Variant="Variant.Outlined"
+                              InputType="InputType.Password"
+                              Required="true" />
+            </div>
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" 
+                          Class="mb-4" Style="border-radius: 12px;">
+                    @_errorMessage
+                </MudAlert>
+            }
+
+            @if (_isSuccess)
+            {
+                <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Dense="true" 
+                          Class="mb-4" Style="border-radius: 12px;">
+                    Account created successfully! <MudLink Href="/login" Style="color: white; font-weight: 600;">Sign in now</MudLink>
+                </MudAlert>
+            }
+
+            <MudButton ButtonType="ButtonType.Submit"
+                       Variant="Variant.Filled"
+                       FullWidth="true"
+                       Size="Size.Large"
+                       Disabled="_isLoading || _isSuccess"
+                       Style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; height: 52px; font-weight: 600; text-transform: none; font-size: 1rem; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
+                @if (_isLoading)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Inherit" Class="mr-2" />
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.RocketLaunch" Class="mr-2" />
+                }
+                Create Account
+            </MudButton>
+        </EditForm>
+
+        <div style="display: flex; align-items: center; margin: 1.5rem 0;">
+            <div style="flex: 1; height: 1px; background: #e5e7eb;"></div>
+            <MudText Typo="Typo.caption" Style="padding: 0 1rem; color: #9ca3af;">or</MudText>
+            <div style="flex: 1; height: 1px; background: #e5e7eb;"></div>
+        </div>
+
+        <div style="text-align: center;">
+            <MudText Typo="Typo.body1" Style="color: #6b7280;">
+                Already have an account?
+                <MudLink Href="/login" Style="color: #667eea; font-weight: 600; text-decoration: none;">
+                    Sign in
+                </MudLink>
+            </MudText>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Inject] private IAuthService AuthService { get; set; } = default!;
+
+    private RegisterModel _model = new();
+    private bool _showPassword = false;
+    private bool _isLoading = false;
+    private bool _isSuccess = false;
+    private string? _errorMessage;
+
+    private async Task HandleRegisterAsync()
+    {
+        if (_model.Password != _model.ConfirmPassword)
+        {
+            _errorMessage = "Passwords do not match.";
+            return;
+        }
+
+        if (_model.Password?.Length < 8)
+        {
+            _errorMessage = "Password must be at least 8 characters.";
+            return;
+        }
+
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            var request = new RegisterRequest(_model.Email!, _model.Password!, _model.FullName!);
+            var result = await AuthService.RegisterAsync(request);
+
+            if (result is not null)
+            {
+                _isSuccess = true;
+            }
+            else
+            {
+                _errorMessage = "Registration failed. Please try again.";
+            }
+        }
+        catch (Exception)
+        {
+            _errorMessage = "An error occurred. Please try again.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private sealed class RegisterModel
+    {
+        public string? FullName { get; set; }
+        public string? Email { get; set; }
+        public string? Password { get; set; }
+        public string? ConfirmPassword { get; set; }
+    }
+}
