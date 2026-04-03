@@ -21,6 +21,14 @@
                       FullWidth="true"
                       Class="mb-4" />
         
+        <MudTextField @bind-Value="_wikiName"
+                      Label="Document Name (optional)"
+                      Placeholder="My Wiki Page"
+                      Variant="Variant.Outlined"
+                      FullWidth="true"
+                      HelperText="Leave empty to auto-generate from page title"
+                      Class="mb-4" />
+        
         <MudButton Variant="Variant.Filled"
                    Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.CloudDownload"
@@ -92,7 +100,7 @@
                                 }
                                 else
                                 {
-                                    <MudTooltip Text="@result.ErrorMessage">
+                                    <MudTooltip Text="@result.Error">
                                         <MudChip T="string" Size="Size.Small" Color="Color.Error">Failed</MudChip>
                                     </MudTooltip>
                                 }
@@ -108,9 +116,9 @@
                 </tbody>
             </MudSimpleTable>
             <MudText Typo="Typo.caption" Class="mt-2">
-                Total: @_batchResults.TotalCount | 
-                Success: @_batchResults.SuccessCount | 
-                Failed: @_batchResults.FailureCount
+                Total: @_batchResults.TotalDiscovered | 
+                Success: @_batchResults.SuccessfullyIngested | 
+                Failed: @_batchResults.Failed
             </MudText>
         }
     </MudTabPanel>
@@ -126,6 +134,14 @@
                       Placeholder="/path/to/document.docx or /path/to/folder"
                       Variant="Variant.Outlined"
                       FullWidth="true"
+                      Class="mb-4" />
+        
+        <MudTextField @bind-Value="_filePathName"
+                      Label="Document Name (optional)"
+                      Placeholder="My Document"
+                      Variant="Variant.Outlined"
+                      FullWidth="true"
+                      HelperText="Leave empty to use the file name"
                       Class="mb-4" />
         
         <MudAlert Severity="Severity.Info" Class="mb-4">
@@ -155,33 +171,41 @@
 @if (_lastResult is not null)
 {
     <MudPaper Class="pa-4 mt-4">
-        <MudAlert Severity="@(_lastResult.Success ? Severity.Success : Severity.Error)">
-            @if (_lastResult.Success)
+        <MudAlert Severity="Severity.Success">
+            <span>Successfully imported: <strong>@_lastResult.FileName</strong></span>
+            @if (_lastResult.ReplacedExisting)
             {
-                <span>Successfully imported: <strong>@_lastResult.FileName</strong></span>
-                <MudButton Variant="Variant.Text" 
-                           Size="Size.Small" 
-                           Class="ml-2"
-                           Href="@($"/documents/{Uri.EscapeDataString(_lastResult.FileName ?? "")}")">
-                    View Document
-                </MudButton>
+                <span> (replaced existing)</span>
             }
-            else
-            {
-                <span>Import failed: @_lastResult.ErrorMessage</span>
-            }
+            <MudButton Variant="Variant.Text" 
+                       Size="Size.Small" 
+                       Class="ml-2"
+                       Href="@($"/documents/{Uri.EscapeDataString(_lastResult.FileName)}")">
+                View Document
+            </MudButton>
+        </MudAlert>
+    </MudPaper>
+}
+@if (_lastError is not null)
+{
+    <MudPaper Class="pa-4 mt-4">
+        <MudAlert Severity="Severity.Error">
+            <span>Import failed: @_lastError</span>
         </MudAlert>
     </MudPaper>
 }
 
 @code {
     private string _wikiUrl = "";
+    private string _wikiName = "";
     private string _batchUrls = "";
     private string _filePath = "";
+    private string _filePathName = "";
     private bool _importing = false;
     private string _activeTab = "";
     
     private IngestResultResponse? _lastResult;
+    private string? _lastError;
     private IngestWikiBatchResponse? _batchResults;
 
     private async Task ImportWikiUrl()
@@ -191,24 +215,20 @@
         _importing = true;
         _activeTab = "wiki";
         _lastResult = null;
+        _lastError = null;
         
         try
         {
-            _lastResult = await Api.IngestWikiAsync(_wikiUrl);
-            if (_lastResult?.Success == true)
-            {
-                Snackbar.Add($"Successfully imported {_lastResult.FileName}", Severity.Success);
-                _wikiUrl = "";
-            }
-            else
-            {
-                Snackbar.Add($"Import failed: {_lastResult?.ErrorMessage}", Severity.Error);
-            }
+            var name = string.IsNullOrWhiteSpace(_wikiName) ? null : _wikiName;
+            _lastResult = await Api.IngestWikiAsync(_wikiUrl, name);
+            Snackbar.Add($"Successfully imported {_lastResult?.FileName}", Severity.Success);
+            _wikiUrl = "";
+            _wikiName = "";
         }
         catch (Exception ex)
         {
             Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
-            _lastResult = new IngestResultResponse { Success = false, ErrorMessage = ex.Message };
+            _lastError = ex.Message;
         }
         finally
         {
@@ -224,6 +244,7 @@
         _activeTab = "batch";
         _batchResults = null;
         _lastResult = null;
+        _lastError = null;
         
         try
         {
@@ -239,12 +260,13 @@
                 return;
             }
 
-            _batchResults = await Api.IngestWikiBatchAsync(urls);
+            // Batch import uses first URL as the base for discovering links
+            _batchResults = await Api.IngestWikiBatchAsync(urls.First());
             
-            if (_batchResults.SuccessCount > 0)
+            if (_batchResults?.SuccessfullyIngested > 0)
             {
-                Snackbar.Add($"Successfully imported {_batchResults.SuccessCount} of {_batchResults.TotalCount} documents", 
-                    _batchResults.FailureCount > 0 ? Severity.Warning : Severity.Success);
+                Snackbar.Add($"Successfully imported {_batchResults.SuccessfullyIngested} of {_batchResults.TotalDiscovered} documents", 
+                    _batchResults.Failed > 0 ? Severity.Warning : Severity.Success);
             }
             else
             {
@@ -268,24 +290,20 @@
         _importing = true;
         _activeTab = "path";
         _lastResult = null;
+        _lastError = null;
         
         try
         {
-            _lastResult = await Api.IngestDocumentPathAsync(_filePath);
-            if (_lastResult?.Success == true)
-            {
-                Snackbar.Add($"Successfully imported {_lastResult.FileName}", Severity.Success);
-                _filePath = "";
-            }
-            else
-            {
-                Snackbar.Add($"Import failed: {_lastResult?.ErrorMessage}", Severity.Error);
-            }
+            var name = string.IsNullOrWhiteSpace(_filePathName) ? null : _filePathName;
+            _lastResult = await Api.IngestDocumentPathAsync(_filePath, name);
+            Snackbar.Add($"Successfully imported {_lastResult?.FileName}", Severity.Success);
+            _filePath = "";
+            _filePathName = "";
         }
         catch (Exception ex)
         {
             Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
-            _lastResult = new IngestResultResponse { Success = false, ErrorMessage = ex.Message };
+            _lastError = ex.Message;
         }
         finally
         {

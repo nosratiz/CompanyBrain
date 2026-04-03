@@ -10,9 +10,12 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddMudServices();
 
-builder.Services.AddScoped(sp => new HttpClient
+var apiBaseUrl = builder.Configuration["ApiSettings:BaseUrl"] 
+    ?? builder.HostEnvironment.BaseAddress;
+
+builder.Services.AddScoped(_ => new HttpClient
 {
-    BaseAddress = new Uri(builder.HostEnvironment.BaseAddress)
+    BaseAddress = new Uri(apiBaseUrl)
 });
 
 builder.Services.AddScoped<KnowledgeApiClient>();

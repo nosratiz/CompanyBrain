@@ -12,12 +12,17 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
     public Task<KnowledgeResourceContent?> GetResourceAsync(string fileName) =>
         httpClient.GetFromJsonAsync<KnowledgeResourceContent>($"/api/knowledge/resources/{Uri.EscapeDataString(fileName)}");
 
-    public Task<SearchResponse?> SearchAsync(string query) =>
-        httpClient.GetFromJsonAsync<SearchResponse>($"/api/knowledge/search?query={Uri.EscapeDataString(query)}");
+    public Task<SearchResponse?> SearchAsync(string query, int? maxResults = null)
+    {
+        var url = $"/api/knowledge/search?query={Uri.EscapeDataString(query)}";
+        if (maxResults.HasValue)
+            url += $"&maxResults={maxResults.Value}";
+        return httpClient.GetFromJsonAsync<SearchResponse>(url);
+    }
 
     // === Ingestion ===
 
-    public async Task<IngestResultResponse?> IngestWikiAsync(string url, string name)
+    public async Task<IngestResultResponse?> IngestWikiAsync(string url, string? name = null)
     {
         var response = await httpClient.PostAsJsonAsync("/api/knowledge/wiki", new { Url = url, Name = name });
         response.EnsureSuccessStatusCode();
@@ -33,7 +38,7 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
 
     public async Task<IngestResultResponse?> IngestDocumentPathAsync(string filePath, string? name = null)
     {
-        var response = await httpClient.PostAsJsonAsync("/api/knowledge/documents/path", new { FilePath = filePath, Name = name });
+        var response = await httpClient.PostAsJsonAsync("/api/knowledge/documents/path", new { LocalPath = filePath, Name = name });
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<IngestResultResponse>();
     }
@@ -56,28 +61,29 @@ public sealed record KnowledgeResourceContent(
 
 public sealed record SearchResponse(
     string Query,
-    IReadOnlyList<SearchMatch> Matches);
+    int MaxResults,
+    string Result);
 
 public sealed record SearchMatch(
     string FileName,
-    string ResourceUri,
-    string Snippet,
-    double Score);
+    int Score,
+    string Snippet);
 
 public sealed record IngestResultResponse(
     string FileName,
     string ResourceUri,
-    bool Existed);
+    bool ReplacedExisting);
 
 public sealed record IngestWikiBatchResponse(
     int TotalDiscovered,
-    int SuccessCount,
-    int FailedCount,
+    int SuccessfullyIngested,
+    int Failed,
     IReadOnlyList<IngestWikiBatchItemResult> Results);
 
 public sealed record IngestWikiBatchItemResult(
     string Url,
-    bool Success,
+    string Name,
     string? FileName,
     string? ResourceUri,
+    bool Success,
     string? Error);

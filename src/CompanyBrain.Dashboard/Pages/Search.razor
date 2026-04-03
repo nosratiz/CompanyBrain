@@ -45,48 +45,15 @@
 @if (_searchPerformed)
 {
     <MudPaper Class="pa-4">
-        @if (_results is not null && _results.Matches.Any())
+        @if (_results is not null && !string.IsNullOrWhiteSpace(_results.Result))
         {
             <MudText Typo="Typo.subtitle1" Class="mb-4">
-                Found @_results.Matches.Count() match(es) for "@_lastQuery"
+                Search results for "@_lastQuery" (max @_results.MaxResults)
             </MudText>
             
-            <MudList T="SearchMatch" Class="py-0">
-                @foreach (var match in _results.Matches)
-                {
-                    <MudListItem Class="pa-0 mb-4">
-                        <MudCard Outlined="true">
-                            <MudCardHeader>
-                                <CardHeaderContent>
-                                    <MudLink Href="@($"/documents/{Uri.EscapeDataString(match.FileName)}")" Typo="Typo.h6">
-                                        @match.FileName
-                                    </MudLink>
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        Best match at line @match.BestMatchStartLine • Score: @match.Score.ToString("P0")
-                                    </MudText>
-                                </CardHeaderContent>
-                                <CardHeaderActions>
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary">
-                                        @match.Score.ToString("P0") match
-                                    </MudChip>
-                                </CardHeaderActions>
-                            </MudCardHeader>
-                            <MudCardContent>
-                                <MudText Typo="Typo.body2" Style="font-family: monospace; white-space: pre-wrap; background-color: var(--mud-palette-background-grey); padding: 12px; border-radius: 4px;">@match.BestMatchSnippet</MudText>
-                            </MudCardContent>
-                            <MudCardActions>
-                                <MudButton Variant="Variant.Text"
-                                           Color="Color.Primary"
-                                           Size="Size.Small"
-                                           StartIcon="@Icons.Material.Filled.OpenInNew"
-                                           Href="@($"/documents/{Uri.EscapeDataString(match.FileName)}")">
-                                    View Document
-                                </MudButton>
-                            </MudCardActions>
-                        </MudCard>
-                    </MudListItem>
-                }
-            </MudList>
+            <MudText Typo="Typo.body2" Style="font-family: monospace; white-space: pre-wrap; background-color: var(--mud-palette-background-grey); padding: 16px; border-radius: 4px;">
+                @_results.Result
+            </MudText>
         }
         else
         {

@@ -30,6 +30,17 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
+// Configure CORS to allow all origins
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
 // Configure MCP Server
 builder.Services
     .AddMcpServer()
@@ -40,6 +51,7 @@ builder.Services
 
 var app = builder.Build();
 
+app.UseCors();
 app.UseSwagger();
 app.UseSwaggerUI();
 

@@ -82,10 +82,11 @@ else
                 <MudTd DataLabel="Size">@FormatBytes(context.SizeBytes)</MudTd>
                 <MudTd DataLabel="Last Modified">@context.LastModified.ToLocalTime().ToString("g")</MudTd>
                 <MudTd DataLabel="Actions">
-                    <MudIconButton Icon="@Icons.Material.Filled.Visibility"
-                                   Size="Size.Small"
-                                   OnClick="@(() => ViewDocument(context.FileName))"
-                                   Title="View" />
+                    <MudTooltip Text="View">
+                        <MudIconButton Icon="@Icons.Material.Filled.Visibility"
+                                       Size="Size.Small"
+                                       OnClick="@(() => ViewDocument(context.FileName))" />
+                    </MudTooltip>
                 </MudTd>
             </RowTemplate>
             <NoRecordsContent>
