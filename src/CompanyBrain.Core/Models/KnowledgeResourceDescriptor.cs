@@ -1,6 +1,6 @@
 namespace CompanyBrain.Models;
 
-internal sealed record KnowledgeResourceDescriptor(
+public sealed record KnowledgeResourceDescriptor(
     string Name,
     string? Title,
     string Uri,

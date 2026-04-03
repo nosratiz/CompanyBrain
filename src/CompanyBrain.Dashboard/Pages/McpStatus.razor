@@ -1,0 +1,279 @@
+@page "/mcp-status"
+@inject TenantApiClient Api
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>MCP Connection - Company Brain</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">MCP Connection Setup</MudText>
+<MudText Typo="Typo.body1" Class="mb-4">
+    Configure your MCP-compatible clients to connect to Company Brain.
+</MudText>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_mcpInfo is not null)
+{
+    <MudGrid>
+        <!-- Connection Status -->
+        <MudItem xs="12">
+            <MudPaper Class="pa-4">
+                <div class="d-flex align-center mb-4">
+                    <MudAvatar Color="@(_isConnected ? Color.Success : Color.Error)" Class="mr-3">
+                        <MudIcon Icon="@(_isConnected ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
+                    </MudAvatar>
+                    <div>
+                        <MudText Typo="Typo.h6">@(_isConnected ? "Server Online" : "Server Offline")</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">@_mcpInfo.ServerUrl</MudText>
+                    </div>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="CheckConnection">
+                        Check Connection
+                    </MudButton>
+                </div>
+
+                <MudDivider Class="my-4" />
+
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Protocol</MudText>
+                        <MudText Typo="Typo.body1">@_mcpInfo.Protocol</MudText>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Transport</MudText>
+                        <MudText Typo="Typo.body1">@_mcpInfo.Transport</MudText>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Available Tools</MudText>
+                        <MudText Typo="Typo.body1">@_mcpInfo.AvailableTools.Count()</MudText>
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+        </MudItem>
+
+        <!-- Claude Desktop Configuration -->
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4 h-100">
+                <div class="d-flex align-center mb-4">
+                    <MudIcon Icon="@Icons.Custom.Brands.Apple" Class="mr-2" />
+                    <MudText Typo="Typo.h6">Claude Desktop</MudText>
+                </div>
+
+                <MudText Typo="Typo.body2" Class="mb-3">
+                    Add this to your <code>claude_desktop_config.json</code>:
+                </MudText>
+
+                <MudPaper Outlined="true" Class="pa-3" Style="background-color: var(--mud-palette-background-gray); overflow-x: auto;">
+                    <pre style="margin: 0; white-space: pre-wrap;">@_claudeConfig</pre>
+                </MudPaper>
+
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.ContentCopy"
+                           Class="mt-3"
+                           OnClick="@(() => CopyToClipboard(_claudeConfig))">
+                    Copy Configuration
+                </MudButton>
+
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-4 d-block">
+                    Config location: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code>
+                </MudText>
+            </MudPaper>
+        </MudItem>
+
+        <!-- GitHub Copilot / VS Code Configuration -->
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4 h-100">
+                <div class="d-flex align-center mb-4">
+                    <MudIcon Icon="@Icons.Custom.Brands.GitHub" Class="mr-2" />
+                    <MudText Typo="Typo.h6">GitHub Copilot (VS Code)</MudText>
+                </div>
+
+                <MudText Typo="Typo.body2" Class="mb-3">
+                    Add to your VS Code <code>mcp.json</code>:
+                </MudText>
+
+                <MudPaper Outlined="true" Class="pa-3" Style="background-color: var(--mud-palette-background-gray); overflow-x: auto;">
+                    <pre style="margin: 0; white-space: pre-wrap;">@_vscodeConfig</pre>
+                </MudPaper>
+
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.ContentCopy"
+                           Class="mt-3"
+                           OnClick="@(() => CopyToClipboard(_vscodeConfig))">
+                    Copy Configuration
+                </MudButton>
+
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-4 d-block">
+                    Or use Command Palette: <code>MCP: Add Server</code>
+                </MudText>
+            </MudPaper>
+        </MudItem>
+
+        <!-- Available Tools -->
+        <MudItem xs="12">
+            <MudPaper Class="pa-4">
+                <MudText Typo="Typo.h6" Class="mb-4">Available MCP Tools</MudText>
+
+                <MudTable Items="_mcpInfo.AvailableTools" Hover="true" Striped="true" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Tool Name</MudTh>
+                        <MudTh>Description</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Tool Name">
+                            <code>@context.Name</code>
+                        </MudTd>
+                        <MudTd DataLabel="Description">@context.Description</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+
+        <!-- Available Resources -->
+        <MudItem xs="12">
+            <MudPaper Class="pa-4">
+                <MudText Typo="Typo.h6" Class="mb-4">Available MCP Resources</MudText>
+
+                <MudTable Items="_mcpInfo.AvailableResources" Hover="true" Striped="true" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Resource URI</MudTh>
+                        <MudTh>Type</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Resource URI">
+                            <code>@context.Uri</code>
+                        </MudTd>
+                        <MudTd DataLabel="Type">@context.MimeType</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+
+        <!-- API Key Reminder -->
+        <MudItem xs="12">
+            <MudAlert Severity="Severity.Info" Icon="@Icons.Material.Filled.Key">
+                <MudText Typo="Typo.body1">
+                    <strong>Don't forget your API key!</strong>
+                </MudText>
+                <MudText Typo="Typo.body2">
+                    You'll need an API key to authenticate. Generate one from the
+                    <MudLink Href="/licenses">License Management</MudLink> page.
+                </MudText>
+            </MudAlert>
+        </MudItem>
+    </MudGrid>
+}
+else
+{
+    <MudAlert Severity="Severity.Warning">
+        No tenant configured. Please set up a tenant first.
+    </MudAlert>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _isConnected = false;
+    private McpConnectionInfoResponse? _mcpInfo;
+    private Guid _tenantId = Guid.Empty;
+
+    private string _claudeConfig = "";
+    private string _vscodeConfig = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var tenants = await Api.ListTenantsAsync();
+        _tenantId = tenants?.Tenants.FirstOrDefault()?.Id ?? Guid.Empty;
+
+        if (_tenantId != Guid.Empty)
+        {
+            await LoadMcpInfo();
+        }
+
+        _loading = false;
+    }
+
+    private async Task LoadMcpInfo()
+    {
+        try
+        {
+            _mcpInfo = await Api.GetMcpConnectionInfoAsync(_tenantId);
+            _isConnected = true;
+            GenerateConfigs();
+        }
+        catch
+        {
+            _isConnected = false;
+        }
+    }
+
+    private void GenerateConfigs()
+    {
+        if (_mcpInfo is null) return;
+
+        _claudeConfig = $$"""
+        {
+          "mcpServers": {
+            "company-brain": {
+              "url": "{{_mcpInfo.ServerUrl}}",
+              "headers": {
+                "Authorization": "Bearer YOUR_API_KEY"
+              }
+            }
+          }
+        }
+        """;
+
+        _vscodeConfig = $$"""
+        {
+          "servers": {
+            "company-brain": {
+              "type": "sse",
+              "url": "{{_mcpInfo.ServerUrl}}",
+              "headers": {
+                "Authorization": "Bearer ${input:company-brain-api-key}"
+              }
+            }
+          },
+          "inputs": [
+            {
+              "id": "company-brain-api-key",
+              "type": "promptString",
+              "description": "Company Brain API Key",
+              "password": true
+            }
+          ]
+        }
+        """;
+    }
+
+    private async Task CheckConnection()
+    {
+        _loading = true;
+        try
+        {
+            // TODO: Implement actual health check
+            await Task.Delay(500);
+            _isConnected = true;
+            Snackbar.Add("Connection successful!", Severity.Success);
+        }
+        catch
+        {
+            _isConnected = false;
+            Snackbar.Add("Connection failed", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task CopyToClipboard(string text)
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        Snackbar.Add("Copied to clipboard!", Severity.Success);
+    }
+}

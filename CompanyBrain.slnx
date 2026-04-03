@@ -3,6 +3,9 @@
     <Project Path="src/CompanyBrain.Core/CompanyBrain.Core.csproj" />
     <Project Path="src/CompanyBrain/CompanyBrain.csproj" />
     <Project Path="src/CompanyBrain.Mcp/CompanyBrain.Mcp.csproj" />
+    <Project Path="src/CompanyBrain.MultiTenant/CompanyBrain.MultiTenant.csproj" />
+    <Project Path="src/CompanyBrain.Dashboard/CompanyBrain.Dashboard.csproj" />
+    <Project Path="src/CompanyBrain.Dashboard.Server/CompanyBrain.Dashboard.Server.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CompanyBrain.Tests/CompanyBrain.Tests.csproj" />

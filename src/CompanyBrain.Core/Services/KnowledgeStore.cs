@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CompanyBrain.Services;
 
-internal sealed class KnowledgeStore
+public sealed class KnowledgeStore
 {
     private readonly ILogger<KnowledgeStore> logger;
     private readonly string rootPath;

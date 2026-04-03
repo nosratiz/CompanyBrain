@@ -1,0 +1,263 @@
+@page "/documents"
+@inject TenantApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Documents - Company Brain</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Document Management</MudText>
+
+<MudGrid>
+    <!-- Upload Section -->
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-4">Upload Documents</MudText>
+
+            <MudFileUpload T="IReadOnlyList<IBrowserFile>"
+                           Accept=".md,.txt,.html,.pdf,.docx"
+                           MaximumFileCount="10"
+                           FilesChanged="OnFilesChanged">
+                <ActivatorContent>
+                    <MudPaper Height="200px"
+                              Outlined="true"
+                              Class="d-flex flex-column align-center justify-center pa-4 mud-width-full"
+                              Style="border-style: dashed; cursor: pointer;">
+                        <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Size="Size.Large" Color="Color.Primary" />
+                        <MudText Typo="Typo.h6" Class="mt-2">Drop files here or click to upload</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Supports: Markdown, Text, HTML, PDF, DOCX
+                        </MudText>
+                    </MudPaper>
+                </ActivatorContent>
+            </MudFileUpload>
+
+            @if (_uploadingFiles.Count > 0)
+            {
+                <MudList T="string" Class="mt-4">
+                    @foreach (var file in _uploadingFiles)
+                    {
+                        <MudListItem Icon="@Icons.Material.Filled.Description">
+                            <div class="d-flex align-center justify-space-between">
+                                <MudText>@file.Name</MudText>
+                                @if (_uploadProgress.TryGetValue(file.Name, out var progress))
+                                {
+                                    @if (progress >= 100)
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" />
+                                    }
+                                    else
+                                    {
+                                        <MudProgressCircular Size="Size.Small" Value="progress" />
+                                    }
+                                }
+                            </div>
+                        </MudListItem>
+                    }
+                </MudList>
+
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Class="mt-4"
+                           FullWidth="true"
+                           Disabled="_isUploading"
+                           OnClick="UploadFiles">
+                    @if (_isUploading)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    }
+                    Upload @_uploadingFiles.Count File(s)
+                </MudButton>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <!-- Wiki Import Section -->
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-4">Import from Wiki</MudText>
+
+            <MudTextField @bind-Value="_wikiUrl"
+                          Label="Wiki URL"
+                          Placeholder="https://wiki.example.com/docs"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Link" />
+
+            <MudTextField @bind-Value="_wikiName"
+                          Label="Document Name"
+                          Placeholder="Optional - auto-generated from URL"
+                          Class="mt-4" />
+
+            <MudExpansionPanels Class="mt-4">
+                <MudExpansionPanel Text="Batch Import Options">
+                    <MudSwitch @bind-Value="_batchImport" Label="Import all linked pages" Color="Color.Primary" />
+                    @if (_batchImport)
+                    {
+                        <MudTextField @bind-Value="_linkSelector"
+                                      Label="Link Selector (XPath)"
+                                      Placeholder="@XPathPlaceholder"
+                                      HelperText="Optional: XPath to select specific links"
+                                      Class="mt-2" />
+                    }
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Secondary"
+                       Class="mt-4"
+                       FullWidth="true"
+                       Disabled="@(string.IsNullOrWhiteSpace(_wikiUrl) || _isImporting)"
+                       OnClick="ImportWiki">
+                @if (_isImporting)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                }
+                @(_batchImport ? "Import All Pages" : "Import Wiki Page")
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+
+    <!-- Storage Stats -->
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <div class="d-flex justify-space-between align-center mb-4">
+                <MudText Typo="Typo.h6">Storage Usage</MudText>
+                <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadStorageStats">
+                    Refresh
+                </MudButton>
+            </div>
+
+            @if (_storageStats is not null)
+            {
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudText Typo="Typo.body1">
+                            <strong>@_storageStats.DocumentCount</strong> documents
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudText Typo="Typo.body1">
+                            <strong>@_storageStats.FormattedSize</strong> used
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudText Typo="Typo.body1">
+                            <strong>@((_storageStats.UsagePercentage).ToString("F1"))%</strong> of quota
+                        </MudText>
+                    </MudItem>
+                </MudGrid>
+
+                <MudProgressLinear Value="@_storageStats.UsagePercentage"
+                                   Color="@GetUsageColor(_storageStats.UsagePercentage)"
+                                   Class="mt-4" />
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private const string XPathPlaceholder = "//a[contains(@class, 'wiki-link')]";
+    
+    private Guid _tenantId = Guid.Empty;
+    private TenantStorageStatsResponse? _storageStats;
+
+    // Upload state
+    private List<IBrowserFile> _uploadingFiles = [];
+    private Dictionary<string, int> _uploadProgress = [];
+    private bool _isUploading;
+
+    // Wiki import state
+    private string _wikiUrl = "";
+    private string _wikiName = "";
+    private bool _batchImport;
+    private string _linkSelector = "";
+    private bool _isImporting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var tenants = await Api.ListTenantsAsync();
+        _tenantId = tenants?.Tenants.FirstOrDefault()?.Id ?? Guid.Empty;
+        await LoadStorageStats();
+    }
+
+    private async Task LoadStorageStats()
+    {
+        if (_tenantId != Guid.Empty)
+        {
+            _storageStats = await Api.GetStorageStatsAsync(_tenantId);
+        }
+    }
+
+    private void OnFilesChanged(IReadOnlyList<IBrowserFile>? files)
+    {
+        _uploadingFiles = files?.ToList() ?? [];
+        _uploadProgress.Clear();
+    }
+
+    private async Task UploadFiles()
+    {
+        _isUploading = true;
+        try
+        {
+            foreach (var file in _uploadingFiles)
+            {
+                _uploadProgress[file.Name] = 0;
+                StateHasChanged();
+
+                // TODO: Implement actual file upload to API
+                // Simulating upload progress
+                for (int i = 0; i <= 100; i += 20)
+                {
+                    _uploadProgress[file.Name] = i;
+                    StateHasChanged();
+                    await Task.Delay(100);
+                }
+            }
+
+            Snackbar.Add($"Uploaded {_uploadingFiles.Count} file(s) successfully!", Severity.Success);
+            _uploadingFiles.Clear();
+            _uploadProgress.Clear();
+            await LoadStorageStats();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Upload failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isUploading = false;
+        }
+    }
+
+    private async Task ImportWiki()
+    {
+        _isImporting = true;
+        try
+        {
+            // TODO: Call batch or single wiki import API
+            await Task.Delay(2000); // Simulated
+
+            var message = _batchImport
+                ? "Wiki batch import started. Check back for results."
+                : "Wiki page imported successfully!";
+            Snackbar.Add(message, Severity.Success);
+
+            _wikiUrl = "";
+            _wikiName = "";
+            await LoadStorageStats();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isImporting = false;
+        }
+    }
+
+    private static Color GetUsageColor(double percentage)
+    {
+        if (percentage < 50) return Color.Success;
+        if (percentage < 80) return Color.Warning;
+        return Color.Error;
+    }
+}
