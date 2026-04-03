@@ -22,6 +22,14 @@ internal static class CompanyBrainApi
             .ProducesProblem(StatusCodes.Status502BadGateway)
             .DisableAntiforgery();
 
+        group.MapPost("/wiki/batch", IngestWikiBatchAsync)
+            .WithName("IngestWikiBatch")
+            .WithDescription("Discover all wiki links from a URL and ingest each one as a separate document.")
+            .Produces<IngestWikiBatchResponse>()
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status502BadGateway)
+            .DisableAntiforgery();
+
         group.MapPost("/documents/path", IngestDocumentPathAsync)
             .WithName("IngestDocumentFromPath")
             .Produces<IngestResultResponse>(StatusCodes.Status200OK)
@@ -74,6 +82,35 @@ internal static class CompanyBrainApi
 
         var document = result.Value;
         return TypedResults.Ok(new IngestResultResponse(document.FileName, document.ResourceUri, document.Existed));
+    }
+
+    private static async Task<IResult> IngestWikiBatchAsync(
+        IngestWikiBatchRequest request,
+        [FromServices] IValidator<IngestWikiBatchRequest> validator,
+        [FromServices] KnowledgeApplicationService service,
+        CancellationToken cancellationToken)
+    {
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
+        {
+            return validation.ToValidationProblem();
+        }
+
+        var result = await service.IngestWikiBatchAsync(request.Url, request.LinkSelector, cancellationToken);
+        if (result.IsFailed)
+        {
+            return result.ToProblemResult();
+        }
+
+        var batchResult = result.Value;
+        var responseItems = batchResult.Results.Select(r =>
+            new IngestWikiBatchItemResult(r.Url, r.Name, r.FileName, r.ResourceUri, r.Success, r.Error)).ToList();
+
+        return TypedResults.Ok(new IngestWikiBatchResponse(
+            batchResult.TotalDiscovered,
+            batchResult.SuccessfullyIngested,
+            batchResult.Failed,
+            responseItems));
     }
 
     private static async Task<IResult> IngestDocumentPathAsync(

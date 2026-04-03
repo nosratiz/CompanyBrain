@@ -11,6 +11,7 @@ internal static class CompanyBrainServiceCollectionExtensions
     {
         services.AddCompanyBrainCore(contentRootPath);
         services.AddSingleton<IValidator<IngestWikiRequest>, IngestWikiRequestValidator>();
+        services.AddSingleton<IValidator<IngestWikiBatchRequest>, IngestWikiBatchRequestValidator>();
         services.AddSingleton<IValidator<IngestPathRequest>, IngestPathRequestValidator>();
         services.AddSingleton<IValidator<SearchRequest>, SearchRequestValidator>();
         services.AddSingleton<IValidator<UploadDocumentRequest>, UploadDocumentRequestValidator>();

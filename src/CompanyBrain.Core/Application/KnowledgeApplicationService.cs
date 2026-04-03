@@ -50,6 +50,70 @@ internal sealed class KnowledgeApplicationService
         }
     }
 
+    public async Task<Result<WikiBatchIngestionResult>> IngestWikiBatchAsync(string baseUrl, string? linkSelector, CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Starting batch wiki ingestion from '{Url}'.", baseUrl);
+
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return Result.Fail<WikiBatchIngestionResult>(new ValidationAppError("An absolute http or https URL is required."));
+        }
+
+        IReadOnlyList<DiscoveredWikiLink> discoveredLinks;
+        try
+        {
+            discoveredLinks = await wikiIngester.DiscoverLinksAsync(uri, linkSelector, cancellationToken);
+        }
+        catch (HttpRequestException exception)
+        {
+            logger.LogWarning(exception, "Failed to discover wiki links from '{Url}'.", baseUrl);
+            return Result.Fail<WikiBatchIngestionResult>(new UpstreamAppError($"Failed to discover wiki links from '{baseUrl}'. {exception.Message}"));
+        }
+
+        if (discoveredLinks.Count == 0)
+        {
+            logger.LogWarning("No wiki links discovered from '{Url}'.", baseUrl);
+            return Result.Ok(new WikiBatchIngestionResult(0, 0, 0, []));
+        }
+
+        var results = new List<WikiBatchIngestionItemResult>();
+        var successCount = 0;
+        var failCount = 0;
+
+        foreach (var link in discoveredLinks)
+        {
+            try
+            {
+                logger.LogInformation("Ingesting wiki page '{Name}' from '{Url}'.", link.Name, link.Url);
+
+                var ingestResult = await IngestWikiAsync(link.Url, link.Name, cancellationToken);
+
+                if (ingestResult.IsSuccess)
+                {
+                    var doc = ingestResult.Value;
+                    results.Add(new WikiBatchIngestionItemResult(link.Url, link.Name, doc.FileName, doc.ResourceUri, true, null));
+                    successCount++;
+                }
+                else
+                {
+                    var errorMessage = string.Join("; ", ingestResult.Errors.Select(e => e.Message));
+                    results.Add(new WikiBatchIngestionItemResult(link.Url, link.Name, null, null, false, errorMessage));
+                    failCount++;
+                }
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogWarning(exception, "Unexpected error ingesting wiki page '{Name}' from '{Url}'.", link.Name, link.Url);
+                results.Add(new WikiBatchIngestionItemResult(link.Url, link.Name, null, null, false, exception.Message));
+                failCount++;
+            }
+        }
+
+        logger.LogInformation("Batch wiki ingestion from '{Url}' completed: {Success} succeeded, {Failed} failed.", baseUrl, successCount, failCount);
+
+        return Result.Ok(new WikiBatchIngestionResult(discoveredLinks.Count, successCount, failCount, results));
+    }
+
     public async Task<Result<SavedKnowledgeDocument>> IngestDocumentFromPathAsync(string localPath, string? name, CancellationToken cancellationToken)
     {
         logger.LogInformation("Ingesting document from local path '{LocalPath}' as '{Name}'.", localPath, name);

@@ -1,21 +1,27 @@
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
 using CompanyBrain.DependencyInjection;
 using CompanyBrain.Resources;
 using CompanyBrain.Mcp.Tools;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
-builder.Logging.ClearProviders();
-builder.Logging.AddDebug();
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenLocalhost(5003, listenOptions =>
+    {
+        listenOptions.UseHttps();
+    });
+});
 
 builder.Services.AddCompanyBrainCore(AppContext.BaseDirectory);
 builder.Services
     .AddMcpServer()
-    .WithStdioServerTransport()
+    .WithHttpTransport()
     .WithTools<CompanyBrainTools>()
     .WithListResourcesHandler(KnowledgeResourceHandlers.ListResourcesAsync)
     .WithReadResourceHandler(KnowledgeResourceHandlers.ReadResourceAsync);
 
-await builder.Build().RunAsync();
+var app = builder.Build();
+
+app.MapMcp();
+
+await app.RunAsync();
