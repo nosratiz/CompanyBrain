@@ -26,23 +26,24 @@ services:
       retries: 3
       start_period: 10s
 
-  # CompanyBrain UserPortal - User management and licensing portal
-  userportal:
+  # CompanyBrain Admin - User management and licensing admin panel
+  admin:
     build:
       context: .
-      dockerfile: src/CompanyBrain.UserPortal.Server/Dockerfile
-    image: companybrain-userportal:latest
-    container_name: companybrain-userportal
+      dockerfile: src/CompanyBrain.Admin.Server/Dockerfile
+    image: companybrain-admin:latest
+    container_name: companybrain-admin
     ports:
       - "8082:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__UserDb=Data Source=/app/data/userportal.db
-      - Jwt__Key=CompanyBrain_UserPortal_Docker_Secret_Key_Min32Chars!
-      - Jwt__Issuer=CompanyBrain.UserPortal
-    volumes:
-      - userportal-data:/app/data
+      - ConnectionStrings__AdminDb=Host=postgres;Port=5432;Database=companybrain_admin;Username=postgres;Password=postgres
+      - Jwt__Key=CompanyBrain_Admin_Docker_Secret_Key_Min32Chars!
+      - Jwt__Issuer=CompanyBrain.Admin
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -50,6 +51,25 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+
+  # PostgreSQL database for Admin Server
+  postgres:
+    image: postgres:17-alpine
+    container_name: companybrain-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=companybrain_admin
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # CompanyBrain MultiTenant - Multi-tenant management API
   multitenant:
@@ -80,7 +100,7 @@ services:
 volumes:
   api-data:
     driver: local
-  userportal-data:
+  postgres-data:
     driver: local
   multitenant-data:
     driver: local

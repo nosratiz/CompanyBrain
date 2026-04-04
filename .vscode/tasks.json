@@ -350,6 +350,26 @@
 			],
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "build all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"CompanyBrain.slnx",
+				"-nologo"
+			]
+		},
+		{
+			"label": "test all projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"test",
+				"CompanyBrain.slnx",
+				"-nologo"
+			]
 		}
 	]
 }
