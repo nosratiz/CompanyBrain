@@ -3,25 +3,18 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using CompanyBrain.UserPortal.Server.Domain;
+using CompanyBrain.UserPortal.Server.Services.Interfaces;
 
 namespace CompanyBrain.UserPortal.Server.Services;
 
-public interface IJwtService
-{
-    string GenerateToken(User user);
-    Guid? ValidateToken(string token);
-}
-
 public sealed class JwtService : IJwtService
 {
-    private readonly IConfiguration _configuration;
     private readonly string _key;
     private readonly string _issuer;
     private readonly int _expiryHours;
 
     public JwtService(IConfiguration configuration)
     {
-        _configuration = configuration;
         _key = configuration["Jwt:Key"] ?? "CompanyBrain_UserPortal_Secret_Key_Min32Chars!";
         _issuer = configuration["Jwt:Issuer"] ?? "CompanyBrain.UserPortal";
         _expiryHours = int.TryParse(configuration["Jwt:ExpiryHours"], out var hours) ? hours : 24;

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using MudBlazor.Services;
 using Blazored.LocalStorage;
+using CompanyBrain.UserPortal.Configuration;
 using CompanyBrain.UserPortal;
 using CompanyBrain.UserPortal.Services;
 
@@ -12,9 +13,19 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 builder.Services.AddMudServices();
 builder.Services.AddBlazoredLocalStorage();
 
+var backendApiOptions = builder.Configuration
+    .GetSection(BackendApiOptions.SectionName)
+    .Get<BackendApiOptions>()
+    ?? new BackendApiOptions();
+
+if (!Uri.TryCreate(backendApiOptions.BaseUrl, UriKind.Absolute, out var backendApiBaseUri))
+{
+    throw new InvalidOperationException("BackendApi:BaseUrl must be a valid absolute URL.");
+}
+
 builder.Services.AddScoped(_ => new HttpClient
 {
-    BaseAddress = new Uri(builder.HostEnvironment.BaseAddress)
+    BaseAddress = backendApiBaseUri
 });
 
 builder.Services.AddScoped<IAuthService, AuthService>();

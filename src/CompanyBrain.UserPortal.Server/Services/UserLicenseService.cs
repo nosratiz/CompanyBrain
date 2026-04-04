@@ -2,15 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using FluentResults;
 using CompanyBrain.UserPortal.Server.Data;
 using CompanyBrain.UserPortal.Server.Domain;
+using CompanyBrain.UserPortal.Server.Domain.Enums;
+using CompanyBrain.UserPortal.Server.Services.Interfaces;
 
 namespace CompanyBrain.UserPortal.Server.Services;
-
-public interface IUserLicenseService
-{
-    Task<IReadOnlyList<License>> GetUserLicensesAsync(Guid userId);
-    Task<License?> GetActiveLicenseAsync(Guid userId);
-    Task<Result<License>> PurchaseLicenseAsync(Guid userId, LicenseTier tier);
-}
 
 public sealed class UserLicenseService : IUserLicenseService
 {

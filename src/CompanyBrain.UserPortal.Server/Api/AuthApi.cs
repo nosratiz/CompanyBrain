@@ -1,5 +1,10 @@
 using System.Security.Claims;
-using CompanyBrain.UserPortal.Server.Services;
+using CompanyBrain.UserPortal.Server.Api.Contracts.Auth;
+using CompanyBrain.UserPortal.Server.Api.Contracts.Shared;
+using CompanyBrain.UserPortal.Server.Api.Mapping;
+using CompanyBrain.UserPortal.Server.Api.Validation;
+using CompanyBrain.UserPortal.Server.Services.Interfaces;
+using FluentValidation;
 
 namespace CompanyBrain.UserPortal.Server.Api;
 
@@ -19,66 +24,54 @@ public static class AuthApi
 
     private static async Task<IResult> RegisterAsync(
         RegisterRequest request,
+        IValidator<RegisterRequest> validator,
         IUserService userService,
-        IJwtService jwtService)
+        IJwtService jwtService,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Email) || 
-            string.IsNullOrWhiteSpace(request.Password) ||
-            string.IsNullOrWhiteSpace(request.FullName))
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
         {
-            return Results.BadRequest(new { Error = "Email, password, and full name are required" });
-        }
-
-        if (request.Password.Length < 8)
-        {
-            return Results.BadRequest(new { Error = "Password must be at least 8 characters" });
+            return validation.ToValidationProblem();
         }
 
         var result = await userService.RegisterAsync(request.Email, request.Password, request.FullName);
 
         if (result.IsFailed)
         {
-            return Results.BadRequest(new { Error = result.Errors.First().Message });
+            return TypedResults.BadRequest(new ErrorResponse(result.Errors.First().Message));
         }
 
         var user = result.Value;
         var token = jwtService.GenerateToken(user);
 
-        return Results.Ok(new RegisterResponse
-        {
-            UserId = user.Id,
-            Email = user.Email,
-            Token = token
-        });
+        return TypedResults.Ok(UserPortalApiMapper.ToRegisterResponse(user, token));
     }
 
     private static async Task<IResult> LoginAsync(
         LoginRequest request,
+        IValidator<LoginRequest> validator,
         IUserService userService,
-        IJwtService jwtService)
+        IJwtService jwtService,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
         {
-            return Results.BadRequest(new { Error = "Email and password are required" });
+            return validation.ToValidationProblem();
         }
 
         var result = await userService.LoginAsync(request.Email, request.Password);
 
         if (result.IsFailed)
         {
-            return Results.BadRequest(new { Error = result.Errors.First().Message });
+            return TypedResults.BadRequest(new ErrorResponse(result.Errors.First().Message));
         }
 
         var user = result.Value;
         var token = jwtService.GenerateToken(user);
 
-        return Results.Ok(new LoginResponse
-        {
-            UserId = user.Id,
-            Email = user.Email,
-            FullName = user.FullName,
-            Token = token
-        });
+        return TypedResults.Ok(UserPortalApiMapper.ToLoginResponse(user, token));
     }
 
     private static async Task<IResult> GetCurrentUserAsync(
@@ -95,40 +88,9 @@ public static class AuthApi
         var user = await userService.GetByIdAsync(userId);
         if (user is null)
         {
-            return Results.NotFound();
+            return TypedResults.NotFound(new ErrorResponse("User not found"));
         }
 
-        return Results.Ok(new UserInfo
-        {
-            Id = user.Id,
-            Email = user.Email,
-            FullName = user.FullName,
-            CreatedAt = user.CreatedAt
-        });
+        return TypedResults.Ok(UserPortalApiMapper.ToUserInfoResponse(user));
     }
-}
-
-public sealed record RegisterRequest(string Email, string Password, string FullName);
-public sealed record RegisterResponse
-{
-    public Guid UserId { get; init; }
-    public required string Email { get; init; }
-    public required string Token { get; init; }
-}
-
-public sealed record LoginRequest(string Email, string Password);
-public sealed record LoginResponse
-{
-    public Guid UserId { get; init; }
-    public required string Email { get; init; }
-    public required string FullName { get; init; }
-    public required string Token { get; init; }
-}
-
-public sealed record UserInfo
-{
-    public Guid Id { get; init; }
-    public required string Email { get; init; }
-    public required string FullName { get; init; }
-    public DateTime CreatedAt { get; init; }
 }

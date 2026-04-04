@@ -2,16 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using FluentResults;
 using CompanyBrain.UserPortal.Server.Data;
 using CompanyBrain.UserPortal.Server.Domain;
+using CompanyBrain.UserPortal.Server.Domain.Enums;
+using CompanyBrain.UserPortal.Server.Services.Interfaces;
 
 namespace CompanyBrain.UserPortal.Server.Services;
-
-public interface IUserService
-{
-    Task<Result<User>> RegisterAsync(string email, string password, string fullName);
-    Task<Result<User>> LoginAsync(string email, string password);
-    Task<User?> GetByIdAsync(Guid userId);
-    Task<bool> EmailExistsAsync(string email);
-}
 
 public sealed class UserService : IUserService
 {

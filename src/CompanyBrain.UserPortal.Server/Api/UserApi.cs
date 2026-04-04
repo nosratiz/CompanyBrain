@@ -1,6 +1,10 @@
 using System.Security.Claims;
-using CompanyBrain.UserPortal.Server.Domain;
-using CompanyBrain.UserPortal.Server.Services;
+using CompanyBrain.UserPortal.Server.Api.Contracts.Shared;
+using CompanyBrain.UserPortal.Server.Api.Contracts.User;
+using CompanyBrain.UserPortal.Server.Api.Mapping;
+using CompanyBrain.UserPortal.Server.Api.Validation;
+using CompanyBrain.UserPortal.Server.Services.Interfaces;
+using FluentValidation;
 
 namespace CompanyBrain.UserPortal.Server.Api;
 
@@ -44,18 +48,7 @@ public static class UserApi
 
         var licenses = await licenseService.GetUserLicensesAsync(userId.Value);
 
-        return Results.Ok(licenses.Select(l => new LicenseDto
-        {
-            Id = l.Id,
-            PlanName = l.PlanName,
-            Tier = l.Tier.ToString(),
-            PurchasedAt = l.PurchasedAt,
-            ExpiresAt = l.ExpiresAt,
-            MaxApiKeys = l.MaxApiKeys,
-            MaxDocuments = l.MaxDocuments,
-            MaxStorageBytes = l.MaxStorageBytes,
-            IsActive = l.IsActive
-        }));
+        return TypedResults.Ok(licenses.Select(UserPortalApiMapper.ToLicenseResponse));
     }
 
     private static async Task<IResult> GetActiveLicenseAsync(
@@ -69,56 +62,41 @@ public static class UserApi
 
         if (license is null)
         {
-            return Results.NotFound(new { Error = "No active license found" });
+            return TypedResults.NotFound(new ErrorResponse("No active license found"));
         }
 
-        return Results.Ok(new LicenseDto
-        {
-            Id = license.Id,
-            PlanName = license.PlanName,
-            Tier = license.Tier.ToString(),
-            PurchasedAt = license.PurchasedAt,
-            ExpiresAt = license.ExpiresAt,
-            MaxApiKeys = license.MaxApiKeys,
-            MaxDocuments = license.MaxDocuments,
-            MaxStorageBytes = license.MaxStorageBytes,
-            IsActive = license.IsActive
-        });
+        return TypedResults.Ok(UserPortalApiMapper.ToLicenseResponse(license));
     }
 
     private static async Task<IResult> PurchaseLicenseAsync(
         PurchaseLicenseRequest request,
         ClaimsPrincipal principal,
-        IUserLicenseService licenseService)
+        IUserLicenseService licenseService,
+        IValidator<PurchaseLicenseRequest> validator,
+        CancellationToken cancellationToken)
     {
         var userId = GetUserId(principal);
         if (!userId.HasValue) return Results.Unauthorized();
 
-        if (!Enum.TryParse<LicenseTier>(request.Tier, ignoreCase: true, out var tier))
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
         {
-            return Results.BadRequest(new { Error = "Invalid license tier" });
+            return validation.ToValidationProblem();
+        }
+
+        if (!UserPortalApiMapper.TryMapLicenseTier(request.Tier, out var tier))
+        {
+            return TypedResults.BadRequest(new ErrorResponse("Invalid license tier"));
         }
 
         var result = await licenseService.PurchaseLicenseAsync(userId.Value, tier);
 
         if (result.IsFailed)
         {
-            return Results.BadRequest(new { Error = result.Errors.First().Message });
+            return TypedResults.BadRequest(new ErrorResponse(result.Errors.First().Message));
         }
 
-        var license = result.Value;
-        return Results.Ok(new LicenseDto
-        {
-            Id = license.Id,
-            PlanName = license.PlanName,
-            Tier = license.Tier.ToString(),
-            PurchasedAt = license.PurchasedAt,
-            ExpiresAt = license.ExpiresAt,
-            MaxApiKeys = license.MaxApiKeys,
-            MaxDocuments = license.MaxDocuments,
-            MaxStorageBytes = license.MaxStorageBytes,
-            IsActive = license.IsActive
-        });
+        return TypedResults.Ok(UserPortalApiMapper.ToLicenseResponse(result.Value));
     }
 
     #endregion
@@ -135,55 +113,36 @@ public static class UserApi
 
         var keys = await apiKeyService.GetUserApiKeysAsync(userId.Value, includeRevoked);
 
-        return Results.Ok(keys.Select(k => new ApiKeyDto
-        {
-            Id = k.Id,
-            Name = k.Name,
-            KeyPrefix = k.KeyPrefix + "***",
-            Scope = k.Scope.ToString(),
-            CreatedAt = k.CreatedAt,
-            ExpiresAt = k.ExpiresAt,
-            LastUsedAt = k.LastUsedAt,
-            IsRevoked = k.IsRevoked
-        }));
+        return TypedResults.Ok(keys.Select(UserPortalApiMapper.ToApiKeyResponse));
     }
 
     private static async Task<IResult> CreateApiKeyAsync(
         CreateApiKeyRequest request,
         ClaimsPrincipal principal,
-        IUserApiKeyService apiKeyService)
+        IUserApiKeyService apiKeyService,
+        IValidator<CreateApiKeyRequest> validator,
+        CancellationToken cancellationToken)
     {
         var userId = GetUserId(principal);
         if (!userId.HasValue) return Results.Unauthorized();
 
-        if (string.IsNullOrWhiteSpace(request.Name))
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
         {
-            return Results.BadRequest(new { Error = "Name is required" });
+            return validation.ToValidationProblem();
         }
 
-        if (!Enum.TryParse<ApiKeyScope>(request.Scope, ignoreCase: true, out var scope))
-        {
-            scope = ApiKeyScope.ReadOnly;
-        }
+        var scope = UserPortalApiMapper.MapApiKeyScope(request.Scope);
 
         var result = await apiKeyService.CreateApiKeyAsync(userId.Value, request.Name, scope, request.ExpiresAt);
 
         if (result.IsFailed)
         {
-            return Results.BadRequest(new { Error = result.Errors.First().Message });
+            return TypedResults.BadRequest(new ErrorResponse(result.Errors.First().Message));
         }
 
         var (plainKey, apiKey) = result.Value;
-
-        return Results.Ok(new ApiKeyCreatedResponse
-        {
-            Id = apiKey.Id,
-            Name = apiKey.Name,
-            Key = plainKey,
-            Scope = apiKey.Scope.ToString(),
-            CreatedAt = apiKey.CreatedAt,
-            ExpiresAt = apiKey.ExpiresAt
-        });
+        return TypedResults.Ok(UserPortalApiMapper.ToApiKeyCreatedResponse(plainKey, apiKey));
     }
 
     private static async Task<IResult> RevokeApiKeyAsync(
@@ -198,54 +157,11 @@ public static class UserApi
 
         if (result.IsFailed)
         {
-            return Results.BadRequest(new { Error = result.Errors.First().Message });
+            return TypedResults.BadRequest(new ErrorResponse(result.Errors.First().Message));
         }
 
-        return Results.Ok(new { Message = "API key revoked successfully" });
+        return TypedResults.Ok(new MessageResponse("API key revoked successfully"));
     }
 
     #endregion
 }
-
-#region DTOs
-
-public sealed record LicenseDto
-{
-    public Guid Id { get; init; }
-    public required string PlanName { get; init; }
-    public required string Tier { get; init; }
-    public DateTime PurchasedAt { get; init; }
-    public DateTime? ExpiresAt { get; init; }
-    public int MaxApiKeys { get; init; }
-    public int MaxDocuments { get; init; }
-    public long MaxStorageBytes { get; init; }
-    public bool IsActive { get; init; }
-}
-
-public sealed record PurchaseLicenseRequest(string Tier);
-
-public sealed record ApiKeyDto
-{
-    public Guid Id { get; init; }
-    public required string Name { get; init; }
-    public required string KeyPrefix { get; init; }
-    public required string Scope { get; init; }
-    public DateTime CreatedAt { get; init; }
-    public DateTime? ExpiresAt { get; init; }
-    public DateTime? LastUsedAt { get; init; }
-    public bool IsRevoked { get; init; }
-}
-
-public sealed record CreateApiKeyRequest(string Name, string? Scope, DateTime? ExpiresAt);
-
-public sealed record ApiKeyCreatedResponse
-{
-    public Guid Id { get; init; }
-    public required string Name { get; init; }
-    public required string Key { get; init; }
-    public required string Scope { get; init; }
-    public DateTime CreatedAt { get; init; }
-    public DateTime? ExpiresAt { get; init; }
-}
-
-#endregion
