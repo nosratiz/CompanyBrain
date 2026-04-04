@@ -31,6 +31,7 @@ builder.Services.AddScoped(_ => new HttpClient
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILicenseService, LicenseService>();
 builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
+builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<AuthStateProvider>();
 
 await builder.Build().RunAsync();

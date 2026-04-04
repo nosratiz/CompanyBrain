@@ -1,0 +1,259 @@
+@page "/admin/users"
+@layout MainLayout
+
+<PageTitle>Manage Users - CompanyBrain Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-6">
+        <div>
+            <MudText Typo="Typo.h4" Style="font-weight: 700;">
+                <MudIcon Icon="@Icons.Material.Filled.People" Class="mr-2" Style="color: #667eea;" />
+                User Management
+            </MudText>
+            <MudText Typo="Typo.body1" Style="color: #6b7280;">
+                View and manage all registered users (@_totalCount total)
+            </MudText>
+        </div>
+        <MudTextField @bind-Value="_searchText" Placeholder="Search users..." Variant="Variant.Outlined"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true" DebounceInterval="400" OnDebounceIntervalElapsed="OnSearchChanged"
+                      Style="max-width: 300px;" />
+    </MudStack>
+
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Style="border-radius: 8px;" />
+    }
+    else
+    {
+        <MudPaper Class="modern-card" Style="overflow: hidden;">
+            <MudTable Items="_filteredUsers" Hover="true" Elevation="0" Dense="false"
+                      Style="background: transparent;">
+                <HeaderContent>
+                    <MudTh Style="font-weight: 600; color: #6b7280; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">User</MudTh>
+                    <MudTh Style="font-weight: 600; color: #6b7280; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">Email</MudTh>
+                    <MudTh Style="font-weight: 600; color: #6b7280; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">Registered</MudTh>
+                    <MudTh Style="font-weight: 600; color: #6b7280; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">Licenses</MudTh>
+                    <MudTh Style="font-weight: 600; color: #6b7280; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">Status</MudTh>
+                    <MudTh Style="font-weight: 600; color: #6b7280; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; text-align: right;">Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="User">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudAvatar Size="Size.Small" Style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 0.75rem;">
+                                @context.FullName.FirstOrDefault().ToString().ToUpper()
+                            </MudAvatar>
+                            <MudText Style="font-weight: 500;">@context.FullName</MudText>
+                        </MudStack>
+                    </MudTd>
+                    <MudTd DataLabel="Email">
+                        <MudText Typo="Typo.body2" Style="color: #6b7280;">@context.Email</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Registered">@context.CreatedAt.ToString("MMM dd, yyyy")</MudTd>
+                    <MudTd DataLabel="Licenses">
+                        @{
+                            var activeLicense = context.Licenses.FirstOrDefault(l => l.IsActive);
+                        }
+                        @if (activeLicense is not null)
+                        {
+                            <MudChip T="string" Size="Size.Small" Style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%); color: #667eea;">
+                                @activeLicense.PlanName
+                            </MudChip>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Style="color: #9ca3af;">None</MudText>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        @if (context.IsActive)
+                        {
+                            <span class="status-badge active">Active</span>
+                        }
+                        else
+                        {
+                            <span class="status-badge revoked">Inactive</span>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Actions" Style="text-align: right;">
+                        <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                       Href="@($"/admin/users/{context.Id}")" Style="color: #667eea;" />
+                        @if (context.IsActive)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Block" Size="Size.Small"
+                                           OnClick="() => ConfirmStatusChange(context, false)"
+                                           Style="color: #f2994a;" />
+                        }
+                        else
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small"
+                                           OnClick="() => ConfirmStatusChange(context, true)"
+                                           Style="color: #11998e;" />
+                        }
+                        <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small"
+                                       OnClick="() => ConfirmDelete(context)"
+                                       Style="color: #f5576c;" />
+                    </MudTd>
+                </RowTemplate>
+                <PagerContent>
+                    <MudTablePager PageSizeOptions="new[] { 10, 20, 50 }" />
+                </PagerContent>
+            </MudTable>
+        </MudPaper>
+    }
+</MudContainer>
+
+@* Status Change Dialog *@
+<MudDialog @bind-Visible="_showStatusDialog" Options="new DialogOptions { MaxWidth = MaxWidth.ExtraSmall }">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Style="font-weight: 600;">
+            <MudIcon Icon="@(_newStatus ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Block)" Class="mr-2"
+                     Style="@($"color: {(_newStatus ? "#11998e" : "#f2994a")};")" />
+            @(_newStatus ? "Activate" : "Deactivate") User?
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>
+            Are you sure you want to @(_newStatus ? "activate" : "deactivate")
+            "<strong>@_selectedUser?.FullName</strong>"?
+        </MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showStatusDialog = false">Cancel</MudButton>
+        <MudButton OnClick="ChangeStatusAsync" Variant="Variant.Filled"
+                   Color="@(_newStatus ? Color.Success : Color.Warning)">
+            @(_newStatus ? "Activate" : "Deactivate")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* Delete Dialog *@
+<MudDialog @bind-Visible="_showDeleteDialog" Options="new DialogOptions { MaxWidth = MaxWidth.ExtraSmall }">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Style="color: #f5576c;">
+            <MudIcon Icon="@Icons.Material.Filled.Warning" Class="mr-2" />
+            Delete User?
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>Are you sure you want to delete "<strong>@_selectedUser?.FullName</strong>"? This action cannot be undone.</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showDeleteDialog = false">Cancel</MudButton>
+        <MudButton OnClick="DeleteUserAsync" Variant="Variant.Filled" Color="Color.Error">Delete User</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Inject] private IAdminService AdminService { get; set; } = default!;
+    [Inject] private AuthStateProvider AuthState { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    private List<AdminUserDetail> _users = [];
+    private List<AdminUserDetail> _filteredUsers = [];
+    private int _totalCount;
+    private bool _isLoading = true;
+    private string? _searchText;
+    private bool _showStatusDialog;
+    private bool _showDeleteDialog;
+    private AdminUserDetail? _selectedUser;
+    private bool _newStatus;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await AuthState.IsAuthenticatedAsync())
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadUsersAsync();
+    }
+
+    private async Task LoadUsersAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var result = await AdminService.GetAllUsersAsync(1, 100);
+            _users = result.Items.ToList();
+            _totalCount = result.TotalCount;
+            ApplyFilter();
+        }
+        catch
+        {
+            Snackbar.Add("Failed to load users", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void OnSearchChanged(string text)
+    {
+        _searchText = text;
+        ApplyFilter();
+    }
+
+    private void ApplyFilter()
+    {
+        if (string.IsNullOrWhiteSpace(_searchText))
+        {
+            _filteredUsers = _users;
+        }
+        else
+        {
+            var search = _searchText.ToLowerInvariant();
+            _filteredUsers = _users.Where(u =>
+                u.FullName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                u.Email.Contains(search, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+    }
+
+    private void ConfirmStatusChange(AdminUserDetail user, bool newStatus)
+    {
+        _selectedUser = user;
+        _newStatus = newStatus;
+        _showStatusDialog = true;
+    }
+
+    private void ConfirmDelete(AdminUserDetail user)
+    {
+        _selectedUser = user;
+        _showDeleteDialog = true;
+    }
+
+    private async Task ChangeStatusAsync()
+    {
+        if (_selectedUser is null) return;
+        var success = await AdminService.SetUserStatusAsync(_selectedUser.Id, _newStatus);
+        _showStatusDialog = false;
+        if (success)
+        {
+            Snackbar.Add($"User {(_newStatus ? "activated" : "deactivated")} successfully", Severity.Success);
+            await LoadUsersAsync();
+        }
+        else
+        {
+            Snackbar.Add("Failed to update user status", Severity.Error);
+        }
+    }
+
+    private async Task DeleteUserAsync()
+    {
+        if (_selectedUser is null) return;
+        var success = await AdminService.DeleteUserAsync(_selectedUser.Id);
+        _showDeleteDialog = false;
+        if (success)
+        {
+            Snackbar.Add("User deleted successfully", Severity.Success);
+            await LoadUsersAsync();
+        }
+        else
+        {
+            Snackbar.Add("Failed to delete user", Severity.Error);
+        }
+    }
+}

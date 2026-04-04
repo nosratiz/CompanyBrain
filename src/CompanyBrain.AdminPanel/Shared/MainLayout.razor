@@ -73,6 +73,25 @@
                             ActiveClass="nav-active">
                     Profile
                 </MudNavLink>
+
+                <div style="margin: 1rem 0.5rem 0.5rem; padding: 0 0.5rem;">
+                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 1px; font-size: 0.65rem; font-weight: 600;">
+                        Administration
+                    </MudText>
+                </div>
+
+                <MudNavLink Href="/admin/users" Match="NavLinkMatch.Prefix" 
+                            Icon="@Icons.Material.Filled.SupervisedUserCircle"
+                            Style="color: white; margin: 4px 8px; border-radius: 12px;"
+                            ActiveClass="nav-active">
+                    Manage Users
+                </MudNavLink>
+                <MudNavLink Href="/admin/licenses" Match="NavLinkMatch.Prefix" 
+                            Icon="@Icons.Material.Filled.AdminPanelSettings"
+                            Style="color: white; margin: 4px 8px; border-radius: 12px;"
+                            ActiveClass="nav-active">
+                    Manage Licenses
+                </MudNavLink>
             </MudNavMenu>
             <MudSpacer />
             <div style="padding: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
