@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using CompanyBrain.MultiTenant.Data;
 using CompanyBrain.MultiTenant.Domain;
 using FluentResults;
@@ -20,25 +19,15 @@ public sealed partial class TenantService(
         TenantPlan plan = TenantPlan.Free,
         CancellationToken cancellationToken = default)
     {
-        var slug = GenerateSlug(name);
+        var slug = Tenant.GenerateSlug(name);
 
-        // Check for duplicate slug
         if (await dbContext.Tenants.AnyAsync(t => t.Slug == slug, cancellationToken))
         {
             logger.LogWarning("Tenant creation failed: slug '{Slug}' already exists.", slug);
             return Result.Fail<Tenant>($"A tenant with slug '{slug}' already exists.");
         }
 
-        var tenant = new Tenant
-        {
-            Name = name,
-            Slug = slug,
-            Description = description,
-            Plan = plan,
-            MaxDocuments = GetMaxDocuments(plan),
-            MaxApiKeys = GetMaxApiKeys(plan),
-            MaxStorageBytes = GetMaxStorageBytes(plan)
-        };
+        var tenant = Tenant.Create(name, description, plan);
 
         dbContext.Tenants.Add(tenant);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -107,11 +96,7 @@ public sealed partial class TenantService(
             return Result.Fail<Tenant>($"Tenant {tenantId} not found.");
         }
 
-        tenant.Plan = newPlan;
-        tenant.MaxDocuments = GetMaxDocuments(newPlan);
-        tenant.MaxApiKeys = GetMaxApiKeys(newPlan);
-        tenant.MaxStorageBytes = GetMaxStorageBytes(newPlan);
-        tenant.UpdatedAt = DateTime.UtcNow;
+        tenant.UpdatePlan(newPlan);
 
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Updated tenant {TenantId} to plan {Plan}.", tenantId, newPlan);
@@ -130,57 +115,11 @@ public sealed partial class TenantService(
             return Result.Fail($"Tenant {tenantId} not found.");
         }
 
-        tenant.Status = TenantStatus.Suspended;
-        tenant.UpdatedAt = DateTime.UtcNow;
+        tenant.Suspend();
 
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogWarning("Suspended tenant {TenantId}.", tenantId);
 
         return Result.Ok();
     }
-
-    private static string GenerateSlug(string name)
-    {
-        var slug = name.ToLowerInvariant();
-        slug = SlugInvalidChars().Replace(slug, "");
-        slug = SlugWhitespace().Replace(slug, "-");
-        slug = SlugMultipleDashes().Replace(slug, "-");
-        return slug.Trim('-');
-    }
-
-    private static int GetMaxDocuments(TenantPlan plan) => plan switch
-    {
-        TenantPlan.Free => 100,
-        TenantPlan.Starter => 500,
-        TenantPlan.Professional => 2_000,
-        TenantPlan.Enterprise => 50_000,
-        _ => 100
-    };
-
-    private static int GetMaxApiKeys(TenantPlan plan) => plan switch
-    {
-        TenantPlan.Free => 3,
-        TenantPlan.Starter => 10,
-        TenantPlan.Professional => 25,
-        TenantPlan.Enterprise => 100,
-        _ => 3
-    };
-
-    private static long GetMaxStorageBytes(TenantPlan plan) => plan switch
-    {
-        TenantPlan.Free => 100 * 1024 * 1024,           // 100 MB
-        TenantPlan.Starter => 1024 * 1024 * 1024,        // 1 GB
-        TenantPlan.Professional => 10L * 1024 * 1024 * 1024,  // 10 GB
-        TenantPlan.Enterprise => 100L * 1024 * 1024 * 1024,   // 100 GB
-        _ => 100 * 1024 * 1024
-    };
-
-    [GeneratedRegex("[^a-z0-9\\s-]")]
-    private static partial Regex SlugInvalidChars();
-
-    [GeneratedRegex("\\s+")]
-    private static partial Regex SlugWhitespace();
-
-    [GeneratedRegex("-+")]
-    private static partial Regex SlugMultipleDashes();
 }

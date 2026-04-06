@@ -3,6 +3,7 @@ using CompanyBrain.Admin.Server.Api.Contracts.Shared;
 using CompanyBrain.Admin.Server.Api.Contracts.User;
 using CompanyBrain.Admin.Server.Api.Mapping;
 using CompanyBrain.Admin.Server.Api.Validation;
+using CompanyBrain.Admin.Server.Domain.Enums;
 using CompanyBrain.Admin.Server.Services.Interfaces;
 using FluentValidation;
 
@@ -41,24 +42,26 @@ public static class UserApi
 
     private static async Task<IResult> GetUserLicensesAsync(
         ClaimsPrincipal principal,
-        IUserLicenseService licenseService)
+        IUserLicenseService licenseService,
+        CancellationToken cancellationToken)
     {
         var userId = GetUserId(principal);
         if (!userId.HasValue) return Results.Unauthorized();
 
-        var licenses = await licenseService.GetUserLicensesAsync(userId.Value);
+        var licenses = await licenseService.GetUserLicensesAsync(userId.Value, cancellationToken);
 
         return TypedResults.Ok(licenses.Select(AdminApiMapper.ToLicenseResponse));
     }
 
     private static async Task<IResult> GetActiveLicenseAsync(
         ClaimsPrincipal principal,
-        IUserLicenseService licenseService)
+        IUserLicenseService licenseService,
+        CancellationToken cancellationToken)
     {
         var userId = GetUserId(principal);
         if (!userId.HasValue) return Results.Unauthorized();
 
-        var license = await licenseService.GetActiveLicenseAsync(userId.Value);
+        var license = await licenseService.GetActiveLicenseAsync(userId.Value, cancellationToken);
 
         if (license is null)
         {
@@ -84,12 +87,9 @@ public static class UserApi
             return validation.ToValidationProblem();
         }
 
-        if (!AdminApiMapper.TryMapLicenseTier(request.Tier, out var tier))
-        {
-            return TypedResults.BadRequest(new ErrorResponse("Invalid license tier"));
-        }
+        var tier = Enum.Parse<LicenseTier>(request.Tier, ignoreCase: true);
 
-        var result = await licenseService.PurchaseLicenseAsync(userId.Value, tier);
+        var result = await licenseService.PurchaseLicenseAsync(userId.Value, tier, cancellationToken);
 
         if (result.IsFailed)
         {
@@ -106,12 +106,13 @@ public static class UserApi
     private static async Task<IResult> GetUserApiKeysAsync(
         ClaimsPrincipal principal,
         IUserApiKeyService apiKeyService,
+        CancellationToken cancellationToken,
         bool includeRevoked = false)
     {
         var userId = GetUserId(principal);
         if (!userId.HasValue) return Results.Unauthorized();
 
-        var keys = await apiKeyService.GetUserApiKeysAsync(userId.Value, includeRevoked);
+        var keys = await apiKeyService.GetUserApiKeysAsync(userId.Value, includeRevoked, cancellationToken);
 
         return TypedResults.Ok(keys.Select(AdminApiMapper.ToApiKeyResponse));
     }
@@ -134,7 +135,7 @@ public static class UserApi
 
         var scope = AdminApiMapper.MapApiKeyScope(request.Scope);
 
-        var result = await apiKeyService.CreateApiKeyAsync(userId.Value, request.Name, scope, request.ExpiresAt);
+        var result = await apiKeyService.CreateApiKeyAsync(userId.Value, request.Name, scope, request.ExpiresAt, cancellationToken);
 
         if (result.IsFailed)
         {
@@ -148,12 +149,13 @@ public static class UserApi
     private static async Task<IResult> RevokeApiKeyAsync(
         Guid keyId,
         ClaimsPrincipal principal,
-        IUserApiKeyService apiKeyService)
+        IUserApiKeyService apiKeyService,
+        CancellationToken cancellationToken)
     {
         var userId = GetUserId(principal);
         if (!userId.HasValue) return Results.Unauthorized();
 
-        var result = await apiKeyService.RevokeApiKeyAsync(userId.Value, keyId);
+        var result = await apiKeyService.RevokeApiKeyAsync(userId.Value, keyId, cancellationToken);
 
         if (result.IsFailed)
         {

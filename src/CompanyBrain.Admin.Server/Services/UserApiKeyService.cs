@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.EntityFrameworkCore;
 using FluentResults;
 using CompanyBrain.Admin.Server.Data;
@@ -9,82 +7,67 @@ using CompanyBrain.Admin.Server.Services.Interfaces;
 
 namespace CompanyBrain.Admin.Server.Services;
 
-public sealed class UserApiKeyService : IUserApiKeyService
+public sealed class UserApiKeyService(UserDbContext dbContext, IUserLicenseService licenseService) : IUserApiKeyService
 {
     private const string KeyPrefix = "cb_";
-    private readonly UserDbContext _dbContext;
-    private readonly IUserLicenseService _licenseService;
 
-    public UserApiKeyService(UserDbContext dbContext, IUserLicenseService licenseService)
+    public async Task<IReadOnlyList<UserApiKey>> GetUserApiKeysAsync(Guid userId, bool includeRevoked = false, CancellationToken cancellationToken = default)
     {
-        _dbContext = dbContext;
-        _licenseService = licenseService;
-    }
-
-    public async Task<IReadOnlyList<UserApiKey>> GetUserApiKeysAsync(Guid userId, bool includeRevoked = false)
-    {
-        var query = _dbContext.ApiKeys.Where(k => k.UserId == userId);
+        var query = dbContext.ApiKeys.Where(k => k.UserId == userId);
 
         if (!includeRevoked)
         {
             query = query.Where(k => !k.IsRevoked);
         }
 
-        return await query.OrderByDescending(k => k.CreatedAt).ToListAsync();
+        return await query.OrderByDescending(k => k.CreatedAt).ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<UserApiKey>> GetAllApiKeysAsync(int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        return await dbContext.ApiKeys
+            .Include(k => k.User)
+            .OrderByDescending(k => k.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<int> GetTotalApiKeyCountAsync(CancellationToken cancellationToken = default)
+    {
+        return await dbContext.ApiKeys.CountAsync(cancellationToken);
     }
 
     public async Task<Result<(string PlainKey, UserApiKey ApiKey)>> CreateApiKeyAsync(
-        Guid userId, string name, ApiKeyScope scope, DateTime? expiresAt)
+        Guid userId, string name, ApiKeyScope scope, DateTime? expiresAt, CancellationToken cancellationToken = default)
     {
         // Check license limits
-        var license = await _licenseService.GetActiveLicenseAsync(userId);
+        var license = await licenseService.GetActiveLicenseAsync(userId, cancellationToken);
         if (license is null)
         {
             return Result.Fail<(string, UserApiKey)>("No active license found");
         }
 
-        var currentKeyCount = await _dbContext.ApiKeys
-            .CountAsync(k => k.UserId == userId && !k.IsRevoked);
+        var currentKeyCount = await dbContext.ApiKeys
+            .CountAsync(k => k.UserId == userId && !k.IsRevoked, cancellationToken);
 
         if (currentKeyCount >= license.MaxApiKeys)
         {
             return Result.Fail<(string, UserApiKey)>($"API key limit reached ({license.MaxApiKeys}). Upgrade your plan to create more.");
         }
 
-        // Generate key
-        var randomBytes = new byte[32];
-        using var rng = RandomNumberGenerator.Create();
-        rng.GetBytes(randomBytes);
+        var (plainKey, apiKey) = UserApiKey.Create(userId, name, scope, expiresAt);
 
-        var keyPart = Convert.ToBase64String(randomBytes)
-            .Replace("+", "-")
-            .Replace("/", "_")
-            .TrimEnd('=');
-
-        var plainKey = $"{KeyPrefix}{keyPart}";
-        var keyHash = HashKey(plainKey);
-        var keyPrefixStored = plainKey[..11];
-
-        var apiKey = new UserApiKey
-        {
-            UserId = userId,
-            Name = name,
-            KeyHash = keyHash,
-            KeyPrefix = keyPrefixStored,
-            Scope = scope,
-            ExpiresAt = expiresAt
-        };
-
-        _dbContext.ApiKeys.Add(apiKey);
-        await _dbContext.SaveChangesAsync();
+        dbContext.ApiKeys.Add(apiKey);
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         return Result.Ok((plainKey, apiKey));
     }
 
-    public async Task<Result> RevokeApiKeyAsync(Guid userId, Guid keyId)
+    public async Task<Result> RevokeApiKeyAsync(Guid userId, Guid keyId, CancellationToken cancellationToken = default)
     {
-        var apiKey = await _dbContext.ApiKeys
-            .FirstOrDefaultAsync(k => k.Id == keyId && k.UserId == userId);
+        var apiKey = await dbContext.ApiKeys
+            .FirstOrDefaultAsync(k => k.Id == keyId && k.UserId == userId, cancellationToken);
 
         if (apiKey is null)
         {
@@ -96,57 +79,61 @@ public sealed class UserApiKeyService : IUserApiKeyService
             return Result.Fail("API key is already revoked");
         }
 
-        apiKey.IsRevoked = true;
-        apiKey.RevokedReason = "User revoked";
-        await _dbContext.SaveChangesAsync();
+        apiKey.Revoke("User revoked");
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         return Result.Ok();
     }
 
-    public async Task<Result<(Guid UserId, ApiKeyScope Scope)>> ValidateApiKeyAsync(string plainKey)
+    public async Task<Result> AdminRevokeApiKeyAsync(Guid keyId, CancellationToken cancellationToken = default)
+    {
+        var apiKey = await dbContext.ApiKeys
+            .FirstOrDefaultAsync(k => k.Id == keyId, cancellationToken);
+
+        if (apiKey is null)
+        {
+            return Result.Fail("API key not found");
+        }
+
+        if (apiKey.IsRevoked)
+        {
+            return Result.Fail("API key is already revoked");
+        }
+
+        apiKey.Revoke("Admin revoked");
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result.Ok();
+    }
+
+    public async Task<Result<(Guid UserId, ApiKeyScope Scope)>> ValidateApiKeyAsync(string plainKey, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(plainKey) || !plainKey.StartsWith(KeyPrefix))
         {
             return Result.Fail<(Guid, ApiKeyScope)>("Invalid API key format");
         }
 
-        var keyHash = HashKey(plainKey);
+        var keyHash = UserApiKey.HashKey(plainKey);
         var keyPrefix = plainKey[..11];
 
-        var apiKey = await _dbContext.ApiKeys
+        var apiKey = await dbContext.ApiKeys
             .Include(k => k.User)
-            .FirstOrDefaultAsync(k => k.KeyPrefix == keyPrefix && k.KeyHash == keyHash);
+            .FirstOrDefaultAsync(k => k.KeyPrefix == keyPrefix && k.KeyHash == keyHash, cancellationToken);
 
         if (apiKey is null)
         {
             return Result.Fail<(Guid, ApiKeyScope)>("Invalid API key");
         }
 
-        if (apiKey.IsRevoked)
+        var validationResult = apiKey.ValidateForUse(apiKey.User?.IsActive == true, DateTime.UtcNow);
+        if (validationResult.IsFailed)
         {
-            return Result.Fail<(Guid, ApiKeyScope)>("API key has been revoked");
+            return Result.Fail<(Guid, ApiKeyScope)>(validationResult.Errors);
         }
 
-        if (apiKey.ExpiresAt.HasValue && apiKey.ExpiresAt < DateTime.UtcNow)
-        {
-            return Result.Fail<(Guid, ApiKeyScope)>("API key has expired");
-        }
-
-        if (apiKey.User is null || !apiKey.User.IsActive)
-        {
-            return Result.Fail<(Guid, ApiKeyScope)>("User account is not active");
-        }
-
-        // Update last used
-        apiKey.LastUsedAt = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync();
+        apiKey.MarkUsed(DateTime.UtcNow);
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         return Result.Ok((apiKey.UserId, apiKey.Scope));
-    }
-
-    private static string HashKey(string plainKey)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(plainKey));
-        return Convert.ToBase64String(bytes);
     }
 }

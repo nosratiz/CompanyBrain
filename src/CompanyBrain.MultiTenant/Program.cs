@@ -1,6 +1,8 @@
 using System.Text;
 using CompanyBrain.MultiTenant.Api;
+using CompanyBrain.MultiTenant.Api.Validation;
 using CompanyBrain.MultiTenant.DependencyInjection;
+using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
@@ -61,10 +63,11 @@ builder.Services.AddSwaggerGen(options =>
 
 // Multi-tenant services
 var connectionString = builder.Configuration.GetConnectionString("TenantDb") 
-    ?? "Data Source=data/tenants.db";
+    ?? "Host=localhost;Port=5432;Database=companybrain_admin;Username=postgres;Password=123qweQWE";
 var storagePath = builder.Configuration["Storage:BasePath"] ?? "data/tenants";
 
 builder.Services.AddCompanyBrainMultiTenant(connectionString, storagePath);
+builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>(includeInternalTypes: true);
 
 // Health checks
 builder.Services.AddHealthChecks();

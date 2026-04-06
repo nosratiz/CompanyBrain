@@ -6,6 +6,8 @@
     <Project Path="src/CompanyBrain.Dashboard/CompanyBrain.Dashboard.csproj" />
     <Project Path="src/CompanyBrain.AdminPanel/CompanyBrain.AdminPanel.csproj" />
     <Project Path="src/CompanyBrain.Admin.Server/CompanyBrain.Admin.Server.csproj" />
+    <Project Path="src/CompanyBrain.Landing/CompanyBrain.Landing/CompanyBrain.Landing.csproj" />
+    <Project Path="src/CompanyBrain.Landing/CompanyBrain.Landing.Client/CompanyBrain.Landing.Client.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CompanyBrain.Tests/CompanyBrain.Tests.csproj" />

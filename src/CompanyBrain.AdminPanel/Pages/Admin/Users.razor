@@ -14,10 +14,17 @@
                 View and manage all registered users (@_totalCount total)
             </MudText>
         </div>
-        <MudTextField @bind-Value="_searchText" Placeholder="Search users..." Variant="Variant.Outlined"
-                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                      Immediate="true" DebounceInterval="400" OnDebounceIntervalElapsed="OnSearchChanged"
-                      Style="max-width: 300px;" />
+        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+            <MudButton Variant="Variant.Filled" OnClick="ShowCreateDialog"
+                       StartIcon="@Icons.Material.Filled.PersonAdd"
+                       Style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px;">
+                Create User
+            </MudButton>
+            <MudTextField @bind-Value="_searchText" Placeholder="Search users..." Variant="Variant.Outlined"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" DebounceInterval="400" OnDebounceIntervalElapsed="OnSearchChanged"
+                          Style="max-width: 300px;" />
+        </MudStack>
     </MudStack>
 
     @if (_isLoading)
@@ -144,6 +151,41 @@
     </DialogActions>
 </MudDialog>
 
+@* Create User Dialog *@
+<MudDialog @bind-Visible="_showCreateDialog" Options="new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true }">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Style="font-weight: 600;">
+            <MudIcon Icon="@Icons.Material.Filled.PersonAdd" Class="mr-2" Style="color: #667eea;" />
+            Create New User
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudTextField @bind-Value="_createFullName" Label="Full Name" Variant="Variant.Outlined"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Badge"
+                          Placeholder="Enter full name" />
+            <MudTextField @bind-Value="_createEmail" Label="Email Address" Variant="Variant.Outlined"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Email"
+                          InputType="InputType.Email" Placeholder="Enter email address" />
+            <MudTextField @bind-Value="_createPassword" Label="Password" Variant="Variant.Outlined"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Lock"
+                          InputType="InputType.Password" Placeholder="Enter password" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showCreateDialog = false">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" OnClick="CreateUserAsync"
+                   Disabled="_isCreating || string.IsNullOrWhiteSpace(_createEmail) || string.IsNullOrWhiteSpace(_createPassword) || string.IsNullOrWhiteSpace(_createFullName)"
+                   Style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+            @if (_isCreating)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Inherit" Class="mr-2" />
+            }
+            Create User
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
 @code {
     [Inject] private IAdminService AdminService { get; set; } = default!;
     [Inject] private AuthStateProvider AuthState { get; set; } = default!;
@@ -157,8 +199,13 @@
     private string? _searchText;
     private bool _showStatusDialog;
     private bool _showDeleteDialog;
+    private bool _showCreateDialog;
+    private bool _isCreating;
     private AdminUserDetail? _selectedUser;
     private bool _newStatus;
+    private string? _createFullName;
+    private string? _createEmail;
+    private string? _createPassword;
 
     protected override async Task OnInitializedAsync()
     {
@@ -223,6 +270,45 @@
     {
         _selectedUser = user;
         _showDeleteDialog = true;
+    }
+
+    private void ShowCreateDialog()
+    {
+        _createFullName = null;
+        _createEmail = null;
+        _createPassword = null;
+        _showCreateDialog = true;
+    }
+
+    private async Task CreateUserAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_createEmail) || string.IsNullOrWhiteSpace(_createPassword) || string.IsNullOrWhiteSpace(_createFullName))
+            return;
+
+        _isCreating = true;
+        try
+        {
+            var request = new CreateUserRequest(_createEmail, _createPassword, _createFullName);
+            var result = await AdminService.CreateUserAsync(request);
+            _showCreateDialog = false;
+            if (result is not null)
+            {
+                Snackbar.Add($"User '{result.FullName}' created successfully", Severity.Success);
+                await LoadUsersAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to create user", Severity.Error);
+            }
+        }
+        catch
+        {
+            Snackbar.Add("An error occurred while creating user", Severity.Error);
+        }
+        finally
+        {
+            _isCreating = false;
+        }
     }
 
     private async Task ChangeStatusAsync()

@@ -132,6 +132,9 @@
                                        Href="@($"/admin/users/{context.UserId}")" Style="color: #667eea;" />
                         @if (context.IsActive)
                         {
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           OnClick="() => ShowEditDialog(context)"
+                                           Style="color: #f2994a;" />
                             <MudIconButton Icon="@Icons.Material.Filled.RemoveCircleOutline" Size="Size.Small"
                                            OnClick="() => ConfirmRevoke(context)"
                                            Style="color: #f5576c;" />
@@ -202,6 +205,42 @@
     </DialogActions>
 </MudDialog>
 
+@* Edit License Dialog *@
+<MudDialog @bind-Visible="_showEditDialog" Options="new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true }">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Style="font-weight: 600;">
+            <MudIcon Icon="@Icons.Material.Filled.Edit" Class="mr-2" Style="color: #667eea;" />
+            Modify License
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudText Typo="Typo.body2" Style="color: #6b7280;">
+                Changing tier for <strong>@(_licenseToEdit?.UserFullName ?? "Unknown")</strong>
+                (current: <strong>@_licenseToEdit?.Tier</strong>)
+            </MudText>
+            <MudSelect @bind-Value="_editTier" Label="New License Tier" Variant="Variant.Outlined"
+                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Star">
+                <MudSelectItem Value="@("Free")">Free</MudSelectItem>
+                <MudSelectItem Value="@("Starter")">Starter</MudSelectItem>
+                <MudSelectItem Value="@("Professional")">Professional</MudSelectItem>
+                <MudSelectItem Value="@("Enterprise")">Enterprise</MudSelectItem>
+            </MudSelect>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showEditDialog = false">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" OnClick="UpdateLicenseAsync" Disabled="_isEditing"
+                   Style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+            @if (_isEditing)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Inherit" Class="mr-2" />
+            }
+            Update License
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
 @code {
     [Inject] private IAdminService AdminService { get; set; } = default!;
     [Inject] private AuthStateProvider AuthState { get; set; } = default!;
@@ -213,10 +252,14 @@
     private bool _isLoading = true;
     private bool _showAssignDialog;
     private bool _showRevokeDialog;
+    private bool _showEditDialog;
     private bool _isAssigning;
+    private bool _isEditing;
     private string? _assignUserId;
     private string _assignTier = "Free";
+    private string _editTier = "Free";
     private AdminLicenseDetail? _licenseToRevoke;
+    private AdminLicenseDetail? _licenseToEdit;
 
     protected override async Task OnInitializedAsync()
     {
@@ -259,6 +302,13 @@
     {
         _licenseToRevoke = license;
         _showRevokeDialog = true;
+    }
+
+    private void ShowEditDialog(AdminLicenseDetail license)
+    {
+        _licenseToEdit = license;
+        _editTier = license.Tier;
+        _showEditDialog = true;
     }
 
     private async Task AssignLicenseAsync()
@@ -307,6 +357,34 @@
         else
         {
             Snackbar.Add("Failed to revoke license", Severity.Error);
+        }
+    }
+
+    private async Task UpdateLicenseAsync()
+    {
+        if (_licenseToEdit is null) return;
+        _isEditing = true;
+        try
+        {
+            var success = await AdminService.UpdateLicenseAsync(_licenseToEdit.Id, _editTier);
+            _showEditDialog = false;
+            if (success)
+            {
+                Snackbar.Add("License updated successfully", Severity.Success);
+                await LoadLicensesAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to update license", Severity.Error);
+            }
+        }
+        catch
+        {
+            Snackbar.Add("An error occurred", Severity.Error);
+        }
+        finally
+        {
+            _isEditing = false;
         }
     }
 

@@ -42,14 +42,7 @@ public sealed class UserService(
             return Result.Fail<TenantUser>("A user with this email already exists.");
         }
 
-        var user = new TenantUser
-        {
-            Email = email,
-            DisplayName = displayName,
-            TenantId = tenantId,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
-            Role = TenantRole.User
-        };
+        var user = TenantUser.Register(tenantId, email, displayName, password);
 
         dbContext.Users.Add(user);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -73,20 +66,13 @@ public sealed class UserService(
             return Result.Fail<TenantUser>("Invalid email or password.");
         }
 
-        if (string.IsNullOrEmpty(user.PasswordHash))
+        var signInResult = user.SignIn(password);
+        if (signInResult.IsFailed)
         {
-            logger.LogWarning("Login failed: user '{Email}' has no password set.", email);
-            return Result.Fail<TenantUser>("Invalid email or password.");
+            logger.LogWarning("Login failed for user '{Email}'.", email);
+            return Result.Fail<TenantUser>(signInResult.Errors);
         }
 
-        if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
-        {
-            logger.LogWarning("Login failed: invalid password for user '{Email}'.", email);
-            return Result.Fail<TenantUser>("Invalid email or password.");
-        }
-
-        // Update last login time
-        user.LastLoginAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("User '{Email}' logged in successfully.", email);
@@ -123,13 +109,11 @@ public sealed class UserService(
             return Result.Fail<TenantUser>("User not found.");
         }
 
-        // Update display name if provided
         if (!string.IsNullOrWhiteSpace(displayName))
         {
-            user.DisplayName = displayName;
+            user.UpdateDisplayName(displayName);
         }
 
-        // Update password if both current and new are provided
         if (!string.IsNullOrWhiteSpace(newPassword))
         {
             if (string.IsNullOrWhiteSpace(currentPassword))
@@ -137,12 +121,12 @@ public sealed class UserService(
                 return Result.Fail<TenantUser>("Current password is required to change password.");
             }
 
-            if (string.IsNullOrEmpty(user.PasswordHash) || !BCrypt.Net.BCrypt.Verify(currentPassword, user.PasswordHash))
+            var passwordResult = user.ChangePassword(currentPassword, newPassword);
+            if (passwordResult.IsFailed)
             {
-                return Result.Fail<TenantUser>("Current password is incorrect.");
+                return Result.Fail<TenantUser>(passwordResult.Errors);
             }
 
-            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
             logger.LogInformation("User '{UserId}' changed their password.", userId);
         }
 

@@ -1,0 +1,315 @@
+﻿@page "/"
+@using CompanyBrain.Landing.Services
+
+<PageTitle>@_tenant.CompanyName — @_tenant.Tagline</PageTitle>
+
+@* ═══════════ HERO SECTION ═══════════ *@
+<section class="hero-section">
+    @* Animated gradient mesh background *@
+    <div class="mesh-background"></div>
+    <div class="mesh-orb mesh-orb-1" style="@($"background: radial-gradient(circle, {_tenant.PrimaryColor}40 0%, transparent 70%);")"></div>
+    <div class="mesh-orb mesh-orb-2" style="@($"background: radial-gradient(circle, {_tenant.SecondaryColor}30 0%, transparent 70%);")"></div>
+    <div class="mesh-orb mesh-orb-3" style="@($"background: radial-gradient(circle, {_tenant.AccentColor}20 0%, transparent 70%);")"></div>
+
+    <MudContainer MaxWidth="MaxWidth.Large" Style="position: relative; z-index: 2;">
+        <div class="hero-content">
+            @* Glassmorphic card *@
+            <div class="glass-card">
+                <div class="hero-badge">
+                    <MudChip T="string" Size="Size.Small"
+                             Style="@($"background: {_tenant.PrimaryColor}20; color: {_tenant.PrimaryColor}; border: 1px solid {_tenant.PrimaryColor}30; font-weight: 600; font-family: 'Inter', sans-serif; letter-spacing: 0.05em; text-transform: uppercase; font-size: 0.7rem;")">
+                        Now in Public Beta
+                    </MudChip>
+                </div>
+
+                <MudText Typo="Typo.h1" Class="hero-title"
+                         Style="font-size: clamp(2.5rem, 6vw, 4.5rem); color: rgba(255,255,255,0.95); margin-bottom: 1.5rem;">
+                    @_tenant.Tagline
+                </MudText>
+
+                <MudText Typo="Typo.h5" Class="hero-subtitle"
+                         Style="color: rgba(255,255,255,0.5); font-weight: 400; max-width: 600px; margin: 0 auto 2.5rem; line-height: 1.7; font-size: clamp(1rem, 2vw, 1.25rem);">
+                    @_tenant.Description
+                </MudText>
+
+                <MudStack Row="true" Justify="Justify.Center" Spacing="3" Class="hero-buttons">
+                    <MudButton Variant="Variant.Filled" Size="Size.Large"
+                               OnClick="OnGetStartedClicked"
+                               Class="cta-button"
+                               Style="@($"background: linear-gradient(135deg, {_tenant.PrimaryColor} 0%, {_tenant.SecondaryColor} 100%); border-radius: 14px; height: 56px; padding: 0 2rem; font-weight: 700; text-transform: none; font-size: 1.05rem; font-family: 'Inter', sans-serif; box-shadow: 0 8px 32px {_tenant.PrimaryColor}50; letter-spacing: 0.01em;")">
+                        <MudIcon Icon="@Icons.Material.Filled.RocketLaunch" Class="mr-2" />
+                        Get Started Free
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Large"
+                               Href="#features"
+                               Style="border-color: rgba(255,255,255,0.15); color: rgba(255,255,255,0.8); border-radius: 14px; height: 56px; padding: 0 2rem; font-weight: 600; text-transform: none; font-size: 1.05rem; font-family: 'Inter', sans-serif;">
+                        <MudIcon Icon="@Icons.Material.Filled.PlayCircle" Class="mr-2" />
+                        See How It Works
+                    </MudButton>
+                </MudStack>
+
+                <div class="hero-stats">
+                    <div class="stat-item">
+                        <MudText Typo="Typo.h4" Style="@($"color: {_tenant.PrimaryColor}; font-weight: 800; font-family: 'Inter', sans-serif;")">50K+</MudText>
+                        <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4); font-family: 'Inter', sans-serif;">Documents Indexed</MudText>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-item">
+                        <MudText Typo="Typo.h4" Style="@($"color: {_tenant.PrimaryColor}; font-weight: 800; font-family: 'Inter', sans-serif;")">99.9%</MudText>
+                        <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4); font-family: 'Inter', sans-serif;">Uptime SLA</MudText>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-item">
+                        <MudText Typo="Typo.h4" Style="@($"color: {_tenant.PrimaryColor}; font-weight: 800; font-family: 'Inter', sans-serif;")">&lt;200ms</MudText>
+                        <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4); font-family: 'Inter', sans-serif;">Avg Response Time</MudText>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </MudContainer>
+</section>
+
+@* ═══════════ FEATURES BENTO GRID ═══════════ *@
+<section id="features" class="features-section">
+    <MudContainer MaxWidth="MaxWidth.Large">
+        <div style="text-align: center; margin-bottom: 4rem;">
+            <MudText Typo="Typo.h2" Style="color: rgba(255,255,255,0.92); font-size: clamp(2rem, 4vw, 3rem); margin-bottom: 1rem;">
+                Everything you need.
+                <span style="@($"background: linear-gradient(135deg, {_tenant.PrimaryColor}, {_tenant.AccentColor}); -webkit-background-clip: text; -webkit-text-fill-color: transparent;")">Nothing you don't.</span>
+            </MudText>
+            <MudText Typo="Typo.body1" Style="color: rgba(255,255,255,0.4); max-width: 500px; margin: 0 auto; font-family: 'Inter', sans-serif;">
+                Built for modern teams that demand speed, security, and simplicity.
+            </MudText>
+        </div>
+
+        <div class="bento-grid">
+            @for (var i = 0; i < _tenant.Features.Count; i++)
+            {
+                var feature = _tenant.Features[i];
+                var isLarge = feature.IsHighlighted;
+                <div class="@($"bento-tile {(isLarge ? "bento-tile-large" : "")}")">
+                    <MudCard Elevation="0" Class="bento-card" Style="@GetBentoCardStyle(isLarge)">
+                        <MudCardContent Style="padding: 2rem;">
+                            <div class="bento-icon" style="@($"background: linear-gradient(135deg, {_tenant.PrimaryColor}20, {_tenant.SecondaryColor}15);")">
+                                <MudIcon Icon="@GetFeatureIcon(feature.Icon)" Size="Size.Medium"
+                                         Style="@($"color: {_tenant.PrimaryColor};")" />
+                            </div>
+                            <MudText Typo="Typo.h4" Class="mt-4 mb-2"
+                                     Style="color: rgba(255,255,255,0.92); font-family: 'Inter', sans-serif; font-size: 1.25rem;">
+                                @feature.Title
+                            </MudText>
+                            <MudText Typo="Typo.body2"
+                                     Style="color: rgba(255,255,255,0.45); line-height: 1.7; font-family: 'Inter', sans-serif;">
+                                @feature.Description
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </div>
+            }
+        </div>
+    </MudContainer>
+</section>
+
+@* ═══════════ USER PORTAL / LOGIN CTA ═══════════ *@
+<section class="portal-section">
+    <MudContainer MaxWidth="MaxWidth.Small">
+        <div class="portal-card glass-card">
+            <div style="text-align: center; margin-bottom: 2rem;">
+                <div style="@($"display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; background: linear-gradient(135deg, {_tenant.PrimaryColor} 0%, {_tenant.SecondaryColor} 100%); border-radius: 16px; margin-bottom: 1rem;")">
+                    <MudIcon Icon="@Icons.Material.Filled.Bolt" Size="Size.Large" Style="color: white;" />
+                </div>
+                <MudText Typo="Typo.h4" Style="color: rgba(255,255,255,0.92); font-weight: 700; font-family: 'Inter', sans-serif;">
+                    Access Your Portal
+                </MudText>
+                <MudText Typo="Typo.body1" Style="color: rgba(255,255,255,0.45); margin-top: 0.5rem; font-family: 'Inter', sans-serif;">
+                    Sign in to manage your knowledge base
+                </MudText>
+            </div>
+
+            <div style="margin-bottom: 1.25rem;">
+                <MudTextField @bind-Value="_loginEmail"
+                              Label="Email address"
+                              Variant="Variant.Outlined"
+                              InputType="InputType.Email"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Email"
+                              Style="border-radius: 12px;" />
+            </div>
+
+            <div style="margin-bottom: 1.5rem;">
+                <MudTextField @bind-Value="_loginPassword"
+                              Label="Password"
+                              Variant="Variant.Outlined"
+                              InputType="@(_showPassword ? InputType.Text : InputType.Password)"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@(_showPassword ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                              OnAdornmentClick="() => _showPassword = !_showPassword"
+                              Style="border-radius: 12px;" />
+            </div>
+
+            <MudButton Variant="Variant.Filled" FullWidth="true" Size="Size.Large"
+                       OnClick="OnPortalLoginClicked"
+                       Style="@($"background: linear-gradient(135deg, {_tenant.PrimaryColor} 0%, {_tenant.SecondaryColor} 100%); border-radius: 12px; height: 52px; font-weight: 600; text-transform: none; font-size: 1rem; font-family: 'Inter', sans-serif; box-shadow: 0 4px 15px {_tenant.PrimaryColor}40;")">
+                <MudIcon Icon="@Icons.Material.Filled.Login" Class="mr-2" />
+                Sign In to Portal
+            </MudButton>
+
+            <div style="display: flex; align-items: center; margin: 1.5rem 0;">
+                <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.08);"></div>
+                <MudText Typo="Typo.caption" Style="padding: 0 1rem; color: rgba(255,255,255,0.3); font-family: 'Inter', sans-serif;">or</MudText>
+                <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.08);"></div>
+            </div>
+
+            <div style="text-align: center;">
+                <MudText Typo="Typo.body1" Style="color: rgba(255,255,255,0.45); font-family: 'Inter', sans-serif;">
+                    Don't have an account?
+                    <MudLink Href="/register" Style="@($"color: {_tenant.PrimaryColor}; font-weight: 600; text-decoration: none;")">
+                        Create one
+                    </MudLink>
+                </MudText>
+            </div>
+        </div>
+    </MudContainer>
+</section>
+
+@* ═══════════ REGISTRATION DIALOG ═══════════ *@
+<MudDialog @bind-Visible="_showRegisterDialog" Options="_dialogOptions">
+    <DialogContent>
+        <div style="padding: 1rem;">
+            <div style="text-align: center; margin-bottom: 1.5rem;">
+                <MudText Typo="Typo.h5" Style="font-weight: 700; font-family: 'Inter', sans-serif;">
+                    Create Your Account
+                </MudText>
+                <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.5); margin-top: 0.5rem; font-family: 'Inter', sans-serif;">
+                    Start your free trial — no credit card required.
+                </MudText>
+            </div>
+
+            <MudTextField @bind-Value="_regFullName" Label="Full Name" Variant="Variant.Outlined"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Person"
+                          Class="mb-3" />
+            <MudTextField @bind-Value="_regEmail" Label="Email" Variant="Variant.Outlined"
+                          InputType="InputType.Email"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Email"
+                          Class="mb-3" />
+            <MudTextField @bind-Value="_regPassword" Label="Password" Variant="Variant.Outlined"
+                          InputType="InputType.Password"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Lock"
+                          Class="mb-4" />
+
+            @if (!string.IsNullOrEmpty(_regError))
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Class="mb-3" Style="border-radius: 12px;">
+                    @_regError
+                </MudAlert>
+            }
+
+            <MudButton Variant="Variant.Filled" FullWidth="true" Size="Size.Large"
+                       OnClick="OnRegisterSubmitAsync" Disabled="_isRegistering"
+                       Style="@($"background: linear-gradient(135deg, {_tenant.PrimaryColor} 0%, {_tenant.SecondaryColor} 100%); border-radius: 12px; height: 52px; font-weight: 600; text-transform: none; font-family: 'Inter', sans-serif; box-shadow: 0 4px 15px {_tenant.PrimaryColor}40;")">
+                @if (_isRegistering)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Inherit" Class="mr-2" />
+                }
+                Create Account
+            </MudButton>
+        </div>
+    </DialogContent>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private IHttpClientFactory HttpClientFactory { get; set; } = default!;
+
+    private TenantConfiguration _tenant = new();
+
+    // Portal login state
+    private string _loginEmail = "";
+    private string _loginPassword = "";
+    private bool _showPassword;
+
+    // Registration dialog state
+    private bool _showRegisterDialog;
+    private string _regFullName = "";
+    private string _regEmail = "";
+    private string _regPassword = "";
+    private string? _regError;
+    private bool _isRegistering;
+
+    private readonly DialogOptions _dialogOptions = new()
+    {
+        MaxWidth = MaxWidth.Small,
+        FullWidth = true,
+        BackdropClick = true,
+        CloseButton = true
+    };
+
+    protected override void OnInitialized()
+    {
+        if (HttpContext?.Items["TenantConfig"] is TenantConfiguration tenant)
+        {
+            _tenant = tenant;
+        }
+    }
+
+    private void OnGetStartedClicked() => _showRegisterDialog = true;
+
+    private void OnPortalLoginClicked()
+    {
+        // Redirect to the admin panel login page with the tenant context
+        Navigation.NavigateTo("/login");
+    }
+
+    private async Task OnRegisterSubmitAsync()
+    {
+        _regError = null;
+        _isRegistering = true;
+
+        try
+        {
+            using var http = HttpClientFactory.CreateClient();
+            var response = await http.PostAsJsonAsync(_tenant.RegistrationEndpoint, new
+            {
+                email = _regEmail,
+                password = _regPassword,
+                displayName = _regFullName
+            });
+
+            if (response.IsSuccessStatusCode)
+            {
+                _showRegisterDialog = false;
+                Navigation.NavigateTo("/login");
+            }
+            else
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                _regError = string.IsNullOrWhiteSpace(body)
+                    ? $"Registration failed ({(int)response.StatusCode})"
+                    : body;
+            }
+        }
+        catch (Exception ex)
+        {
+            _regError = $"Connection error: {ex.Message}";
+        }
+        finally
+        {
+            _isRegistering = false;
+        }
+    }
+
+    private static string GetFeatureIcon(string iconKey) => iconKey switch
+    {
+        "Bolt" => Icons.Material.Filled.Bolt,
+        "Security" => Icons.Material.Filled.Security,
+        "Speed" => Icons.Material.Filled.Speed,
+        "Hub" => Icons.Material.Filled.Hub,
+        "Analytics" => Icons.Material.Filled.Analytics,
+        "Api" => Icons.Material.Filled.Api,
+        _ => Icons.Material.Filled.Star
+    };
+
+    private string GetBentoCardStyle(bool isLarge) =>
+        $"background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 24px; height: 100%; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); {(isLarge ? $"background: linear-gradient(135deg, {_tenant.PrimaryColor}08, {_tenant.SecondaryColor}05);" : "")}";
+}

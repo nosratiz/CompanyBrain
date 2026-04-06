@@ -38,7 +38,7 @@ public sealed class ApiKeyAuthenticationMiddleware(
             logger.LogWarning("API key authentication failed: {Error}", string.Join(", ", validationResult.Errors.Select(e => e.Message)));
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             context.Response.ContentType = "application/json";
-            await context.Response.WriteAsync($$"""{"error": "{{validationResult.Errors.First().Message}}"}""");
+            await context.Response.WriteAsync($$"""{"error": "{{validationResult.Errors.First().Message}}"}""", context.RequestAborted);
             return;
         }
 

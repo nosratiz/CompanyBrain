@@ -6,6 +6,12 @@ public sealed record SetUserStatusRequest(bool IsActive);
 
 public sealed record AssignLicenseRequest(Guid UserId, string Tier);
 
+public sealed record CreateUserRequest(string Email, string Password, string FullName);
+
+public sealed record UpdateLicenseRequest(string Tier);
+
+public sealed record UpdateProfileRequest(string? FullName, string? Email);
+
 public sealed record UserDetailResponse
 {
     public Guid Id { get; init; }
@@ -49,4 +55,19 @@ public sealed record PaginatedResponse<T>
     public int Page { get; init; }
     public int PageSize { get; init; }
     public int TotalPages => (int)Math.Ceiling((double)TotalCount / PageSize);
+}
+
+public sealed record ApiKeyDetailResponse
+{
+    public Guid Id { get; init; }
+    public Guid UserId { get; init; }
+    public string? UserEmail { get; init; }
+    public string? UserFullName { get; init; }
+    public required string Name { get; init; }
+    public required string KeyPrefix { get; init; }
+    public required string Scope { get; init; }
+    public DateTime CreatedAt { get; init; }
+    public DateTime? ExpiresAt { get; init; }
+    public DateTime? LastUsedAt { get; init; }
+    public bool IsRevoked { get; init; }
 }

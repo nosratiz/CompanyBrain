@@ -1,0 +1,19 @@
+@page "/logout"
+@rendermode InteractiveWebAssembly
+@using CompanyBrain.Landing.Client.Services
+@inject TokenAuthStateProvider Auth
+@inject NavigationManager Nav
+
+<PageTitle>Signing out…</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraSmall" Style="display: flex; justify-content: center; padding-top: 8rem;">
+    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+</MudContainer>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.LogoutAsync();
+        Nav.NavigateTo("/", forceLoad: false);
+    }
+}

@@ -7,100 +7,95 @@ using CompanyBrain.Admin.Server.Services.Interfaces;
 
 namespace CompanyBrain.Admin.Server.Services;
 
-public sealed class UserLicenseService : IUserLicenseService
+public sealed class UserLicenseService(UserDbContext dbContext) : IUserLicenseService
 {
-    private readonly UserDbContext _dbContext;
-
-    public UserLicenseService(UserDbContext dbContext)
+    public async Task<IReadOnlyList<License>> GetUserLicensesAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        _dbContext = dbContext;
-    }
-
-    public async Task<IReadOnlyList<License>> GetUserLicensesAsync(Guid userId)
-    {
-        return await _dbContext.Licenses
+        return await dbContext.Licenses
             .Where(l => l.UserId == userId)
             .OrderByDescending(l => l.PurchasedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<License?> GetActiveLicenseAsync(Guid userId)
+    public async Task<License?> GetActiveLicenseAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Licenses
+        return await dbContext.Licenses
             .Where(l => l.UserId == userId && l.IsActive)
             .Where(l => l.ExpiresAt == null || l.ExpiresAt > DateTime.UtcNow)
             .OrderByDescending(l => l.Tier)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public async Task<Result<License>> PurchaseLicenseAsync(Guid userId, LicenseTier tier)
+    public async Task<Result<License>> PurchaseLicenseAsync(Guid userId, LicenseTier tier, CancellationToken cancellationToken = default)
     {
-        var user = await _dbContext.Users.FindAsync(userId);
+        var user = await dbContext.Users.FindAsync([userId], cancellationToken);
         if (user is null)
         {
             return Result.Fail<License>("User not found");
         }
 
         // Deactivate existing licenses of lower tier
-        var existingLicenses = await _dbContext.Licenses
+        var existingLicenses = await dbContext.Licenses
             .Where(l => l.UserId == userId && l.IsActive && l.Tier < tier)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         foreach (var existing in existingLicenses)
         {
-            existing.IsActive = false;
+            existing.Revoke();
         }
 
-        var (maxKeys, maxDocs, maxStorage) = LicensePlanDefaults.GetLimits(tier);
-        var license = new License
-        {
-            UserId = userId,
-            PlanName = LicensePlanDefaults.GetPlanName(tier),
-            Tier = tier,
-            MaxApiKeys = maxKeys,
-            MaxDocuments = maxDocs,
-            MaxStorageBytes = maxStorage,
-            ExpiresAt = LicensePlanDefaults.GetExpiryDate(tier)
-        };
+        var license = user.CreateLicense(tier);
 
-        _dbContext.Licenses.Add(license);
-        await _dbContext.SaveChangesAsync();
+        dbContext.Licenses.Add(license);
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         return Result.Ok(license);
     }
 
-    public async Task<IReadOnlyList<License>> GetAllLicensesAsync(int page, int pageSize)
+    public async Task<IReadOnlyList<License>> GetAllLicensesAsync(int page, int pageSize, CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Licenses
+        return await dbContext.Licenses
             .Include(l => l.User)
             .OrderByDescending(l => l.PurchasedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<int> GetTotalLicenseCountAsync()
+    public async Task<int> GetTotalLicenseCountAsync(CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Licenses.CountAsync();
+        return await dbContext.Licenses.CountAsync(cancellationToken);
     }
 
-    public async Task<Result> RevokeLicenseAsync(Guid licenseId)
+    public async Task<Result> RevokeLicenseAsync(Guid licenseId, CancellationToken cancellationToken = default)
     {
-        var license = await _dbContext.Licenses.FindAsync(licenseId);
+        var license = await dbContext.Licenses.FindAsync([licenseId], cancellationToken);
         if (license is null)
             return Result.Fail("License not found");
 
-        license.IsActive = false;
-        await _dbContext.SaveChangesAsync();
+        license.Revoke();
+        await dbContext.SaveChangesAsync(cancellationToken);
         return Result.Ok();
     }
 
-    public async Task<Result<License>> AssignLicenseAsync(Guid userId, LicenseTier tier)
+    public async Task<Result<License>> AssignLicenseAsync(Guid userId, LicenseTier tier, CancellationToken cancellationToken = default)
     {
-        var user = await _dbContext.Users.FindAsync(userId);
+        var user = await dbContext.Users.FindAsync([userId], cancellationToken);
         if (user is null)
             return Result.Fail<License>("User not found");
 
-        return await PurchaseLicenseAsync(userId, tier);
+        return await PurchaseLicenseAsync(userId, tier, cancellationToken);
+    }
+
+    public async Task<Result<License>> UpdateLicenseTierAsync(Guid licenseId, LicenseTier newTier, CancellationToken cancellationToken = default)
+    {
+        var license = await dbContext.Licenses.FindAsync([licenseId], cancellationToken);
+        if (license is null)
+            return Result.Fail<License>("License not found");
+
+        license.UpdateTier(newTier);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Result.Ok(license);
     }
 }

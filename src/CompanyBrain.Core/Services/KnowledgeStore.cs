@@ -20,12 +20,17 @@ public sealed class KnowledgeStore
         this.logger = logger ?? NullLogger<KnowledgeStore>.Instance;
     }
 
-    public void EnsureFolderExists() => Directory.CreateDirectory(rootPath);
+    public Task EnsureFolderExistsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Directory.CreateDirectory(rootPath);
+        return Task.CompletedTask;
+    }
 
     public async Task<SavedKnowledgeDocument> SaveMarkdownAsync(string name, string markdown,
         CancellationToken cancellationToken)
     {
-        EnsureFolderExists();
+        await EnsureFolderExistsAsync(cancellationToken);
 
         var fileName = FileNameHelper.ToMarkdownFileName(name);
         var filePath = Path.Combine(rootPath, fileName);
@@ -43,7 +48,7 @@ public sealed class KnowledgeStore
     public Task<IReadOnlyList<KnowledgeResourceDescriptor>> ListResourcesAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        EnsureFolderExists();
+        Directory.CreateDirectory(rootPath);
 
         logger.LogDebug("Listing knowledge resources from '{RootPath}'.", rootPath);
 
@@ -74,39 +79,41 @@ public sealed class KnowledgeStore
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult(ReadTextResource(resourceUri));
-    }
-
-    public Result<KnowledgeResourceContent> ReadTextResource(string resourceUri)
-    {
-        EnsureFolderExists();
+        Directory.CreateDirectory(rootPath);
 
         var fileName = TryGetFileName(resourceUri);
         if (fileName.IsFailed)
         {
-            return Result.Fail<KnowledgeResourceContent>(fileName.Errors);
+            return Task.FromResult(Result.Fail<KnowledgeResourceContent>(fileName.Errors));
         }
 
         var filePath = Path.Combine(rootPath, fileName.Value);
         if (!File.Exists(filePath))
         {
             logger.LogWarning("Requested knowledge resource was not found: '{FilePath}'.", filePath);
-            return Result.Fail<KnowledgeResourceContent>(new NotFoundAppError($"Resource not found: {filePath}"));
+            return Task.FromResult(Result.Fail<KnowledgeResourceContent>(new NotFoundAppError($"Resource not found: {filePath}")));
         }
 
         logger.LogDebug("Reading knowledge resource '{FileName}' from '{FilePath}'.", fileName.Value, filePath);
 
+        return ReadTextResourceInternalAsync(fileName.Value, filePath, cancellationToken);
+    }
+
+    private async Task<Result<KnowledgeResourceContent>> ReadTextResourceInternalAsync(string fileName, string filePath, CancellationToken cancellationToken)
+    {
+        var content = await File.ReadAllTextAsync(filePath, Encoding.UTF8, cancellationToken);
+
         return Result.Ok(new KnowledgeResourceContent(
-            fileName.Value,
-            ToResourceUri(fileName.Value),
+            fileName,
+            ToResourceUri(fileName),
             "text/markdown",
-            File.ReadAllText(filePath, Encoding.UTF8)));
+            content));
     }
 
     public async Task<Result<string>> SearchAsync(string query, int maxResults, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        EnsureFolderExists();
+        Directory.CreateDirectory(rootPath);
 
         logger.LogInformation("Searching knowledge store. Query: '{Query}', MaxResults: {MaxResults}", query, maxResults);
 

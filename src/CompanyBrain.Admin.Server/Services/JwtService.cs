@@ -20,8 +20,10 @@ public sealed class JwtService : IJwtService
         _expiryHours = int.TryParse(configuration["Jwt:ExpiryHours"], out var hours) ? hours : 24;
     }
 
-    public string GenerateToken(User user)
+    public Task<string> GenerateTokenAsync(User user, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_key));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
@@ -41,11 +43,13 @@ public sealed class JwtService : IJwtService
             signingCredentials: credentials
         );
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
+        return Task.FromResult(new JwtSecurityTokenHandler().WriteToken(token));
     }
 
-    public Guid? ValidateToken(string token)
+    public Task<Guid?> ValidateTokenAsync(string token, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         try
         {
             var tokenHandler = new JwtSecurityTokenHandler();
@@ -65,11 +69,11 @@ public sealed class JwtService : IJwtService
             var jwtToken = (JwtSecurityToken)validatedToken;
             var userId = jwtToken.Claims.First(x => x.Type == JwtRegisteredClaimNames.Sub).Value;
 
-            return Guid.TryParse(userId, out var id) ? id : null;
+            return Task.FromResult<Guid?>(Guid.TryParse(userId, out var id) ? id : null);
         }
         catch
         {
-            return null;
+            return Task.FromResult<Guid?>(null);
         }
     }
 }

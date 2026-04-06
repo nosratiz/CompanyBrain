@@ -1,0 +1,308 @@
+@page "/api-keys"
+@rendermode InteractiveWebAssembly
+@using CompanyBrain.Landing.Client.Models
+@using CompanyBrain.Landing.Client.Services
+@inject ApiClient Api
+@inject TokenAuthStateProvider Auth
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IDialogService Dialog
+
+<PageTitle>API Keys — CompanyBrain</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-8">
+    <MudButton StartIcon="@Icons.Material.Filled.ArrowBack" Variant="Variant.Text"
+               OnClick='() => Nav.NavigateTo("/dashboard")' Class="mb-4"
+               Style="color: rgba(255,255,255,0.5); text-transform: none;">
+        Back to Dashboard
+    </MudButton>
+
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-6">
+        <MudText Typo="Typo.h4" Style="font-weight: 800; font-family: 'Inter', sans-serif;">
+            API Keys
+        </MudText>
+        <MudStack Row="true" Spacing="2">
+            <MudSwitch @bind-Value="_showRevoked" Label="Show Revoked" Color="Color.Primary"
+                       T="bool" />
+            <MudButton Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="ShowCreateDialog" Class="gradient-btn">
+                Create Key
+            </MudButton>
+        </MudStack>
+    </MudStack>
+
+    @if (_loading)
+    {
+        <div style="display: flex; justify-content: center; padding: 4rem 0;">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+        </div>
+    }
+    else if (_keys.Count == 0)
+    {
+        <MudCard Elevation="0" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;">
+            <MudCardContent Style="text-align: center; padding: 4rem 2rem;">
+                <MudIcon Icon="@Icons.Material.Filled.Key" Size="Size.Large" Style="color: rgba(255,255,255,0.2);" Class="mb-3" />
+                <MudText Typo="Typo.h6" Style="color: rgba(255,255,255,0.5);">No API keys yet</MudText>
+                <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.3);">Create an API key to connect your AI assistants.</MudText>
+            </MudCardContent>
+        </MudCard>
+    }
+    else
+    {
+        <MudTable Items="_keys" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm"
+                  Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;">
+            <HeaderContent>
+                <MudTh>Name</MudTh>
+                <MudTh>Key Prefix</MudTh>
+                <MudTh>Scope</MudTh>
+                <MudTh>Created</MudTh>
+                <MudTh>Expires</MudTh>
+                <MudTh>Last Used</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Actions</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Name"><MudText Style="font-weight: 600;">@context.Name</MudText></MudTd>
+                <MudTd DataLabel="Prefix"><code style="color: #667eea;">@context.KeyPrefix</code></MudTd>
+                <MudTd DataLabel="Scope"><MudChip T="string" Size="Size.Small" Style="background: rgba(255,255,255,0.06);">@context.Scope</MudChip></MudTd>
+                <MudTd DataLabel="Created">@context.CreatedAt.ToString("MMM d, yyyy")</MudTd>
+                <MudTd DataLabel="Expires">@(context.ExpiresAt?.ToString("MMM d, yyyy") ?? "Never")</MudTd>
+                <MudTd DataLabel="Last Used">@(context.LastUsedAt?.ToString("MMM d, HH:mm") ?? "—")</MudTd>
+                <MudTd DataLabel="Status">
+                    @if (context.IsRevoked)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Error">Revoked</MudChip>
+                    }
+                    else if (context.ExpiresAt.HasValue && context.ExpiresAt < DateTime.UtcNow)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Warning">Expired</MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">Active</MudChip>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Actions">
+                    @if (!context.IsRevoked)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" Color="Color.Primary"
+                                       OnClick="() => RegenerateKey(context)"
+                                       Title="Regenerate" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="() => RevokeKey(context)"
+                                       Title="Revoke" />
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudContainer>
+
+@* ── Create Key Dialog ── *@
+<MudDialog @bind-Visible="_showCreateDialog" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Style="font-weight: 700;">Create API Key</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_newKeyName" Label="Key Name" Variant="Variant.Outlined"
+                      Placeholder="e.g. Claude Desktop Integration" Class="mb-3" />
+        <MudSelect @bind-Value="_newKeyScope" Label="Scope" Variant="Variant.Outlined" Class="mb-3">
+            <MudSelectItem T="string" Value='"ReadOnly"'>Read Only</MudSelectItem>
+            <MudSelectItem T="string" Value='"WriteDocuments"'>Write Documents</MudSelectItem>
+            <MudSelectItem T="string" Value='"ManageResources"'>Manage Resources</MudSelectItem>
+            <MudSelectItem T="string" Value='"Admin"'>Admin (Full Access)</MudSelectItem>
+        </MudSelect>
+        <MudDatePicker @bind-Date="_newKeyExpiry" Label="Expires At (optional)" Variant="Variant.Outlined"
+                       Clearable="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showCreateDialog = false" Style="text-transform: none;">Cancel</MudButton>
+        <MudButton OnClick="CreateKey" Variant="Variant.Filled" Class="gradient-btn"
+                   Disabled="_creating" Style="text-transform: none;">
+            @if (_creating)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Inherit" Class="mr-2" />
+            }
+            Create Key
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ── Key Created Dialog ── *@
+<MudDialog @bind-Visible="_showKeyCreatedDialog" Options="_dialogOptions">
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" />
+            <MudText Typo="Typo.h6" Style="font-weight: 700;">API Key Created</MudText>
+        </MudStack>
+    </TitleContent>
+    <DialogContent>
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Dense="true" Class="mb-4"
+                  Style="border-radius: 12px;">
+            @(_createdKey?.Warning ?? "Store this key securely. It will not be shown again.")
+        </MudAlert>
+
+        <MudTextField Value="@_createdKey?.PlainKey" Label="API Key" Variant="Variant.Outlined"
+                      ReadOnly="true" Adornment="Adornment.End"
+                      AdornmentIcon="@Icons.Material.Filled.ContentCopy"
+                      OnAdornmentClick="CopyKey"
+                      Style="font-family: monospace;" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showKeyCreatedDialog = false" Variant="Variant.Filled" Color="Color.Primary"
+                   Style="text-transform: none; border-radius: 12px;">
+            I've Saved It
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<ApiKeyResponse> _keys = [];
+    private Guid _tenantId;
+    private bool _loading = true;
+    private bool _showRevoked;
+
+    // Create
+    private bool _showCreateDialog;
+    private string _newKeyName = "";
+    private string _newKeyScope = "ReadOnly";
+    private DateTime? _newKeyExpiry;
+    private bool _creating;
+
+    // Created
+    private bool _showKeyCreatedDialog;
+    private ApiKeyCreatedResponse? _createdKey;
+
+    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated != true)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        // Get tenant ID from profile
+        try
+        {
+            var profile = await Api.GetProfileAsync();
+            if (profile is null)
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            _tenantId = profile.TenantId;
+            await LoadKeys();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            await Auth.LogoutAsync();
+            Nav.NavigateTo("/login");
+        }
+    }
+
+    private async Task LoadKeys()
+    {
+        _loading = true;
+        try
+        {
+            var result = await Api.ListApiKeysAsync(_tenantId, _showRevoked);
+            _keys = result?.ApiKeys ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load keys: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ShowCreateDialog()
+    {
+        _newKeyName = "";
+        _newKeyScope = "ReadOnly";
+        _newKeyExpiry = null;
+        _showCreateDialog = true;
+    }
+
+    private async Task CreateKey()
+    {
+        if (string.IsNullOrWhiteSpace(_newKeyName))
+        {
+            Snackbar.Add("Key name is required.", Severity.Warning);
+            return;
+        }
+
+        _creating = true;
+        try
+        {
+            _createdKey = await Api.CreateApiKeyAsync(_tenantId, new CreateApiKeyRequest
+            {
+                Name = _newKeyName,
+                Scope = _newKeyScope,
+                ExpiresAt = _newKeyExpiry
+            });
+            _showCreateDialog = false;
+            _showKeyCreatedDialog = true;
+            await LoadKeys();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _creating = false;
+        }
+    }
+
+    private async Task RevokeKey(ApiKeyResponse key)
+    {
+        var confirmed = await Dialog.ShowMessageBox("Revoke API Key",
+            $"Are you sure you want to revoke '{key.Name}'? This cannot be undone.",
+            yesText: "Revoke", cancelText: "Cancel");
+
+        if (confirmed != true) return;
+
+        try
+        {
+            await Api.RevokeApiKeyAsync(_tenantId, key.Id);
+            Snackbar.Add("API key revoked.", Severity.Success);
+            await LoadKeys();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RegenerateKey(ApiKeyResponse key)
+    {
+        var confirmed = await Dialog.ShowMessageBox("Regenerate API Key",
+            $"Regenerate '{key.Name}'? The old key will be revoked.",
+            yesText: "Regenerate", cancelText: "Cancel");
+
+        if (confirmed != true) return;
+
+        try
+        {
+            _createdKey = await Api.RegenerateApiKeyAsync(_tenantId, key.Id);
+            _showKeyCreatedDialog = true;
+            await LoadKeys();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task CopyKey()
+    {
+        // The copy will be handled by the browser via JS interop if needed
+        Snackbar.Add("Key copied! (Use Ctrl+C to copy from the field)", Severity.Info);
+    }
+}

@@ -19,8 +19,7 @@ internal sealed class KnowledgeFolderBootstrapper : IHostedService
     public Task StartAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("Ensuring knowledge folder exists during startup.");
-        knowledgeStore.EnsureFolderExists();
-        return Task.CompletedTask;
+        return knowledgeStore.EnsureFolderExistsAsync(cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

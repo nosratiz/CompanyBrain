@@ -7,145 +7,112 @@ using CompanyBrain.Admin.Server.Services.Interfaces;
 
 namespace CompanyBrain.Admin.Server.Services;
 
-public sealed class UserService : IUserService
+public sealed class UserService(UserDbContext dbContext) : IUserService
 {
-    private readonly UserDbContext _dbContext;
-
-    public UserService(UserDbContext dbContext)
+    public async Task<Result<User>> RegisterAsync(string email, string password, string fullName, CancellationToken cancellationToken = default)
     {
-        _dbContext = dbContext;
-    }
-
-    public async Task<Result<User>> RegisterAsync(string email, string password, string fullName)
-    {
-        if (await EmailExistsAsync(email))
+        if (await EmailExistsAsync(email, cancellationToken))
         {
             return Result.Fail<User>("Email already registered");
         }
 
-        var passwordHash = BCrypt.Net.BCrypt.HashPassword(password);
+        var user = User.Register(email, password, fullName);
 
-        var user = new User
-        {
-            Email = email.ToLowerInvariant(),
-            PasswordHash = passwordHash,
-            FullName = fullName
-        };
+        dbContext.Users.Add(user);
+        var license = user.CreateLicense(LicenseTier.Free);
 
-        _dbContext.Users.Add(user);
-
-        // Create free license by default
-        var (maxKeys, maxDocs, maxStorage) = LicensePlanDefaults.GetLimits(LicenseTier.Free);
-        var license = new License
-        {
-            UserId = user.Id,
-            PlanName = LicensePlanDefaults.GetPlanName(LicenseTier.Free),
-            Tier = LicenseTier.Free,
-            MaxApiKeys = maxKeys,
-            MaxDocuments = maxDocs,
-            MaxStorageBytes = maxStorage,
-            ExpiresAt = LicensePlanDefaults.GetExpiryDate(LicenseTier.Free)
-        };
-
-        _dbContext.Licenses.Add(license);
-        await _dbContext.SaveChangesAsync();
+        dbContext.Licenses.Add(license);
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         return Result.Ok(user);
     }
 
-    public async Task<Result<User>> LoginAsync(string email, string password)
+    public async Task<Result<User>> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
     {
-        var user = await _dbContext.Users
-            .FirstOrDefaultAsync(u => u.Email == email.ToLowerInvariant());
+        var user = await dbContext.Users
+            .FirstOrDefaultAsync(u => u.Email == email.ToLowerInvariant(), cancellationToken);
 
         if (user is null)
         {
             return Result.Fail<User>("Invalid email or password");
         }
 
-        if (!user.IsActive)
+        var signInResult = user.SignIn(password);
+        if (signInResult.IsFailed)
         {
-            return Result.Fail<User>("Account is deactivated");
+            return Result.Fail<User>(signInResult.Errors);
         }
 
-        if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
-        {
-            return Result.Fail<User>("Invalid email or password");
-        }
-
-        user.LastLoginAt = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         return Result.Ok(user);
     }
 
-    public async Task<User?> GetByIdAsync(Guid userId)
+    public async Task<User?> GetByIdAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Users
+        return await dbContext.Users
             .Include(u => u.Licenses)
-            .FirstOrDefaultAsync(u => u.Id == userId);
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
     }
 
-    public async Task<bool> EmailExistsAsync(string email)
+    public async Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Users.AnyAsync(u => u.Email == email.ToLowerInvariant());
+        return await dbContext.Users.AnyAsync(u => u.Email == email.ToLowerInvariant(), cancellationToken);
     }
 
-    public async Task<IReadOnlyList<User>> GetAllUsersAsync(int page, int pageSize)
+    public async Task<IReadOnlyList<User>> GetAllUsersAsync(int page, int pageSize, CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Users
+        return await dbContext.Users
             .Include(u => u.Licenses)
             .OrderByDescending(u => u.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<int> GetTotalUserCountAsync()
+    public async Task<int> GetTotalUserCountAsync(CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Users.CountAsync();
+        return await dbContext.Users.CountAsync(cancellationToken);
     }
 
-    public async Task<Result> UpdateUserAsync(Guid userId, string? fullName, string? email)
+    public async Task<Result> UpdateUserAsync(Guid userId, string? fullName, string? email, CancellationToken cancellationToken = default)
     {
-        var user = await _dbContext.Users.FindAsync(userId);
+        var user = await dbContext.Users.FindAsync([userId], cancellationToken);
         if (user is null)
             return Result.Fail("User not found");
 
         if (email is not null)
         {
             var normalized = email.Trim().ToLowerInvariant();
-            if (normalized != user.Email && await EmailExistsAsync(normalized))
+            if (normalized != user.Email && await EmailExistsAsync(normalized, cancellationToken))
                 return Result.Fail("Email already in use");
-            user.Email = normalized;
         }
 
-        if (fullName is not null)
-            user.FullName = fullName.Trim();
+        user.UpdateProfile(fullName, email);
 
-        await _dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(cancellationToken);
         return Result.Ok();
     }
 
-    public async Task<Result> SetUserActiveStatusAsync(Guid userId, bool isActive)
+    public async Task<Result> SetUserActiveStatusAsync(Guid userId, bool isActive, CancellationToken cancellationToken = default)
     {
-        var user = await _dbContext.Users.FindAsync(userId);
+        var user = await dbContext.Users.FindAsync([userId], cancellationToken);
         if (user is null)
             return Result.Fail("User not found");
 
-        user.IsActive = isActive;
-        await _dbContext.SaveChangesAsync();
+        user.SetActiveStatus(isActive);
+        await dbContext.SaveChangesAsync(cancellationToken);
         return Result.Ok();
     }
 
-    public async Task<Result> DeleteUserAsync(Guid userId)
+    public async Task<Result> DeleteUserAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        var user = await _dbContext.Users.FindAsync(userId);
+        var user = await dbContext.Users.FindAsync([userId], cancellationToken);
         if (user is null)
             return Result.Fail("User not found");
 
-        _dbContext.Users.Remove(user);
-        await _dbContext.SaveChangesAsync();
+        dbContext.Users.Remove(user);
+        await dbContext.SaveChangesAsync(cancellationToken);
         return Result.Ok();
     }
 }

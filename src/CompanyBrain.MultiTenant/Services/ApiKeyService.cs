@@ -31,15 +31,10 @@ public sealed class ApiKeyService(
             return Result.Fail<(string, ApiKey)>($"Tenant {tenantId} not found.");
         }
 
-        if (tenant.Status != TenantStatus.Active)
+        var createKeyResult = tenant.EnsureCanCreateApiKey(tenant.ApiKeys.Count);
+        if (createKeyResult.IsFailed)
         {
-            return Result.Fail<(string, ApiKey)>("Cannot create API keys for inactive tenants.");
-        }
-
-        if (tenant.ApiKeys.Count >= tenant.MaxApiKeys)
-        {
-            return Result.Fail<(string, ApiKey)>(
-                $"API key limit reached ({tenant.MaxApiKeys}). Upgrade your plan or revoke unused keys.");
+            return Result.Fail<(string, ApiKey)>(createKeyResult.Errors);
         }
 
         var (plainKey, entity) = ApiKey.Generate(tenantId, name, scope, expiresAt);
@@ -78,21 +73,14 @@ public sealed class ApiKeyService(
             return Result.Fail<ApiKeyValidationResult>("Invalid API key.");
         }
 
-        if (!apiKey.IsValid())
+        var validation = apiKey.ValidateForUse(apiKey.Tenant?.Status, DateTime.UtcNow);
+        if (validation.IsFailed)
         {
-            var reason = apiKey.IsRevoked ? "revoked" : "expired";
-            logger.LogWarning("API key {KeyPrefix} validation failed: {Reason}.", apiKey.KeyPrefix, reason);
-            return Result.Fail<ApiKeyValidationResult>($"API key is {reason}.");
+            logger.LogWarning("API key {KeyPrefix} validation failed: {Reason}", apiKey.KeyPrefix, validation.Errors.First().Message);
+            return Result.Fail<ApiKeyValidationResult>(validation.Errors);
         }
 
-        if (apiKey.Tenant?.Status != TenantStatus.Active)
-        {
-            logger.LogWarning("API key {KeyPrefix} validation failed: tenant inactive.", apiKey.KeyPrefix);
-            return Result.Fail<ApiKeyValidationResult>("Tenant is not active.");
-        }
-
-        // Update last used timestamp
-        apiKey.LastUsedAt = DateTime.UtcNow;
+        apiKey.MarkUsed(DateTime.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         logger.LogDebug("API key {KeyPrefix} validated for tenant {TenantId}.", apiKey.KeyPrefix, apiKey.TenantId);
@@ -145,8 +133,7 @@ public sealed class ApiKeyService(
             return Result.Fail("API key is already revoked.");
         }
 
-        apiKey.IsRevoked = true;
-        apiKey.RevokedReason = reason;
+        apiKey.Revoke(reason);
 
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Revoked API key {KeyPrefix} for tenant {TenantId}. Reason: {Reason}",
@@ -171,19 +158,8 @@ public sealed class ApiKeyService(
             return Result.Fail<(string, ApiKey)>("API key not found.");
         }
 
-        // Revoke old key
-        oldKey.IsRevoked = true;
-        oldKey.RevokedReason = "Regenerated";
-
-        // Create new key with same settings
-        var (plainKey, newEntity) = ApiKey.Generate(
-            tenantId,
-            oldKey.Name,
-            oldKey.Scope,
-            oldKey.ExpiresAt);
-
-        newEntity.RequestsPerMinute = oldKey.RequestsPerMinute;
-        newEntity.RequestsPerDay = oldKey.RequestsPerDay;
+        oldKey.Revoke("Regenerated");
+        var (plainKey, newEntity) = ApiKey.Regenerate(oldKey);
 
         dbContext.ApiKeys.Add(newEntity);
         await dbContext.SaveChangesAsync(cancellationToken);

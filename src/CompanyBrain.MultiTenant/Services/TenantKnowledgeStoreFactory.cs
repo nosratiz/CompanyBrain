@@ -19,56 +19,63 @@ public sealed class TenantKnowledgeStoreFactory(
     /// <summary>
     /// Gets or creates a KnowledgeStore for the current tenant.
     /// </summary>
-    public KnowledgeStore GetStore()
+    public async Task<KnowledgeStore> GetStoreAsync(CancellationToken cancellationToken = default)
     {
         if (!tenantContext.HasTenant)
         {
             throw new InvalidOperationException("No tenant context available. Ensure API key authentication middleware is configured.");
         }
 
-        return GetStoreForTenant(tenantContext.TenantId!.Value, tenantContext.TenantSlug!);
+        return await GetStoreForTenantAsync(tenantContext.TenantId!.Value, tenantContext.TenantSlug!, cancellationToken);
     }
 
     /// <summary>
     /// Gets or creates a KnowledgeStore for a specific tenant.
     /// </summary>
-    public KnowledgeStore GetStoreForTenant(Guid tenantId, string tenantSlug)
+    public async Task<KnowledgeStore> GetStoreForTenantAsync(Guid tenantId, string tenantSlug, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        KnowledgeStore store;
         lock (_lock)
         {
             if (_stores.TryGetValue(tenantId, out var existingStore))
             {
-                return existingStore;
+                store = existingStore;
             }
+            else
+            {
+                var tenantPath = Path.Combine(baseStoragePath, "tenants", tenantSlug);
+                store = new KnowledgeStore(
+                    tenantPath,
+                    loggerFactory.CreateLogger<KnowledgeStore>());
 
-            var tenantPath = Path.Combine(baseStoragePath, "tenants", tenantSlug);
-            var store = new KnowledgeStore(
-                tenantPath,
-                loggerFactory.CreateLogger<KnowledgeStore>());
-
-            store.EnsureFolderExists();
-            _stores[tenantId] = store;
-
-            return store;
+                _stores[tenantId] = store;
+            }
         }
+
+        await store.EnsureFolderExistsAsync(cancellationToken);
+        return store;
     }
 
     /// <summary>
     /// Gets storage statistics for a tenant.
     /// </summary>
-    public TenantStorageStats GetStorageStats(Guid tenantId, string tenantSlug)
+    public Task<TenantStorageStats> GetStorageStatsAsync(Guid tenantId, string tenantSlug, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var tenantPath = Path.Combine(baseStoragePath, "tenants", tenantSlug);
 
         if (!Directory.Exists(tenantPath))
         {
-            return new TenantStorageStats(0, 0);
+            return Task.FromResult(new TenantStorageStats(0, 0));
         }
 
         var files = Directory.GetFiles(tenantPath, "*.md", SearchOption.TopDirectoryOnly);
         var totalSize = files.Sum(f => new FileInfo(f).Length);
 
-        return new TenantStorageStats(files.Length, totalSize);
+        return Task.FromResult(new TenantStorageStats(files.Length, totalSize));
     }
 }
 

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace CompanyBrain.AdminPanel.Models;
 
 public sealed record UserInfo(
@@ -9,9 +11,10 @@ public sealed record UserInfo(
 public sealed record LoginRequest(string Email, string Password);
 
 public sealed record LoginResponse(
-    string Token,
-    DateTime ExpiresAt,
-    UserInfo User);
+    Guid UserId,
+    string Email,
+    string FullName,
+    string Token);
 
 public sealed record RegisterRequest(
     string Email,
@@ -21,7 +24,7 @@ public sealed record RegisterRequest(
 public sealed record RegisterResponse(
     Guid UserId,
     string Email,
-    string Message);
+    string Token);
 
 public sealed record UserLicense(
     Guid Id,
@@ -34,6 +37,7 @@ public sealed record UserLicense(
     long MaxStorageBytes,
     bool IsActive);
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum LicenseTier
 {
     Free,
@@ -60,8 +64,7 @@ public sealed record CreateApiKeyRequest(
 public sealed record ApiKeyCreatedResponse(
     Guid Id,
     string Name,
-    string PlainKey,
-    string KeyPrefix,
+    string Key,
     string Scope,
     DateTime CreatedAt);
 
@@ -74,7 +77,9 @@ public sealed record LicenseResponse(
     DateTime PurchasedAt,
     DateTime? ExpiresAt,
     int MaxApiKeys,
-    int CurrentApiKeyCount);
+    int MaxDocuments,
+    long MaxStorageBytes,
+    bool IsActive);
 
 // Admin DTOs
 
@@ -130,3 +135,24 @@ public sealed record SetUserStatusRequest(bool IsActive);
 public sealed record AssignLicenseRequest(Guid UserId, string Tier);
 
 public sealed record MessageResponse(string Message);
+
+public sealed record CreateUserRequest(string Email, string Password, string FullName);
+
+public sealed record UpdateProfileRequest(string? FullName, string? Email);
+
+public sealed record UpdateLicenseRequest(string Tier);
+
+public sealed record AdminApiKeyDetail
+{
+    public Guid Id { get; init; }
+    public Guid UserId { get; init; }
+    public string? UserEmail { get; init; }
+    public string? UserFullName { get; init; }
+    public required string Name { get; init; }
+    public required string KeyPrefix { get; init; }
+    public required string Scope { get; init; }
+    public DateTime CreatedAt { get; init; }
+    public DateTime? ExpiresAt { get; init; }
+    public DateTime? LastUsedAt { get; init; }
+    public bool IsRevoked { get; init; }
+}

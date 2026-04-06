@@ -30,9 +30,9 @@
                             <MudText Typo="Typo.body2" Style="font-weight: 500;">@_user.CreatedAt.ToString("MMM yyyy")</MudText>
                         </MudStack>
                         <MudStack Row="true" Justify="Justify.SpaceBetween">
-                            <MudText Typo="Typo.caption" Style="color: #9ca3af;">Current Plan</MudText>
+                            <MudText Typo="Typo.caption" Style="color: #9ca3af;">Role</MudText>
                             <MudChip T="string" Size="Size.Small" Style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%); color: #667eea;">
-                                @(_activeLicense?.PlanName ?? "Free")
+                                Admin
                             </MudChip>
                         </MudStack>
                     </MudStack>
@@ -49,11 +49,11 @@
 
                     <MudGrid>
                         <MudItem xs="12" sm="6">
-                            <MudTextField Value="@_user.FullName" Label="Full Name" Variant="Variant.Outlined" ReadOnly="true"
+                            <MudTextField @bind-Value="_editFullName" Label="Full Name" Variant="Variant.Outlined"
                                           Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Badge" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudTextField Value="@_user.Email" Label="Email Address" Variant="Variant.Outlined" ReadOnly="true"
+                            <MudTextField @bind-Value="_editEmail" Label="Email Address" Variant="Variant.Outlined"
                                           Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Email" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
@@ -65,6 +65,18 @@
                                           Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Fingerprint" />
                         </MudItem>
                     </MudGrid>
+
+                    <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-4">
+                        <MudButton Variant="Variant.Text" OnClick="ResetEditFields" Disabled="_isSaving">Reset</MudButton>
+                        <MudButton Variant="Variant.Filled" OnClick="SaveProfileAsync" Disabled="_isSaving"
+                                   Style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px;">
+                            @if (_isSaving)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Inherit" Class="mr-2" />
+                            }
+                            Save Changes
+                        </MudButton>
+                    </MudStack>
                 </MudPaper>
 
                 @* Stats *@
@@ -74,40 +86,9 @@
                         Usage Statistics
                     </MudText>
 
-                    <MudGrid>
-                        <MudItem xs="6" sm="3">
-                            <div style="text-align: center;">
-                                <MudText Typo="Typo.h4" Style="font-weight: 700; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-                                    @_apiKeyCount
-                                </MudText>
-                                <MudText Typo="Typo.caption" Style="color: #6b7280;">API Keys</MudText>
-                            </div>
-                        </MudItem>
-                        <MudItem xs="6" sm="3">
-                            <div style="text-align: center;">
-                                <MudText Typo="Typo.h4" Style="font-weight: 700; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-                                    @_licenseCount
-                                </MudText>
-                                <MudText Typo="Typo.caption" Style="color: #6b7280;">Licenses</MudText>
-                            </div>
-                        </MudItem>
-                        <MudItem xs="6" sm="3">
-                            <div style="text-align: center;">
-                                <MudText Typo="Typo.h4" Style="font-weight: 700; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-                                    @(_activeLicense?.MaxDocuments.ToString("N0") ?? "0")
-                                </MudText>
-                                <MudText Typo="Typo.caption" Style="color: #6b7280;">Doc Limit</MudText>
-                            </div>
-                        </MudItem>
-                        <MudItem xs="6" sm="3">
-                            <div style="text-align: center;">
-                                <MudText Typo="Typo.h4" Style="font-weight: 700; background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-                                    @FormatStorage(_activeLicense?.MaxStorageBytes ?? 0)
-                                </MudText>
-                                <MudText Typo="Typo.caption" Style="color: #6b7280;">Storage</MudText>
-                            </div>
-                        </MudItem>
-                    </MudGrid>
+                    <MudText Typo="Typo.body2" Style="color: #6b7280;">
+                        As an administrator, you can manage users, API keys, and licenses from the admin pages.
+                    </MudText>
                 </MudPaper>
 
                 @* Quick Links *@
@@ -118,13 +99,17 @@
                     </MudText>
 
                     <MudStack Row="true" Spacing="2">
-                        <MudButton Variant="Variant.Outlined" Href="/licenses" StartIcon="@Icons.Material.Filled.WorkspacePremium"
+                        <MudButton Variant="Variant.Outlined" Href="/admin/users" StartIcon="@Icons.Material.Filled.People"
                                    Style="border-radius: 10px;">
-                            Manage Licenses
+                            Manage Users
                         </MudButton>
-                        <MudButton Variant="Variant.Outlined" Href="/api-keys" StartIcon="@Icons.Material.Filled.VpnKey"
+                        <MudButton Variant="Variant.Outlined" Href="/admin/api-keys" StartIcon="@Icons.Material.Filled.VpnKey"
                                    Style="border-radius: 10px;">
                             Manage API Keys
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Href="/admin/licenses" StartIcon="@Icons.Material.Filled.WorkspacePremium"
+                                   Style="border-radius: 10px;">
+                            Manage Licenses
                         </MudButton>
                     </MudStack>
                 </MudPaper>
@@ -135,14 +120,14 @@
 
 @code {
     [Inject] private AuthStateProvider AuthState { get; set; } = default!;
-    [Inject] private ILicenseService LicenseService { get; set; } = default!;
-    [Inject] private IApiKeyService ApiKeyService { get; set; } = default!;
+    [Inject] private IAuthService AuthService { get; set; } = default!;
     [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private UserInfo? _user;
-    private UserLicense? _activeLicense;
-    private int _apiKeyCount;
-    private int _licenseCount;
+    private string? _editFullName;
+    private string? _editEmail;
+    private bool _isSaving;
 
     protected override async Task OnInitializedAsync()
     {
@@ -153,30 +138,48 @@
         }
 
         _user = await AuthState.GetUserAsync();
-        await LoadStatsAsync();
+        if (_user is not null)
+        {
+            _editFullName = _user.FullName;
+            _editEmail = _user.Email;
+        }
     }
 
-    private async Task LoadStatsAsync()
+    private void ResetEditFields()
     {
+        if (_user is null) return;
+        _editFullName = _user.FullName;
+        _editEmail = _user.Email;
+    }
+
+    private async Task SaveProfileAsync()
+    {
+        if (_user is null) return;
+        _isSaving = true;
         try
         {
-            var licenses = await LicenseService.GetMyLicensesAsync();
-            _licenseCount = licenses.Count();
-            _activeLicense = licenses.FirstOrDefault(l => l.IsActive);
-
-            var apiKeys = await ApiKeyService.GetMyApiKeysAsync();
-            _apiKeyCount = apiKeys.Count(k => !k.IsRevoked);
+            var request = new UpdateProfileRequest(_editFullName, _editEmail);
+            var updatedUser = await AuthService.UpdateProfileAsync(request);
+            if (updatedUser is not null)
+            {
+                _user = updatedUser;
+                _editFullName = updatedUser.FullName;
+                _editEmail = updatedUser.Email;
+                Snackbar.Add("Profile updated successfully", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Failed to update profile", Severity.Error);
+            }
         }
         catch
         {
-            // Silently handle
+            Snackbar.Add("An error occurred while saving", Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
         }
     }
 
-    private static string FormatStorage(long bytes)
-    {
-        if (bytes >= 1_073_741_824) return $"{bytes / 1_073_741_824} GB";
-        if (bytes >= 1_048_576) return $"{bytes / 1_048_576} MB";
-        return $"{bytes / 1024} KB";
-    }
 }

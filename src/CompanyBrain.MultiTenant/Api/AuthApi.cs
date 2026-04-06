@@ -1,5 +1,7 @@
 using System.Security.Claims;
+using CompanyBrain.MultiTenant.Api.Validation;
 using CompanyBrain.MultiTenant.Services;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -37,22 +39,13 @@ public static class AuthApi
         RegisterRequest request,
         [FromServices] IUserService userService,
         [FromServices] IJwtService jwtService,
+        [FromServices] IValidator<RegisterRequest> validator,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Email) ||
-            string.IsNullOrWhiteSpace(request.Password) ||
-            string.IsNullOrWhiteSpace(request.DisplayName))
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
         {
-            return Results.Problem(
-                detail: "Email, password, and display name are required.",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        if (request.Password.Length < 8)
-        {
-            return Results.Problem(
-                detail: "Password must be at least 8 characters.",
-                statusCode: StatusCodes.Status400BadRequest);
+            return validation.ToValidationProblem();
         }
 
         var result = await userService.RegisterAsync(
@@ -70,7 +63,7 @@ public static class AuthApi
         }
 
         var user = result.Value;
-        var token = jwtService.GenerateToken(user);
+        var token = await jwtService.GenerateTokenAsync(user, cancellationToken);
 
         return Results.Created($"/api/auth/me", new AuthResponse(
             Token: token,
@@ -88,13 +81,13 @@ public static class AuthApi
         LoginRequest request,
         [FromServices] IUserService userService,
         [FromServices] IJwtService jwtService,
+        [FromServices] IValidator<LoginRequest> validator,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
         {
-            return Results.Problem(
-                detail: "Email and password are required.",
-                statusCode: StatusCodes.Status400BadRequest);
+            return validation.ToValidationProblem();
         }
 
         var result = await userService.LoginAsync(request.Email, request.Password, cancellationToken);
@@ -107,7 +100,7 @@ public static class AuthApi
         }
 
         var user = result.Value;
-        var token = jwtService.GenerateToken(user);
+        var token = await jwtService.GenerateTokenAsync(user, cancellationToken);
 
         return Results.Ok(new AuthResponse(
             Token: token,

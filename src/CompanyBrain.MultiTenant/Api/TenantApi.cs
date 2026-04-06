@@ -1,6 +1,8 @@
 using CompanyBrain.MultiTenant.Api.Contracts;
+using CompanyBrain.MultiTenant.Api.Validation;
 using CompanyBrain.MultiTenant.Domain;
 using CompanyBrain.MultiTenant.Services;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -75,8 +77,15 @@ public static class TenantApi
     private static async Task<IResult> CreateTenantAsync(
         CreateTenantRequest request,
         [FromServices] TenantService tenantService,
+        [FromServices] IValidator<CreateTenantRequest> validator,
         CancellationToken cancellationToken)
     {
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
+        {
+            return validation.ToValidationProblem();
+        }
+
         var result = await tenantService.CreateTenantAsync(
             request.Name,
             request.Description,
@@ -125,8 +134,15 @@ public static class TenantApi
         Guid tenantId,
         UpdateTenantPlanRequest request,
         [FromServices] TenantService tenantService,
+        [FromServices] IValidator<UpdateTenantPlanRequest> validator,
         CancellationToken cancellationToken)
     {
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
+        {
+            return validation.ToValidationProblem();
+        }
+
         var result = await tenantService.UpdatePlanAsync(tenantId, request.Plan, cancellationToken);
 
         if (result.IsFailed)
@@ -156,8 +172,15 @@ public static class TenantApi
         Guid tenantId,
         CreateApiKeyRequest request,
         [FromServices] ApiKeyService apiKeyService,
+        [FromServices] IValidator<CreateApiKeyRequest> validator,
         CancellationToken cancellationToken)
     {
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
+        {
+            return validation.ToValidationProblem();
+        }
+
         var result = await apiKeyService.CreateApiKeyAsync(
             tenantId,
             request.Name,
@@ -258,7 +281,7 @@ public static class TenantApi
         }
 
         var tenant = tenantResult.Value;
-        var stats = storeFactory.GetStorageStats(tenantId, tenant.Slug);
+        var stats = await storeFactory.GetStorageStatsAsync(tenantId, tenant.Slug, cancellationToken);
 
         return Results.Ok(new TenantStorageStatsResponse(
             stats.DocumentCount,

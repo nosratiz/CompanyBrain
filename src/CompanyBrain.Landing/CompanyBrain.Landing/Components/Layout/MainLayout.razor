@@ -1,0 +1,144 @@
+﻿@inherits LayoutComponentBase
+@using CompanyBrain.Landing.Services
+@using Microsoft.AspNetCore.Components.Authorization
+
+<MudThemeProvider Theme="_theme" IsDarkMode="true" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    @* ── Top Bar ── *@
+    <MudAppBar Elevation="0" Style="background: rgba(10, 10, 15, 0.85); backdrop-filter: blur(20px) saturate(180%); border-bottom: 1px solid rgba(255,255,255,0.06);">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            @if (!string.IsNullOrWhiteSpace(_tenant.LogoUrl))
+            {
+                <MudImage Src="@_tenant.LogoUrl" Height="32" Alt="@_tenant.CompanyName" />
+            }
+            else
+            {
+                <div style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; background: linear-gradient(135deg, @(_tenant.PrimaryColor) 0%, @(_tenant.SecondaryColor) 100%); border-radius: 10px;">
+                    <MudIcon Icon="@Icons.Material.Filled.Bolt" Size="Size.Small" Style="color: white;" />
+                </div>
+            }
+            <MudLink Href="/" Style="text-decoration: none;">
+                <MudText Typo="Typo.h6" Style="@($"font-weight: 800; font-family: 'Inter', sans-serif; background: linear-gradient(135deg, {_tenant.PrimaryColor} 0%, {_tenant.SecondaryColor} 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;")">
+                    @_tenant.CompanyName
+                </MudText>
+            </MudLink>
+        </MudStack>
+        <MudSpacer />
+        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+            <AuthorizeView>
+                <Authorized>
+                    <MudButton Variant="Variant.Text" Href="/dashboard"
+                               Style="color: rgba(255,255,255,0.7); text-transform: none; font-weight: 500; font-family: 'Inter', sans-serif;">
+                        Dashboard
+                    </MudButton>
+                    <MudButton Variant="Variant.Text" Href="/tenants"
+                               Style="color: rgba(255,255,255,0.7); text-transform: none; font-weight: 500; font-family: 'Inter', sans-serif;">
+                        Tenants
+                    </MudButton>
+                    <MudButton Variant="Variant.Text" Href="/api-keys"
+                               Style="color: rgba(255,255,255,0.7); text-transform: none; font-weight: 500; font-family: 'Inter', sans-serif;">
+                        API Keys
+                    </MudButton>
+                    <MudButton Variant="Variant.Text" Href="/mcp-connection"
+                               Style="color: rgba(255,255,255,0.7); text-transform: none; font-weight: 500; font-family: 'Inter', sans-serif;">
+                        MCP
+                    </MudButton>
+                    <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Primary" AnchorOrigin="Origin.BottomRight">
+                        <MudMenuItem Href="/profile" Icon="@Icons.Material.Filled.Person">Profile</MudMenuItem>
+                        <MudMenuItem Href="/logout" Icon="@Icons.Material.Filled.Logout">Sign Out</MudMenuItem>
+                    </MudMenu>
+                </Authorized>
+                <NotAuthorized>
+                    <MudButton Variant="Variant.Text" Href="#features"
+                               Style="color: rgba(255,255,255,0.7); text-transform: none; font-weight: 500; font-family: 'Inter', sans-serif;">
+                        Features
+                    </MudButton>
+                    <MudButton Variant="Variant.Text" Href="#pricing"
+                               Style="color: rgba(255,255,255,0.7); text-transform: none; font-weight: 500; font-family: 'Inter', sans-serif;">
+                        Pricing
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Href="/login"
+                               Style="@($"color: {_tenant.PrimaryColor}; border-color: {_tenant.PrimaryColor}; border-radius: 12px; text-transform: none; font-weight: 600; font-family: 'Inter', sans-serif; margin-left: 8px;")">
+                        Sign In
+                    </MudButton>
+                </NotAuthorized>
+            </AuthorizeView>
+        </MudStack>
+    </MudAppBar>
+
+    @* ── Main Content ── *@
+    <MudMainContent Style="background: #0a0a0f; min-height: 100vh;">
+        @Body
+    </MudMainContent>
+
+    @* ── Footer ── *@
+    <footer style="background: rgba(10, 10, 15, 0.95); border-top: 1px solid rgba(255,255,255,0.06); padding: 3rem 0 2rem;">
+        <MudContainer MaxWidth="MaxWidth.Large">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                <MudStack Spacing="1">
+                    <MudText Typo="Typo.body1" Style="@($"font-weight: 700; color: {_tenant.PrimaryColor}; font-family: 'Inter', sans-serif;")">
+                        @_tenant.CompanyName
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4); font-family: 'Inter', sans-serif;">
+                        &copy; @DateTime.UtcNow.Year @_tenant.CompanyName. All rights reserved.
+                    </MudText>
+                </MudStack>
+                <MudStack Row="true" Spacing="2">
+                    <MudLink Href="/privacy" Style="color: rgba(255,255,255,0.5); font-size: 0.85rem; font-family: 'Inter', sans-serif;">Privacy</MudLink>
+                    <MudLink Href="/terms" Style="color: rgba(255,255,255,0.5); font-size: 0.85rem; font-family: 'Inter', sans-serif;">Terms</MudLink>
+                    <MudLink Href="mailto:support@companybrain.dev" Style="color: rgba(255,255,255,0.5); font-size: 0.85rem; font-family: 'Inter', sans-serif;">Contact</MudLink>
+                </MudStack>
+            </MudStack>
+        </MudContainer>
+    </footer>
+</MudLayout>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    private TenantConfiguration _tenant = new();
+
+    private MudTheme _theme = null!;
+
+    protected override void OnInitialized()
+    {
+        if (HttpContext?.Items["TenantConfig"] is TenantConfiguration tenant)
+        {
+            _tenant = tenant;
+        }
+
+        _theme = new MudTheme
+        {
+            PaletteDark = new PaletteDark
+            {
+                Primary = _tenant.PrimaryColor,
+                Secondary = _tenant.SecondaryColor,
+                Tertiary = _tenant.AccentColor,
+                Background = "#0a0a0f",
+                Surface = "#12121a",
+                AppbarBackground = "#0a0a0fD9",
+                DrawerBackground = "#12121a",
+                TextPrimary = "#EBEBEBEA",
+                TextSecondary = "#FFFFFF8C"
+            },
+            LayoutProperties = new LayoutProperties
+            {
+                DefaultBorderRadius = "16px"
+            },
+            Typography = new Typography
+            {
+                Default = new DefaultTypography { FontFamily = ["Inter", "system-ui", "sans-serif"] },
+                H1 = new H1Typography { FontWeight = "900", LineHeight = "1.05", LetterSpacing = "-0.03em" },
+                H2 = new H2Typography { FontWeight = "800", LineHeight = "1.1", LetterSpacing = "-0.02em" },
+                H3 = new H3Typography { FontWeight = "700", LineHeight = "1.15" },
+                H4 = new H4Typography { FontWeight = "700", LineHeight = "1.2" },
+                H5 = new H5Typography { FontWeight = "600", LineHeight = "1.3" },
+                H6 = new H6Typography { FontWeight = "600" }
+            }
+        };
+    }
+}

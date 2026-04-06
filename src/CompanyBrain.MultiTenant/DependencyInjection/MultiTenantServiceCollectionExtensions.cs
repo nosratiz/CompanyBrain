@@ -20,7 +20,7 @@ public static class MultiTenantServiceCollectionExtensions
     {
         // Database
         services.AddDbContext<TenantDbContext>(options =>
-            options.UseSqlite(connectionString));
+            options.UseNpgsql(connectionString));
 
         // Tenant context (request-scoped via AsyncLocal)
         services.AddSingleton<ITenantContextAccessor, TenantContextAccessor>();

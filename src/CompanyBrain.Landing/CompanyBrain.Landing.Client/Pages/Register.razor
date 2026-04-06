@@ -1,0 +1,149 @@
+@page "/register"
+@rendermode InteractiveWebAssembly
+@using CompanyBrain.Landing.Client.Models
+@using CompanyBrain.Landing.Client.Services
+@inject ApiClient Api
+@inject TokenAuthStateProvider Auth
+@inject NavigationManager Nav
+
+<PageTitle>Create Account — CompanyBrain</PageTitle>
+
+<div class="auth-page">
+    <div class="auth-mesh-bg"></div>
+    <div class="auth-orb auth-orb-1"></div>
+    <div class="auth-orb auth-orb-2"></div>
+
+    <MudContainer MaxWidth="MaxWidth.ExtraSmall" Style="position: relative; z-index: 2;">
+        <div class="auth-card">
+            <div style="text-align: center; margin-bottom: 2rem;">
+                <div class="auth-logo">
+                    <MudIcon Icon="@Icons.Material.Filled.Bolt" Size="Size.Large" Style="color: white;" />
+                </div>
+                <MudText Typo="Typo.h4" Style="font-weight: 800; font-family: 'Inter', sans-serif; color: rgba(255,255,255,0.95);">
+                    Create your account
+                </MudText>
+                <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.45); margin-top: 0.5rem; font-family: 'Inter', sans-serif;">
+                    Start your free trial — no credit card required
+                </MudText>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Class="mb-4"
+                          Style="border-radius: 12px;">
+                    @_error
+                </MudAlert>
+            }
+
+            <MudTextField @bind-Value="_displayName" Label="Full name" Variant="Variant.Outlined"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Person"
+                          Disabled="_loading" Class="mb-3" />
+
+            <MudTextField @bind-Value="_email" Label="Email address" Variant="Variant.Outlined"
+                          InputType="InputType.Email" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Email"
+                          Disabled="_loading" Class="mb-3" />
+
+            <MudTextField @bind-Value="_password" Label="Password" Variant="Variant.Outlined"
+                          InputType="InputType.Password" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Lock"
+                          HelperText="Minimum 8 characters"
+                          Disabled="_loading" Class="mb-3" />
+
+            <MudTextField @bind-Value="_confirmPassword" Label="Confirm password" Variant="Variant.Outlined"
+                          InputType="InputType.Password" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Lock"
+                          Disabled="_loading" Class="mb-4" />
+
+            <MudButton Variant="Variant.Filled" FullWidth="true" Size="Size.Large"
+                       OnClick="HandleRegister" Disabled="_loading"
+                       Class="gradient-btn mb-3">
+                @if (_loading)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Inherit" Class="mr-2" />
+                }
+                Create Account
+            </MudButton>
+
+            <div class="auth-divider">
+                <div class="auth-divider-line"></div>
+                <MudText Typo="Typo.caption" Style="padding: 0 1rem; color: rgba(255,255,255,0.3); font-family: 'Inter', sans-serif;">or</MudText>
+                <div class="auth-divider-line"></div>
+            </div>
+
+            <div style="text-align: center;">
+                <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.45); font-family: 'Inter', sans-serif;">
+                    Already have an account?
+                    <MudLink Href="/login" Style="color: #667eea; font-weight: 600;">Sign in</MudLink>
+                </MudText>
+            </div>
+        </div>
+    </MudContainer>
+</div>
+
+@code {
+    private string _displayName = "";
+    private string _email = "";
+    private string _password = "";
+    private string _confirmPassword = "";
+    private bool _loading;
+    private string? _error;
+
+    private async Task HandleRegister()
+    {
+        _error = null;
+
+        if (string.IsNullOrWhiteSpace(_displayName) || string.IsNullOrWhiteSpace(_email)
+            || string.IsNullOrWhiteSpace(_password))
+        {
+            _error = "Please fill in all fields.";
+            return;
+        }
+
+        if (_password.Length < 8)
+        {
+            _error = "Password must be at least 8 characters.";
+            return;
+        }
+
+        if (_password != _confirmPassword)
+        {
+            _error = "Passwords do not match.";
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            var result = await Api.RegisterAsync(new RegisterRequest
+            {
+                Email = _email,
+                Password = _password,
+                DisplayName = _displayName
+            });
+
+            if (result is not null)
+            {
+                await Auth.LoginAsync(result.Token);
+                Nav.NavigateTo("/dashboard", forceLoad: false);
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.StatusCode switch
+            {
+                System.Net.HttpStatusCode.Conflict => "An account with this email already exists.",
+                System.Net.HttpStatusCode.BadRequest => "Invalid registration data. Please check your inputs.",
+                _ => $"Registration failed: {ex.Message}"
+            };
+        }
+        catch (Exception ex)
+        {
+            _error = $"Connection error: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

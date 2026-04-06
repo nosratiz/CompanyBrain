@@ -117,7 +117,7 @@ internal sealed class WikiIngester
 
         foreach (var anchor in anchorNodes)
         {
-            var href = anchor.GetAttributeValue("href", null);
+            var href = anchor.GetAttributeValue("href", string.Empty);
             if (string.IsNullOrWhiteSpace(href))
             {
                 continue;

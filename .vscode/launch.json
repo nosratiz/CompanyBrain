@@ -1,0 +1,31 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "name": "CompanyBrain Admin Server",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/src/CompanyBrain.Admin.Server/bin/Debug/net7.0/CompanyBrain.Admin.Server.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/CompanyBrain.Admin.Server",
+            "stopAtEntry": false,
+            "serverReadyAction": {
+                "action": "openExternally",
+                "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+            },
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development"
+            },
+            "sourceFileMap": {
+                "/app": "${workspaceFolder}/src/CompanyBrain.Admin.Server"
+            }
+        }
+        
+
+    ]
+}

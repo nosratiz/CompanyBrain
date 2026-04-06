@@ -1,5 +1,7 @@
 using System.Security.Claims;
+using CompanyBrain.MultiTenant.Api.Validation;
 using CompanyBrain.MultiTenant.Services;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -68,6 +70,7 @@ public static class ProfileApi
         UpdateProfileRequest request,
         ClaimsPrincipal principal,
         [FromServices] IUserService userService,
+        [FromServices] IValidator<UpdateProfileRequest> validator,
         CancellationToken cancellationToken)
     {
         var userId = GetUserId(principal);
@@ -76,9 +79,10 @@ public static class ProfileApi
             return Results.Problem(detail: "Invalid token.", statusCode: StatusCodes.Status401Unauthorized);
         }
 
-        if (string.IsNullOrWhiteSpace(request.DisplayName))
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
         {
-            return Results.Problem(detail: "Display name cannot be empty.", statusCode: StatusCodes.Status400BadRequest);
+            return validation.ToValidationProblem();
         }
 
         var result = await userService.UpdateProfileAsync(
@@ -112,6 +116,7 @@ public static class ProfileApi
         ChangePasswordRequest request,
         ClaimsPrincipal principal,
         [FromServices] IUserService userService,
+        [FromServices] IValidator<ChangePasswordRequest> validator,
         CancellationToken cancellationToken)
     {
         var userId = GetUserId(principal);
@@ -120,14 +125,10 @@ public static class ProfileApi
             return Results.Problem(detail: "Invalid token.", statusCode: StatusCodes.Status401Unauthorized);
         }
 
-        if (string.IsNullOrWhiteSpace(request.CurrentPassword) || string.IsNullOrWhiteSpace(request.NewPassword))
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
         {
-            return Results.Problem(detail: "Current and new passwords are required.", statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        if (request.NewPassword.Length < 8)
-        {
-            return Results.Problem(detail: "New password must be at least 8 characters.", statusCode: StatusCodes.Status400BadRequest);
+            return validation.ToValidationProblem();
         }
 
         var result = await userService.UpdateProfileAsync(

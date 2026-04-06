@@ -1,3 +1,4 @@
+using FluentResults;
 using System.Security.Cryptography;
 
 namespace CompanyBrain.MultiTenant.Domain;
@@ -62,6 +63,14 @@ public sealed class ApiKey
         return (plainKey, entity);
     }
 
+    public static (string PlainKey, ApiKey Entity) Regenerate(ApiKey source)
+    {
+        var (plainKey, entity) = Generate(source.TenantId, source.Name, source.Scope, source.ExpiresAt);
+        entity.RequestsPerMinute = source.RequestsPerMinute;
+        entity.RequestsPerDay = source.RequestsPerDay;
+        return (plainKey, entity);
+    }
+
     /// <summary>
     /// Hashes an API key using SHA256.
     /// </summary>
@@ -78,6 +87,34 @@ public sealed class ApiKey
     public bool IsValid() =>
         !IsRevoked &&
         (ExpiresAt is null || ExpiresAt > DateTime.UtcNow);
+
+    public Result ValidateForUse(TenantStatus? tenantStatus, DateTime utcNow)
+    {
+        if (IsRevoked)
+        {
+            return Result.Fail("API key is revoked.");
+        }
+
+        if (ExpiresAt is not null && ExpiresAt <= utcNow)
+        {
+            return Result.Fail("API key is expired.");
+        }
+
+        if (tenantStatus != TenantStatus.Active)
+        {
+            return Result.Fail("Tenant is not active.");
+        }
+
+        return Result.Ok();
+    }
+
+    public void MarkUsed(DateTime utcNow) => LastUsedAt = utcNow;
+
+    public void Revoke(string? reason)
+    {
+        IsRevoked = true;
+        RevokedReason = reason;
+    }
 }
 
 [Flags]

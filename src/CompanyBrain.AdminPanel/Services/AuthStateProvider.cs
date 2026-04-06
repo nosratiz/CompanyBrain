@@ -1,5 +1,6 @@
 using Blazored.LocalStorage;
 using CompanyBrain.AdminPanel.Models;
+using Microsoft.Extensions.Logging;
 
 namespace CompanyBrain.AdminPanel.Services;
 
@@ -9,12 +10,14 @@ public sealed class AuthStateProvider
     private const string UserKey = "auth_user";
 
     private readonly ILocalStorageService _localStorage;
+    private readonly ILogger<AuthStateProvider> _logger;
 
     public event Action? OnChange;
 
-    public AuthStateProvider(ILocalStorageService localStorage)
+    public AuthStateProvider(ILocalStorageService localStorage, ILogger<AuthStateProvider> logger)
     {
         _localStorage = localStorage;
+        _logger = logger;
     }
 
     public async Task<bool> IsAuthenticatedAsync()
@@ -36,7 +39,16 @@ public sealed class AuthStateProvider
     public async Task SetAuthAsync(LoginResponse response)
     {
         await _localStorage.SetItemAsync(TokenKey, response.Token);
-        await _localStorage.SetItemAsync(UserKey, response.User);
+        var user = new UserInfo(response.UserId, response.Email, response.FullName, DateTime.UtcNow);
+        await _localStorage.SetItemAsync(UserKey, user);
+        _logger.LogInformation("Auth state stored for {Email}", response.Email);
+        NotifyStateChanged();
+    }
+
+    public async Task UpdateUserAsync(UserInfo user)
+    {
+        await _localStorage.SetItemAsync(UserKey, user);
+        _logger.LogInformation("Stored updated user profile for {Email}", user.Email);
         NotifyStateChanged();
     }
 
@@ -44,6 +56,7 @@ public sealed class AuthStateProvider
     {
         await _localStorage.RemoveItemAsync(TokenKey);
         await _localStorage.RemoveItemAsync(UserKey);
+        _logger.LogInformation("Auth state cleared from local storage");
         NotifyStateChanged();
     }
 

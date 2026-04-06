@@ -11,6 +11,9 @@ public sealed class TenantDbContext(DbContextOptions<TenantDbContext> options) :
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        // Use a separate schema to avoid table name collisions with Admin Server
+        modelBuilder.HasDefaultSchema("tenant");
+
         modelBuilder.Entity<Tenant>(entity =>
         {
             entity.HasKey(t => t.Id);

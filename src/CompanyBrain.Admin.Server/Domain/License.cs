@@ -16,4 +16,34 @@ public sealed class License
     public bool IsActive { get; set; } = true;
 
     public User? User { get; set; }
+
+    public static License Create(Guid userId, LicenseTier tier)
+    {
+        var (maxKeys, maxDocs, maxStorage) = LicensePlanDefaults.GetLimits(tier);
+
+        return new License
+        {
+            UserId = userId,
+            PlanName = LicensePlanDefaults.GetPlanName(tier),
+            Tier = tier,
+            MaxApiKeys = maxKeys,
+            MaxDocuments = maxDocs,
+            MaxStorageBytes = maxStorage,
+            ExpiresAt = LicensePlanDefaults.GetExpiryDate(tier)
+        };
+    }
+
+    public void Revoke() => IsActive = false;
+
+    public void UpdateTier(LicenseTier newTier)
+    {
+        var (maxKeys, maxDocs, maxStorage) = LicensePlanDefaults.GetLimits(newTier);
+
+        Tier = newTier;
+        PlanName = LicensePlanDefaults.GetPlanName(newTier);
+        MaxApiKeys = maxKeys;
+        MaxDocuments = maxDocs;
+        MaxStorageBytes = maxStorage;
+        ExpiresAt = LicensePlanDefaults.GetExpiryDate(newTier);
+    }
 }

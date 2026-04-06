@@ -1,0 +1,340 @@
+@page "/tenants"
+@rendermode InteractiveWebAssembly
+@using CompanyBrain.Landing.Client.Models
+@using CompanyBrain.Landing.Client.Services
+@inject ApiClient Api
+@inject TokenAuthStateProvider Auth
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IDialogService Dialog
+
+<PageTitle>Tenants — CompanyBrain</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-8">
+    <MudButton StartIcon="@Icons.Material.Filled.ArrowBack" Variant="Variant.Text"
+               OnClick='() => Nav.NavigateTo("/dashboard")' Class="mb-4"
+               Style="color: rgba(255,255,255,0.5); text-transform: none;">
+        Back to Dashboard
+    </MudButton>
+
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-6">
+        <MudText Typo="Typo.h4" Style="font-weight: 800; font-family: 'Inter', sans-serif;">
+            Tenant Management
+        </MudText>
+        <MudButton Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="ShowCreateDialog" Class="gradient-btn">
+            Create Tenant
+        </MudButton>
+    </MudStack>
+
+    @if (_loading)
+    {
+        <div style="display: flex; justify-content: center; padding: 4rem 0;">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+        </div>
+    }
+    else if (_tenants.Count == 0)
+    {
+        <MudCard Elevation="0" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;">
+            <MudCardContent Style="text-align: center; padding: 4rem 2rem;">
+                <MudIcon Icon="@Icons.Material.Filled.Business" Size="Size.Large" Style="color: rgba(255,255,255,0.2);" Class="mb-3" />
+                <MudText Typo="Typo.h6" Style="color: rgba(255,255,255,0.5);">No tenants yet</MudText>
+                <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.3);">Create your first tenant to get started.</MudText>
+            </MudCardContent>
+        </MudCard>
+    }
+    else
+    {
+        <MudGrid Spacing="3">
+            @foreach (var t in _tenants)
+            {
+                <MudItem xs="12" md="6" lg="4">
+                    <MudCard Elevation="0" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px; height: 100%;">
+                        <MudCardContent Style="padding: 1.5rem;">
+                            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
+                                <MudStack Spacing="0">
+                                    <MudText Typo="Typo.h6" Style="font-weight: 700;">@t.Name</MudText>
+                                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4); font-family: monospace;">@t.Slug</MudText>
+                                </MudStack>
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(t.Status == "Active" ? Color.Success : Color.Warning)">
+                                    @t.Status
+                                </MudChip>
+                            </MudStack>
+
+                            <MudStack Row="true" Spacing="4" Class="mt-3">
+                                <MudStack Spacing="0">
+                                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Plan</MudText>
+                                    <MudText Style="font-weight: 600;">@t.Plan</MudText>
+                                </MudStack>
+                                <MudStack Spacing="0">
+                                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Created</MudText>
+                                    <MudText Style="font-weight: 600;">@t.CreatedAt.ToString("MMM d, yyyy")</MudText>
+                                </MudStack>
+                            </MudStack>
+                        </MudCardContent>
+                        <MudCardActions Style="padding: 0 1rem 1rem;">
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                       OnClick="() => ViewTenant(t.Id)"
+                                       Style="text-transform: none; font-weight: 600;">
+                                View Details
+                            </MudButton>
+                            <MudSpacer />
+                            <MudIconButton Icon="@Icons.Material.Filled.TrendingUp" Size="Size.Small"
+                                           OnClick="() => ShowUpgradeDialog(t)" Color="Color.Primary" />
+                            @if (t.Status == "Active")
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Block" Size="Size.Small"
+                                               OnClick="() => SuspendTenant(t)" Color="Color.Error" />
+                            }
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+</MudContainer>
+
+@* ── Create Tenant Dialog ── *@
+<MudDialog @bind-Visible="_showCreateDialog" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Style="font-weight: 700;">Create New Tenant</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_newName" Label="Tenant Name" Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="_newDescription" Label="Description (optional)" Variant="Variant.Outlined"
+                      Lines="2" Class="mb-3" />
+        <MudSelect @bind-Value="_newPlan" Label="Plan" Variant="Variant.Outlined">
+            <MudSelectItem T="string" Value='"Free"'>Free — 100 docs, 3 keys, 100 MB</MudSelectItem>
+            <MudSelectItem T="string" Value='"Starter"'>Starter — 500 docs, 10 keys, 1 GB</MudSelectItem>
+            <MudSelectItem T="string" Value='"Professional"'>Professional — 2K docs, 25 keys, 10 GB</MudSelectItem>
+            <MudSelectItem T="string" Value='"Enterprise"'>Enterprise — 50K docs, 100 keys, 100 GB</MudSelectItem>
+        </MudSelect>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showCreateDialog = false" Style="text-transform: none;">Cancel</MudButton>
+        <MudButton OnClick="CreateTenant" Variant="Variant.Filled" Class="gradient-btn"
+                   Disabled="_creating" Style="text-transform: none;">
+            @if (_creating)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Inherit" Class="mr-2" />
+            }
+            Create
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ── Upgrade Plan Dialog ── *@
+<MudDialog @bind-Visible="_showUpgradeDialog" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Style="font-weight: 700;">Change Plan — @_upgradeTenant?.Name</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudSelect @bind-Value="_upgradePlan" Label="New Plan" Variant="Variant.Outlined">
+            <MudSelectItem T="string" Value='"Free"'>Free</MudSelectItem>
+            <MudSelectItem T="string" Value='"Starter"'>Starter</MudSelectItem>
+            <MudSelectItem T="string" Value='"Professional"'>Professional</MudSelectItem>
+            <MudSelectItem T="string" Value='"Enterprise"'>Enterprise</MudSelectItem>
+        </MudSelect>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showUpgradeDialog = false" Style="text-transform: none;">Cancel</MudButton>
+        <MudButton OnClick="UpgradePlan" Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="_upgrading" Style="text-transform: none; border-radius: 12px;">
+            @if (_upgrading)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Inherit" Class="mr-2" />
+            }
+            Update Plan
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ── Tenant Detail Dialog ── *@
+<MudDialog @bind-Visible="_showDetailDialog" Options="_detailDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Style="font-weight: 700;">@_detailTenant?.Name</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_detailTenant is not null)
+        {
+            <MudGrid Spacing="2">
+                <MudItem xs="6"><MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Slug</MudText><MudText Style="font-family: monospace;">@_detailTenant.Slug</MudText></MudItem>
+                <MudItem xs="6"><MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Status</MudText><MudText>@_detailTenant.Status</MudText></MudItem>
+                <MudItem xs="6"><MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Plan</MudText><MudText>@_detailTenant.Plan</MudText></MudItem>
+                <MudItem xs="6"><MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Created</MudText><MudText>@_detailTenant.CreatedAt.ToString("g")</MudText></MudItem>
+                <MudItem xs="6"><MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Max Documents</MudText><MudText>@_detailTenant.MaxDocuments.ToString("N0")</MudText></MudItem>
+                <MudItem xs="6"><MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Max API Keys</MudText><MudText>@_detailTenant.MaxApiKeys</MudText></MudItem>
+                <MudItem xs="6"><MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Active API Keys</MudText><MudText>@_detailTenant.ActiveApiKeys</MudText></MudItem>
+                <MudItem xs="6"><MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Active Users</MudText><MudText>@_detailTenant.ActiveUsers</MudText></MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Description</MudText>
+                    <MudText>@(_detailTenant.Description ?? "—")</MudText>
+                </MudItem>
+            </MudGrid>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showDetailDialog = false" Style="text-transform: none;">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<TenantSummaryResponse> _tenants = [];
+    private bool _loading = true;
+
+    // Create
+    private bool _showCreateDialog;
+    private string _newName = "";
+    private string? _newDescription;
+    private string _newPlan = "Free";
+    private bool _creating;
+
+    // Upgrade
+    private bool _showUpgradeDialog;
+    private TenantSummaryResponse? _upgradeTenant;
+    private string _upgradePlan = "Free";
+    private bool _upgrading;
+
+    // Detail
+    private bool _showDetailDialog;
+    private TenantResponse? _detailTenant;
+
+    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+    private readonly DialogOptions _detailDialogOptions = new() { MaxWidth = MaxWidth.Medium, FullWidth = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated != true)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        await LoadTenants();
+    }
+
+    private async Task LoadTenants()
+    {
+        _loading = true;
+        try
+        {
+            var result = await Api.ListTenantsAsync();
+            _tenants = result?.Tenants ?? [];
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            await Auth.LogoutAsync();
+            Nav.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load tenants: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ShowCreateDialog()
+    {
+        _newName = "";
+        _newDescription = null;
+        _newPlan = "Free";
+        _showCreateDialog = true;
+    }
+
+    private async Task CreateTenant()
+    {
+        if (string.IsNullOrWhiteSpace(_newName))
+        {
+            Snackbar.Add("Tenant name is required.", Severity.Warning);
+            return;
+        }
+
+        _creating = true;
+        try
+        {
+            await Api.CreateTenantAsync(new CreateTenantRequest
+            {
+                Name = _newName,
+                Description = _newDescription,
+                Plan = _newPlan
+            });
+            _showCreateDialog = false;
+            Snackbar.Add("Tenant created successfully.", Severity.Success);
+            await LoadTenants();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _creating = false;
+        }
+    }
+
+    private void ShowUpgradeDialog(TenantSummaryResponse tenant)
+    {
+        _upgradeTenant = tenant;
+        _upgradePlan = tenant.Plan;
+        _showUpgradeDialog = true;
+    }
+
+    private async Task UpgradePlan()
+    {
+        if (_upgradeTenant is null) return;
+        _upgrading = true;
+        try
+        {
+            await Api.UpdateTenantPlanAsync(_upgradeTenant.Id, new UpdateTenantPlanRequest { Plan = _upgradePlan });
+            _showUpgradeDialog = false;
+            Snackbar.Add("Plan updated.", Severity.Success);
+            await LoadTenants();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _upgrading = false;
+        }
+    }
+
+    private async Task SuspendTenant(TenantSummaryResponse tenant)
+    {
+        var confirmed = await Dialog.ShowMessageBox("Suspend Tenant",
+            $"Are you sure you want to suspend '{tenant.Name}'? This will block all API access.",
+            yesText: "Suspend", cancelText: "Cancel");
+
+        if (confirmed != true) return;
+
+        try
+        {
+            await Api.SuspendTenantAsync(tenant.Id);
+            Snackbar.Add("Tenant suspended.", Severity.Success);
+            await LoadTenants();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ViewTenant(Guid tenantId)
+    {
+        try
+        {
+            _detailTenant = await Api.GetTenantAsync(tenantId);
+            _showDetailDialog = true;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
+        }
+    }
+}

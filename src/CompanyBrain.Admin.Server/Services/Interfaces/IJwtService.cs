@@ -4,6 +4,6 @@ namespace CompanyBrain.Admin.Server.Services.Interfaces;
 
 public interface IJwtService
 {
-    string GenerateToken(User user);
-    Guid? ValidateToken(string token);
+    Task<string> GenerateTokenAsync(User user, CancellationToken cancellationToken = default);
+    Task<Guid?> ValidateTokenAsync(string token, CancellationToken cancellationToken = default);
 }

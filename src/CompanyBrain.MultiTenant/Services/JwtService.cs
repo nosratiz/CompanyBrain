@@ -9,7 +9,7 @@ namespace CompanyBrain.MultiTenant.Services;
 
 public interface IJwtService
 {
-    string GenerateToken(TenantUser user);
+    Task<string> GenerateTokenAsync(TenantUser user, CancellationToken cancellationToken = default);
 }
 
 public sealed class JwtService : IJwtService
@@ -25,8 +25,10 @@ public sealed class JwtService : IJwtService
         _expirationMinutes = int.TryParse(configuration["Jwt:ExpirationMinutes"], out var exp) ? exp : 60 * 24; // 24 hours
     }
 
-    public string GenerateToken(TenantUser user)
+    public Task<string> GenerateTokenAsync(TenantUser user, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_key));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
@@ -46,6 +48,6 @@ public sealed class JwtService : IJwtService
             expires: DateTime.UtcNow.AddMinutes(_expirationMinutes),
             signingCredentials: credentials);
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
+        return Task.FromResult(new JwtSecurityTokenHandler().WriteToken(token));
     }
 }

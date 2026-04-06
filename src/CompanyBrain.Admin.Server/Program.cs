@@ -70,10 +70,7 @@ try
     builder.Services.AddScoped<IUserLicenseService, UserLicenseService>();
     builder.Services.AddScoped<IUserApiKeyService, UserApiKeyService>();
     builder.Services.AddScoped<IJwtService, JwtService>();
-    builder.Services.AddScoped<IValidator<RegisterRequest>, RegisterRequestValidator>();
-    builder.Services.AddScoped<IValidator<LoginRequest>, LoginRequestValidator>();
-    builder.Services.AddScoped<IValidator<PurchaseLicenseRequest>, PurchaseLicenseRequestValidator>();
-    builder.Services.AddScoped<IValidator<CreateApiKeyRequest>, CreateApiKeyRequestValidator>();
+    builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>(includeInternalTypes: true);
 
     // OpenAPI
     builder.Services.AddEndpointsApiExplorer();

@@ -1,0 +1,238 @@
+@page "/dashboard"
+@rendermode InteractiveWebAssembly
+@using CompanyBrain.Landing.Client.Models
+@using CompanyBrain.Landing.Client.Services
+@inject ApiClient Api
+@inject TokenAuthStateProvider Auth
+@inject NavigationManager Nav
+
+<PageTitle>Dashboard — CompanyBrain</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-8">
+    @if (_loading)
+    {
+        <div style="display: flex; justify-content: center; padding: 4rem 0;">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+        </div>
+    }
+    else if (_profile is null)
+    {
+        <MudAlert Severity="Severity.Warning">Unable to load your profile. Please sign in again.</MudAlert>
+    }
+    else
+    {
+        <MudText Typo="Typo.h4" Class="mb-1" Style="font-weight: 800; font-family: 'Inter', sans-serif;">
+            Welcome back, @_profile.DisplayName
+        </MudText>
+        <MudText Typo="Typo.body1" Class="mb-6" Style="color: rgba(255,255,255,0.5); font-family: 'Inter', sans-serif;">
+            @(_profile.TenantName ?? "Your workspace") &bull; @_profile.Role
+        </MudText>
+
+        @* ── Stat Cards ── *@
+        <MudGrid Spacing="4" Class="mb-6">
+            <MudItem xs="12" sm="6" md="3">
+                <MudCard Elevation="0" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;">
+                    <MudCardContent>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+                            <div style="display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; background: linear-gradient(135deg, #667eea20, #764ba215); border-radius: 14px;">
+                                <MudIcon Icon="@Icons.Material.Filled.Description" Style="color: #667eea;" />
+                            </div>
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.h5" Style="font-weight: 800; font-family: 'Inter', sans-serif;">@(_storage?.DocumentCount ?? 0)</MudText>
+                                <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.45);">Documents</MudText>
+                            </MudStack>
+                        </MudStack>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudCard Elevation="0" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;">
+                    <MudCardContent>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+                            <div style="display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; background: linear-gradient(135deg, #10b98120, #059669); border-radius: 14px;">
+                                <MudIcon Icon="@Icons.Material.Filled.Key" Style="color: #10b981;" />
+                            </div>
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.h5" Style="font-weight: 800; font-family: 'Inter', sans-serif;">@(_tenant?.ActiveApiKeys ?? 0)</MudText>
+                                <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.45);">API Keys</MudText>
+                            </MudStack>
+                        </MudStack>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudCard Elevation="0" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;">
+                    <MudCardContent>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+                            <div style="display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; background: linear-gradient(135deg, #f59e0b20, #d97706); border-radius: 14px;">
+                                <MudIcon Icon="@Icons.Material.Filled.People" Style="color: #f59e0b;" />
+                            </div>
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.h5" Style="font-weight: 800; font-family: 'Inter', sans-serif;">@(_tenant?.ActiveUsers ?? 0)</MudText>
+                                <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.45);">Users</MudText>
+                            </MudStack>
+                        </MudStack>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudCard Elevation="0" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;">
+                    <MudCardContent>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+                            <div style="display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; background: linear-gradient(135deg, #8b5cf620, #7c3aed); border-radius: 14px;">
+                                <MudIcon Icon="@Icons.Material.Filled.Storage" Style="color: #8b5cf6;" />
+                            </div>
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.h5" Style="font-weight: 800; font-family: 'Inter', sans-serif;">@(_storage?.FormattedSize ?? "0 B")</MudText>
+                                <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.45);">Storage Used</MudText>
+                            </MudStack>
+                        </MudStack>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+
+        @* ── Storage usage bar ── *@
+        @if (_storage is not null)
+        {
+            <MudCard Elevation="0" Class="mb-6" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;">
+                <MudCardContent>
+                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
+                        <MudText Typo="Typo.subtitle1" Style="font-weight: 700; font-family: 'Inter', sans-serif;">Storage Usage</MudText>
+                        <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.5);">
+                            @_storage.FormattedSize / @FormatBytes(_storage.MaxBytes)
+                        </MudText>
+                    </MudStack>
+                    <MudProgressLinear Value="@_storage.UsagePercentage" Color="Color.Primary"
+                                       Rounded="true" Size="Size.Large"
+                                       Style="height: 12px; border-radius: 8px;" />
+                </MudCardContent>
+            </MudCard>
+        }
+
+        @* ── Tenant info ── *@
+        @if (_tenant is not null)
+        {
+            <MudCard Elevation="0" Class="mb-6" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;">
+                <MudCardContent>
+                    <MudText Typo="Typo.subtitle1" Class="mb-3" Style="font-weight: 700; font-family: 'Inter', sans-serif;">Tenant Details</MudText>
+                    <MudGrid Spacing="3">
+                        <MudItem xs="6" md="3">
+                            <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Name</MudText>
+                            <MudText Typo="Typo.body1" Style="font-weight: 600;">@_tenant.Name</MudText>
+                        </MudItem>
+                        <MudItem xs="6" md="3">
+                            <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Slug</MudText>
+                            <MudText Typo="Typo.body1" Style="font-family: monospace;">@_tenant.Slug</MudText>
+                        </MudItem>
+                        <MudItem xs="6" md="3">
+                            <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Plan</MudText>
+                            <MudChip T="string" Size="Size.Small" Style="background: #667eea20; color: #667eea; font-weight: 600;">@_tenant.Plan</MudChip>
+                        </MudItem>
+                        <MudItem xs="6" md="3">
+                            <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Status</MudText>
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(_tenant.Status == "Active" ? Color.Success : Color.Warning)">
+                                @_tenant.Status
+                            </MudChip>
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+            </MudCard>
+        }
+
+        @* ── Quick actions ── *@
+        <MudText Typo="Typo.subtitle1" Class="mb-3" Style="font-weight: 700; font-family: 'Inter', sans-serif;">Quick Actions</MudText>
+        <MudGrid Spacing="3">
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Elevation="0" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px; cursor: pointer;"
+                         @onclick='() => Nav.NavigateTo("/api-keys")'>
+                    <MudCardContent Style="text-align: center; padding: 2rem;">
+                        <MudIcon Icon="@Icons.Material.Filled.Key" Size="Size.Large" Style="color: #667eea;" Class="mb-2" />
+                        <MudText Typo="Typo.subtitle1" Style="font-weight: 700;">Manage API Keys</MudText>
+                        <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Create, revoke, or regenerate keys</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Elevation="0" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px; cursor: pointer;"
+                         @onclick='() => Nav.NavigateTo("/mcp-connection")'>
+                    <MudCardContent Style="text-align: center; padding: 2rem;">
+                        <MudIcon Icon="@Icons.Material.Filled.Cable" Size="Size.Large" Style="color: #10b981;" Class="mb-2" />
+                        <MudText Typo="Typo.subtitle1" Style="font-weight: 700;">MCP Connection</MudText>
+                        <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Connect AI assistants to your data</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Elevation="0" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px; cursor: pointer;"
+                         @onclick='() => Nav.NavigateTo("/profile")'>
+                    <MudCardContent Style="text-align: center; padding: 2rem;">
+                        <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Large" Style="color: #f59e0b;" Class="mb-2" />
+                        <MudText Typo="Typo.subtitle1" Style="font-weight: 700;">My Profile</MudText>
+                        <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">Update name & change password</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+    }
+</MudContainer>
+
+@code {
+    private ProfileResponse? _profile;
+    private TenantResponse? _tenant;
+    private TenantStorageStatsResponse? _storage;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Force auth state to load from localStorage
+        var state = await Auth.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated != true)
+        {
+            Nav.NavigateTo("/login", forceLoad: false);
+            return;
+        }
+
+        try
+        {
+            _profile = await Api.GetProfileAsync();
+            if (_profile is not null)
+            {
+                var tasks = new List<Task>();
+
+                var tenantTask = Api.GetTenantAsync(_profile.TenantId);
+                var storageTask = Api.GetStorageStatsAsync(_profile.TenantId);
+                await Task.WhenAll(tenantTask, storageTask);
+
+                _tenant = tenantTask.Result;
+                _storage = storageTask.Result;
+            }
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            await Auth.LogoutAsync();
+            Nav.NavigateTo("/login", forceLoad: false);
+            return;
+        }
+        catch
+        {
+            // Silently handle - partial data is fine
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        const long KB = 1024;
+        const long MB = 1024 * 1024;
+        const long GB = 1024 * 1024 * 1024;
+        if (bytes >= GB) return $"{bytes / (double)GB:F1} GB";
+        if (bytes >= MB) return $"{bytes / (double)MB:F1} MB";
+        if (bytes >= KB) return $"{bytes / (double)KB:F1} KB";
+        return $"{bytes} B";
+    }
+}

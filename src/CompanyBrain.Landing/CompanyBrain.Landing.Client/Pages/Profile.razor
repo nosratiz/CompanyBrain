@@ -1,0 +1,204 @@
+@page "/profile"
+@rendermode InteractiveWebAssembly
+@using CompanyBrain.Landing.Client.Models
+@using CompanyBrain.Landing.Client.Services
+@inject ApiClient Api
+@inject TokenAuthStateProvider Auth
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Profile — CompanyBrain</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-8">
+    <MudButton StartIcon="@Icons.Material.Filled.ArrowBack" Variant="Variant.Text"
+               OnClick='() => Nav.NavigateTo("/dashboard")' Class="mb-4"
+               Style="color: rgba(255,255,255,0.5); text-transform: none;">
+        Back to Dashboard
+    </MudButton>
+
+    <MudText Typo="Typo.h4" Class="mb-6" Style="font-weight: 800; font-family: 'Inter', sans-serif;">
+        My Profile
+    </MudText>
+
+    @if (_loading)
+    {
+        <div style="display: flex; justify-content: center; padding: 4rem 0;">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+        </div>
+    }
+    else if (_profile is not null)
+    {
+        @* ── Profile Info ── *@
+        <MudCard Elevation="0" Class="mb-6" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;">
+            <MudCardContent Style="padding: 2rem;">
+                <MudText Typo="Typo.subtitle1" Class="mb-4" Style="font-weight: 700; font-family: 'Inter', sans-serif;">
+                    Profile Information
+                </MudText>
+
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_displayName" Label="Display Name"
+                                      Variant="Variant.Outlined" Adornment="Adornment.Start"
+                                      AdornmentIcon="@Icons.Material.Filled.Person" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField Value="@_profile.Email" Label="Email" ReadOnly="true"
+                                      Variant="Variant.Outlined" Adornment="Adornment.Start"
+                                      AdornmentIcon="@Icons.Material.Filled.Email" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField Value="@_profile.Role" Label="Role" ReadOnly="true"
+                                      Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField Value="@(_profile.TenantName ?? "—")" Label="Tenant" ReadOnly="true"
+                                      Variant="Variant.Outlined" />
+                    </MudItem>
+                </MudGrid>
+
+                <MudButton Variant="Variant.Filled" Class="gradient-btn mt-4"
+                           OnClick="SaveProfile" Disabled="_saving">
+                    @if (_saving)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Inherit" Class="mr-2" />
+                    }
+                    Save Changes
+                </MudButton>
+            </MudCardContent>
+        </MudCard>
+
+        @* ── Change Password ── *@
+        <MudCard Elevation="0" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;">
+            <MudCardContent Style="padding: 2rem;">
+                <MudText Typo="Typo.subtitle1" Class="mb-4" Style="font-weight: 700; font-family: 'Inter', sans-serif;">
+                    Change Password
+                </MudText>
+
+                <MudGrid Spacing="3">
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_currentPassword" Label="Current Password"
+                                      Variant="Variant.Outlined" InputType="InputType.Password"
+                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Lock" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_newPassword" Label="New Password"
+                                      Variant="Variant.Outlined" InputType="InputType.Password"
+                                      HelperText="Minimum 8 characters" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_confirmNewPassword" Label="Confirm New Password"
+                                      Variant="Variant.Outlined" InputType="InputType.Password" />
+                    </MudItem>
+                </MudGrid>
+
+                <MudButton Variant="Variant.Filled" Color="Color.Warning" Class="mt-4"
+                           OnClick="ChangePassword" Disabled="_changingPassword"
+                           Style="text-transform: none; font-weight: 600; border-radius: 12px;">
+                    @if (_changingPassword)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Inherit" Class="mr-2" />
+                    }
+                    Update Password
+                </MudButton>
+            </MudCardContent>
+        </MudCard>
+    }
+</MudContainer>
+
+@code {
+    private ProfileResponse? _profile;
+    private string _displayName = "";
+    private string _currentPassword = "";
+    private string _newPassword = "";
+    private string _confirmNewPassword = "";
+    private bool _loading = true;
+    private bool _saving;
+    private bool _changingPassword;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated != true)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        try
+        {
+            _profile = await Api.GetProfileAsync();
+            if (_profile is not null)
+                _displayName = _profile.DisplayName;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            await Auth.LogoutAsync();
+            Nav.NavigateTo("/login");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveProfile()
+    {
+        _saving = true;
+        try
+        {
+            _profile = await Api.UpdateProfileAsync(new UpdateProfileRequest { DisplayName = _displayName });
+            Snackbar.Add("Profile updated successfully.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to update: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ChangePassword()
+    {
+        if (string.IsNullOrWhiteSpace(_currentPassword) || string.IsNullOrWhiteSpace(_newPassword))
+        {
+            Snackbar.Add("Please fill in all password fields.", Severity.Warning);
+            return;
+        }
+
+        if (_newPassword.Length < 8)
+        {
+            Snackbar.Add("New password must be at least 8 characters.", Severity.Warning);
+            return;
+        }
+
+        if (_newPassword != _confirmNewPassword)
+        {
+            Snackbar.Add("New passwords do not match.", Severity.Warning);
+            return;
+        }
+
+        _changingPassword = true;
+        try
+        {
+            await Api.ChangePasswordAsync(new ChangePasswordRequest
+            {
+                CurrentPassword = _currentPassword,
+                NewPassword = _newPassword
+            });
+            _currentPassword = "";
+            _newPassword = "";
+            _confirmNewPassword = "";
+            Snackbar.Add("Password changed successfully.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _changingPassword = false;
+        }
+    }
+}
