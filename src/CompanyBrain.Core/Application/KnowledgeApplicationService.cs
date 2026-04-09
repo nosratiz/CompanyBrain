@@ -187,4 +187,10 @@ internal sealed class KnowledgeApplicationService
 
     public Task<Result<KnowledgeResourceContent>> GetResourceAsync(string fileName, CancellationToken cancellationToken)
         => knowledgeStore.ReadResourceAsync(knowledgeStore.ToResourceUri(fileName), cancellationToken);
+
+    public Result DeleteResourceAsync(string fileName, CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Deleting knowledge resource '{FileName}'.", fileName);
+        return knowledgeStore.DeleteResource(fileName, cancellationToken);
+    }
 }

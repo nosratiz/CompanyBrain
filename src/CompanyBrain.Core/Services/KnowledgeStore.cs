@@ -173,6 +173,28 @@ public sealed class KnowledgeStore
         return Result.Ok(builder.ToString().TrimEnd());
     }
 
+    public Result DeleteResource(string fileName, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var normalized = Path.GetFileName(fileName);
+        if (string.IsNullOrWhiteSpace(normalized) || !normalized.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Fail(new ValidationAppError($"Invalid resource file name: {fileName}"));
+        }
+
+        var filePath = Path.Combine(rootPath, normalized);
+        if (!File.Exists(filePath))
+        {
+            logger.LogWarning("Attempted to delete non-existent resource: '{FilePath}'.", filePath);
+            return Result.Fail(new NotFoundAppError($"Resource not found: {normalized}"));
+        }
+
+        logger.LogInformation("Deleting knowledge resource '{FileName}' at '{FilePath}'.", normalized, filePath);
+        File.Delete(filePath);
+        return Result.Ok();
+    }
+
     public string ToResourceUri(string fileName) =>
         CompanyBrainConstants.ResourceScheme + Uri.EscapeDataString(fileName);
 

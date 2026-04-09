@@ -60,6 +60,12 @@ internal static class CompanyBrainApi
             .ProducesValidationProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        group.MapDelete("/resources/{fileName}", DeleteResourceAsync)
+            .WithName("DeleteKnowledgeResource")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         return endpoints;
     }
 
@@ -225,5 +231,22 @@ internal static class CompanyBrainApi
         }
 
         return TypedResults.Ok(result.Value);
+    }
+
+    private static async Task<IResult> DeleteResourceAsync(
+        string fileName,
+        [FromServices] KnowledgeApplicationService service,
+        [FromServices] McpSessionTracker sessionTracker,
+        CancellationToken cancellationToken)
+    {
+        var result = service.DeleteResourceAsync(fileName, cancellationToken);
+        if (result.IsFailed)
+        {
+            return result.ToProblemResult();
+        }
+
+        await sessionTracker.NotifyResourceListChangedAsync(cancellationToken);
+
+        return TypedResults.NoContent();
     }
 }

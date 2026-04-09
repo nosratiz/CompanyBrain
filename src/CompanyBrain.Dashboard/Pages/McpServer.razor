@@ -3,6 +3,7 @@
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 @inject NavigationManager Navigation
+@inject KnowledgeApiClient KnowledgeApi
 
 <PageTitle>MCP Server - Company Brain</PageTitle>
 
@@ -97,6 +98,7 @@
             <MudTh>URI</MudTh>
             <MudTh>Description</MudTh>
             <MudTh>Type</MudTh>
+            <MudTh>Actions</MudTh>
         </HeaderContent>
         <RowTemplate>
             <MudTd DataLabel="Name">@context.Name</MudTd>
@@ -114,6 +116,13 @@
                 {
                     <MudChip T="string" Size="Size.Small">@context.MimeType</MudChip>
                 }
+            </MudTd>
+            <MudTd DataLabel="Actions">
+                <MudTooltip Text="Delete">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                   OnClick="@(() => DeleteResourceAsync(context))" 
+                                   Disabled="_deleting" />
+                </MudTooltip>
             </MudTd>
         </RowTemplate>
         <NoRecordsContent>
@@ -137,6 +146,7 @@
 @code {
     private McpServerStatus _status = new();
     private bool _loading = true;
+    private bool _deleting;
 
     private string McpEndpointUrl => $"{Navigation.BaseUri.TrimEnd('/')}/mcp";
 
@@ -160,6 +170,44 @@
         var parameters = new DialogParameters<ToolTesterDialog> { { x => x.Tool, tool } };
         var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
         await DialogService.ShowAsync<ToolTesterDialog>($"Test: {tool.Name}", parameters, options);
+    }
+
+    private async Task DeleteResourceAsync(McpResourceInfo resource)
+    {
+        var fileName = resource.Name?.Replace("resources/", "");
+        if (string.IsNullOrWhiteSpace(fileName)) return;
+
+        var confirmed = await DialogService.ShowMessageBox(
+            "Delete Resource",
+            $"Are you sure you want to delete '{fileName}'? This cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+
+        if (confirmed != true) return;
+
+        _deleting = true;
+        StateHasChanged();
+
+        try
+        {
+            var success = await KnowledgeApi.DeleteResourceAsync(fileName);
+            if (success)
+            {
+                Snackbar.Add($"Deleted '{fileName}'", Severity.Success);
+                await RefreshStatus();
+            }
+            else
+            {
+                Snackbar.Add($"Failed to delete '{fileName}'", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _deleting = false;
+        }
     }
 
     private async Task CopyEndpointUrl()

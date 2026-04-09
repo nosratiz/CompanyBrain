@@ -2,6 +2,7 @@
 @page "/documents/{FileName}"
 @inject KnowledgeApiClient Api
 @inject ISnackbar Snackbar
+@inject IDialogService DialogService
 @inject NavigationManager Navigation
 
 <PageTitle>Documents - Company Brain</PageTitle>
@@ -85,6 +86,13 @@ else
                                        Size="Size.Small"
                                        OnClick="@(() => ViewDocument(context.Name))" />
                     </MudTooltip>
+                    <MudTooltip Text="Delete">
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       Size="Size.Small"
+                                       Color="Color.Error"
+                                       Disabled="_deleting"
+                                       OnClick="@(() => DeleteDocumentAsync(context.Name))" />
+                    </MudTooltip>
                 </MudTd>
             </RowTemplate>
             <NoRecordsContent>
@@ -102,6 +110,7 @@ else
 
     private bool _loading = true;
     private bool _loadingContent = false;
+    private bool _deleting = false;
     private List<KnowledgeResourceDescriptor> _resources = [];
     private KnowledgeResourceContent? _documentContent;
     private string _searchQuery = "";
@@ -146,7 +155,9 @@ else
         _loadingContent = true;
         try
         {
-            _documentContent = await Api.GetResourceAsync(Uri.UnescapeDataString(FileName!));
+            var rawName = Uri.UnescapeDataString(FileName!);
+            var actualFileName = StripResourcesPrefix(rawName);
+            _documentContent = await Api.GetResourceAsync(actualFileName);
         }
         catch (Exception ex)
         {
@@ -158,9 +169,49 @@ else
         }
     }
 
-    private void ViewDocument(string fileName)
+    private void ViewDocument(string name)
     {
-        Navigation.NavigateTo($"/documents/{Uri.EscapeDataString(fileName)}");
+        Navigation.NavigateTo($"/documents/{Uri.EscapeDataString(name)}");
+    }
+
+    private static string StripResourcesPrefix(string name) =>
+        name.StartsWith("resources/", StringComparison.OrdinalIgnoreCase) ? name["resources/".Length..] : name;
+
+    private async Task DeleteDocumentAsync(string name)
+    {
+        var actualFileName = StripResourcesPrefix(name);
+
+        var confirmed = await DialogService.ShowMessageBox(
+            "Delete Document",
+            $"Are you sure you want to delete '{actualFileName}'? This cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+
+        if (confirmed != true) return;
+
+        _deleting = true;
+        StateHasChanged();
+
+        try
+        {
+            var success = await Api.DeleteResourceAsync(actualFileName);
+            if (success)
+            {
+                Snackbar.Add($"Deleted '{actualFileName}'", Severity.Success);
+                await LoadResources();
+            }
+            else
+            {
+                Snackbar.Add($"Failed to delete '{actualFileName}'", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _deleting = false;
+        }
     }
 
     private static string FormatBytes(long bytes)
