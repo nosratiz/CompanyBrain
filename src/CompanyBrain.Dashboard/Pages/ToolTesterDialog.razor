@@ -1,0 +1,147 @@
+@inject McpStatusClient McpClient
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Terminal" />
+            <MudText Typo="Typo.h6">Test Tool: @Tool.Name</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (Tool.Description is not null)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">@Tool.Description</MudText>
+        }
+
+        @if (_parameters.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Parameters</MudText>
+            @foreach (var param in _parameters)
+            {
+                <MudTextField @bind-Value="param.Value"
+                              Label="@($"{param.Name}{(param.Required ? " *" : "")}")"
+                              HelperText="@param.Description"
+                              Variant="Variant.Outlined"
+                              Class="mb-2" />
+            }
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Color="Color.Tertiary" Class="mb-2">This tool takes no parameters.</MudText>
+        }
+
+        @if (_result is not null)
+        {
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Result</MudText>
+            <MudPaper Class="pa-4" Style="background-color: var(--mud-palette-background-grey); max-height: 400px; overflow-y: auto;">
+                <pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0; font-size: 0.85rem;">@_result</pre>
+            </MudPaper>
+        }
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Close</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Run" Disabled="_running">
+            @if (_running)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Run
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public McpToolInfo Tool { get; set; } = null!;
+
+    private List<ToolParam> _parameters = [];
+    private string? _result;
+    private string? _error;
+    private bool _running;
+
+    protected override void OnInitialized()
+    {
+        _parameters = ParseParameters(Tool);
+    }
+
+    private void Cancel() => MudDialog.Close();
+
+    private async Task Run()
+    {
+        _running = true;
+        _result = null;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            var args = new Dictionary<string, object>();
+            foreach (var p in _parameters)
+            {
+                if (!string.IsNullOrWhiteSpace(p.Value))
+                {
+                    args[p.Name] = p.Type == "integer" && int.TryParse(p.Value, out var iv) ? iv : p.Value;
+                }
+            }
+
+            _result = await McpClient.CallToolAsync(Tool.Name, args);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _running = false;
+            StateHasChanged();
+        }
+    }
+
+    private static List<ToolParam> ParseParameters(McpToolInfo tool)
+    {
+        if (tool.InputSchema is not { ValueKind: System.Text.Json.JsonValueKind.Object } schema)
+            return [];
+
+        var list = new List<ToolParam>();
+
+        if (!schema.TryGetProperty("properties", out var props) ||
+            props.ValueKind != System.Text.Json.JsonValueKind.Object)
+            return list;
+
+        var required = new HashSet<string>(StringComparer.Ordinal);
+        if (schema.TryGetProperty("required", out var req) &&
+            req.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            foreach (var r in req.EnumerateArray())
+                if (r.GetString() is { } n) required.Add(n);
+        }
+
+        foreach (var prop in props.EnumerateObject())
+        {
+            list.Add(new ToolParam
+            {
+                Name = prop.Name,
+                Description = prop.Value.TryGetProperty("description", out var d) ? d.GetString() : null,
+                Type = prop.Value.TryGetProperty("type", out var t) ? t.GetString() ?? "string" : "string",
+                Required = required.Contains(prop.Name),
+            });
+        }
+
+        return list;
+    }
+
+    private sealed class ToolParam
+    {
+        public string Name { get; set; } = "";
+        public string? Description { get; set; }
+        public string Type { get; set; } = "string";
+        public bool Required { get; set; }
+        public string Value { get; set; } = "";
+    }
+}

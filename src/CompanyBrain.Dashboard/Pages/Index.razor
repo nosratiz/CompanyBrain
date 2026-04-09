@@ -40,7 +40,7 @@ else
                     </CardHeaderAvatar>
                     <CardHeaderContent>
                         <MudText Typo="Typo.h6">Total Size</MudText>
-                        <MudText Typo="Typo.h4">@FormatBytes(_resources.Sum(r => r.SizeBytes))</MudText>
+                        <MudText Typo="Typo.h4">@FormatBytes(_resources.Sum(r => r.Size ?? 0))</MudText>
                     </CardHeaderContent>
                 </MudCardHeader>
             </MudCard>
@@ -73,8 +73,8 @@ else
                         </MudAvatar>
                     </CardHeaderAvatar>
                     <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Last Updated</MudText>
-                        <MudText Typo="Typo.body1">@(_resources.MaxBy(r => r.LastModified)?.LastModified.ToLocalTime().ToString("g") ?? "N/A")</MudText>
+                        <MudText Typo="Typo.h6">Status</MudText>
+                        <MudText Typo="Typo.body1">@(_resources.Count > 0 ? "Ready" : "Empty")</MudText>
                     </CardHeaderContent>
                 </MudCardHeader>
             </MudCard>
@@ -87,22 +87,20 @@ else
                     <MudText Typo="Typo.h6">Recent Documents</MudText>
                     <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/documents">View All</MudButton>
                 </div>
-                <MudTable Items="@_resources.OrderByDescending(r => r.LastModified).Take(5)" Hover="true" Dense="true">
+                <MudTable Items="@_resources.Take(5)" Hover="true" Dense="true">
                     <HeaderContent>
                         <MudTh>Name</MudTh>
                         <MudTh>Type</MudTh>
                         <MudTh>Size</MudTh>
-                        <MudTh>Last Modified</MudTh>
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd DataLabel="Name">
-                            <MudLink Href="@($"/documents/{Uri.EscapeDataString(context.FileName)}")">@context.FileName</MudLink>
+                            <MudLink Href="@($"/documents/{Uri.EscapeDataString(context.Name)}")">@context.Name</MudLink>
                         </MudTd>
                         <MudTd DataLabel="Type">
                             <MudChip T="string" Size="Size.Small" Color="@GetMimeTypeColor(context.MimeType)">@GetMimeTypeLabel(context.MimeType)</MudChip>
                         </MudTd>
-                        <MudTd DataLabel="Size">@FormatBytes(context.SizeBytes)</MudTd>
-                        <MudTd DataLabel="Last Modified">@context.LastModified.ToLocalTime().ToString("g")</MudTd>
+                        <MudTd DataLabel="Size">@FormatBytes(context.Size ?? 0)</MudTd>
                     </RowTemplate>
                     <NoRecordsContent>
                         <MudText>No documents found. <MudLink Href="/import">Import your first document</MudLink>.</MudText>
@@ -166,7 +164,7 @@ else
         return $"{size:0.##} {sizes[order]}";
     }
 
-    private static Color GetMimeTypeColor(string mimeType) => mimeType switch
+    private static Color GetMimeTypeColor(string? mimeType) => mimeType switch
     {
         "text/markdown" => Color.Primary,
         "text/plain" => Color.Default,
@@ -174,11 +172,11 @@ else
         _ => Color.Default
     };
 
-    private static string GetMimeTypeLabel(string mimeType) => mimeType switch
+    private static string GetMimeTypeLabel(string? mimeType) => mimeType switch
     {
         "text/markdown" => "Markdown",
         "text/plain" => "Text",
         "text/html" => "HTML",
-        _ => mimeType
+        _ => mimeType ?? "Unknown"
     };
 }

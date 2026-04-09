@@ -1,15 +1,17 @@
-<Router AppAssembly="typeof(App).Assembly">
-    <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(Shared.MainLayout)" />
-        <FocusOnNavigate RouteData="routeData" Selector="h1" />
-    </Found>
-    <NotFound>
-        <PageTitle>Not Found</PageTitle>
-        <LayoutView Layout="typeof(Shared.MainLayout)">
-            <MudAlert Severity="Severity.Error" Class="my-4">
-                <MudText Typo="Typo.h6">Page Not Found</MudText>
-                <MudText>The page you're looking for doesn't exist.</MudText>
-            </MudAlert>
-        </LayoutView>
-    </NotFound>
-</Router>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Company Brain Dashboard</title>
+    <base href="/" />
+    <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" rel="stylesheet" />
+    <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+    <HeadOutlet @rendermode="Microsoft.AspNetCore.Components.Web.RenderMode.InteractiveServer" />
+</head>
+<body>
+    <Routes @rendermode="Microsoft.AspNetCore.Components.Web.RenderMode.InteractiveServer" />
+    <script src="_framework/blazor.web.js"></script>
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+</body>
+</html>

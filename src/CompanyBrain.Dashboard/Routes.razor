@@ -1,0 +1,15 @@
+<Router AppAssembly="typeof(Routes).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="routeData" DefaultLayout="typeof(Shared.MainLayout)" />
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <PageTitle>Not Found</PageTitle>
+        <LayoutView Layout="typeof(Shared.MainLayout)">
+            <MudAlert Severity="Severity.Error" Class="my-4">
+                <MudText Typo="Typo.h6">Page Not Found</MudText>
+                <MudText>The page you're looking for doesn't exist.</MudText>
+            </MudAlert>
+        </LayoutView>
+    </NotFound>
+</Router>

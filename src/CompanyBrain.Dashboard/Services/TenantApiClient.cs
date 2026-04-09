@@ -6,18 +6,43 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
 {
     // === Knowledge Resources ===
 
-    public Task<IReadOnlyList<KnowledgeResourceDescriptor>?> ListResourcesAsync() =>
-        httpClient.GetFromJsonAsync<IReadOnlyList<KnowledgeResourceDescriptor>>("/api/knowledge/resources");
+    public async Task<IReadOnlyList<KnowledgeResourceDescriptor>?> ListResourcesAsync()
+    {
+        try
+        {
+            return await httpClient.GetFromJsonAsync<IReadOnlyList<KnowledgeResourceDescriptor>>("/api/knowledge/resources");
+        }
+        catch
+        {
+            return [];
+        }
+    }
 
-    public Task<KnowledgeResourceContent?> GetResourceAsync(string fileName) =>
-        httpClient.GetFromJsonAsync<KnowledgeResourceContent>($"/api/knowledge/resources/{Uri.EscapeDataString(fileName)}");
+    public async Task<KnowledgeResourceContent?> GetResourceAsync(string fileName)
+    {
+        try
+        {
+            return await httpClient.GetFromJsonAsync<KnowledgeResourceContent>($"/api/knowledge/resources/{Uri.EscapeDataString(fileName)}");
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
-    public Task<SearchResponse?> SearchAsync(string query, int? maxResults = null)
+    public async Task<SearchResponse?> SearchAsync(string query, int? maxResults = null)
     {
         var url = $"/api/knowledge/search?query={Uri.EscapeDataString(query)}";
         if (maxResults.HasValue)
             url += $"&maxResults={maxResults.Value}";
-        return httpClient.GetFromJsonAsync<SearchResponse>(url);
+        try
+        {
+            return await httpClient.GetFromJsonAsync<SearchResponse>(url);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     // === Ingestion ===
@@ -42,21 +67,34 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<IngestResultResponse>();
     }
+
+    public async Task<IngestResultResponse?> UploadDocumentAsync(Stream fileStream, string fileName, string? name = null)
+    {
+        using var content = new MultipartFormDataContent();
+        content.Add(new StreamContent(fileStream), "file", fileName);
+        if (!string.IsNullOrWhiteSpace(name))
+            content.Add(new StringContent(name), "name");
+
+        var response = await httpClient.PostAsync("/api/knowledge/documents/upload", content);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<IngestResultResponse>();
+    }
 }
 
 // === DTO Records ===
 
 public sealed record KnowledgeResourceDescriptor(
-    string FileName,
-    string ResourceUri,
-    string MimeType,
-    long SizeBytes,
-    DateTime LastModified);
+    string Name,
+    string? Title,
+    string Uri,
+    string? Description,
+    string? MimeType,
+    long? Size);
 
 public sealed record KnowledgeResourceContent(
     string FileName,
-    string ResourceUri,
-    string MimeType,
+    string Uri,
+    string? MimeType,
     string Content);
 
 public sealed record SearchResponse(

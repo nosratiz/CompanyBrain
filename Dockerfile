@@ -1,26 +1,21 @@
-# Default Dockerfile - builds CompanyBrain API + MCP Server
-# For individual services, use the Dockerfiles in each project directory:
-#   - src/CompanyBrain/Dockerfile          (API + MCP)
-#   - src/CompanyBrain.UserPortal.Server/Dockerfile (UserPortal)
-#
-# Or use docker-compose.yml to build all services
+# Dockerfile - builds CompanyBrain.Dashboard (API + MCP + Blazor UI)
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy project files for restore
 COPY src/CompanyBrain.Core/CompanyBrain.Core.csproj src/CompanyBrain.Core/
-COPY src/CompanyBrain/CompanyBrain.csproj src/CompanyBrain/
+COPY src/CompanyBrain.Dashboard/CompanyBrain.Dashboard.csproj src/CompanyBrain.Dashboard/
 
 # Restore dependencies
-RUN dotnet restore src/CompanyBrain/CompanyBrain.csproj
+RUN dotnet restore src/CompanyBrain.Dashboard/CompanyBrain.Dashboard.csproj
 
 # Copy source code
 COPY src/CompanyBrain.Core/ src/CompanyBrain.Core/
-COPY src/CompanyBrain/ src/CompanyBrain/
+COPY src/CompanyBrain.Dashboard/ src/CompanyBrain.Dashboard/
 
 # Build and publish
-RUN dotnet publish src/CompanyBrain/CompanyBrain.csproj \
+RUN dotnet publish src/CompanyBrain.Dashboard/CompanyBrain.Dashboard.csproj \
     -c Release \
     -o /app/publish \
     --no-restore
@@ -39,4 +34,4 @@ RUN mkdir -p /app/data
 
 EXPOSE 8080
 
-ENTRYPOINT ["dotnet", "CompanyBrain.dll"]
+ENTRYPOINT ["dotnet", "CompanyBrain.Dashboard.dll"]

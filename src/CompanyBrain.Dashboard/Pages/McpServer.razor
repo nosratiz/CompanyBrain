@@ -1,0 +1,184 @@
+@page "/mcp-server"
+@inject McpStatusClient McpClient
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager Navigation
+
+<PageTitle>MCP Server - Company Brain</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">MCP Server</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+
+<!-- Status + Endpoint -->
+<MudGrid Class="mb-4">
+    <MudItem xs="12" md="6">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudAvatar Color="@(_status.IsRunning ? Color.Success : Color.Error)">
+                        <MudIcon Icon="@(_status.IsRunning ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
+                    </MudAvatar>
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">@(_status.IsRunning ? "MCP Server Running" : "MCP Server Offline")</MudText>
+                    @if (_status.IsRunning)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            @_status.ServerName @_status.ServerVersion &middot; Protocol @_status.ProtocolVersion
+                        </MudText>
+                    }
+                    else if (_status.Error is not null)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Error">@_status.Error</MudText>
+                    }
+                </CardHeaderContent>
+                <CardHeaderActions>
+                    <MudTooltip Text="Refresh">
+                        <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="RefreshStatus" Disabled="_loading" />
+                    </MudTooltip>
+                </CardHeaderActions>
+            </MudCardHeader>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudAvatar Color="Color.Info">
+                        <MudIcon Icon="@Icons.Material.Filled.Link" />
+                    </MudAvatar>
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Endpoint</MudText>
+                    <MudText Typo="Typo.body2" Style="font-family: monospace;">@McpEndpointUrl</MudText>
+                </CardHeaderContent>
+                <CardHeaderActions>
+                    <MudTooltip Text="Copy URL">
+                        <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" OnClick="CopyEndpointUrl" />
+                    </MudTooltip>
+                </CardHeaderActions>
+            </MudCardHeader>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@if (_status.IsRunning)
+{
+    <!-- Tools -->
+    <MudText Typo="Typo.h5" Class="mb-2">Tools (@_status.Tools.Count)</MudText>
+    <MudTable Items="_status.Tools" Hover="true" Dense="true" Class="mb-4">
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Description</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">
+                <MudChip T="string" Size="Size.Small" Color="Color.Primary">@context.Name</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Description">@context.Description</MudTd>
+            <MudTd DataLabel="Actions">
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                           OnClick="@(() => OpenToolTester(context))">Test</MudButton>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+
+    <!-- Resources -->
+    <MudText Typo="Typo.h5" Class="mb-2">Resources (@_status.Resources.Count)</MudText>
+    <MudTable Items="_status.Resources" Hover="true" Dense="true" Class="mb-4">
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Title</MudTh>
+            <MudTh>URI</MudTh>
+            <MudTh>Description</MudTh>
+            <MudTh>Type</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">@context.Name</MudTd>
+            <MudTd DataLabel="Title">@context.Title</MudTd>
+            <MudTd DataLabel="URI">
+                <MudText Typo="Typo.body2" Style="font-family: monospace; font-size: 0.8rem;">@context.Uri</MudText>
+            </MudTd>
+            <MudTd DataLabel="Description">
+                <MudText Typo="Typo.body2" Style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">
+                    @context.Description
+                </MudText>
+            </MudTd>
+            <MudTd DataLabel="Type">
+                @if (context.MimeType is not null)
+                {
+                    <MudChip T="string" Size="Size.Small">@context.MimeType</MudChip>
+                }
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No MCP resources registered.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+
+    <!-- Configuration Snippet -->
+    <MudExpansionPanels Class="mb-4">
+        <MudExpansionPanel Text="Client Configuration">
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Use this JSON to connect MCP clients (VS Code, Claude Desktop, etc.) to this server:
+            </MudText>
+            <MudPaper Class="pa-4" Style="background-color: var(--mud-palette-background-grey);">
+                <pre style="margin: 0; font-size: 0.85rem;">@GetConfigSnippet()</pre>
+            </MudPaper>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
+}
+
+@code {
+    private McpServerStatus _status = new();
+    private bool _loading = true;
+
+    private string McpEndpointUrl => $"{Navigation.BaseUri.TrimEnd('/')}/mcp";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshStatus();
+    }
+
+    private async Task RefreshStatus()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        _status = await McpClient.GetStatusAsync();
+
+        _loading = false;
+    }
+
+    private async Task OpenToolTester(McpToolInfo tool)
+    {
+        var parameters = new DialogParameters<ToolTesterDialog> { { x => x.Tool, tool } };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
+        await DialogService.ShowAsync<ToolTesterDialog>($"Test: {tool.Name}", parameters, options);
+    }
+
+    private async Task CopyEndpointUrl()
+    {
+        await Task.CompletedTask;
+        Snackbar.Add($"MCP Endpoint: {McpEndpointUrl}", Severity.Info);
+    }
+
+    private string GetConfigSnippet()
+    {
+        return $$"""
+        {
+          "mcpServers": {
+            "company-brain": {
+              "type": "http",
+              "url": "{{McpEndpointUrl}}"
+            }
+          }
+        }
+        """;
+    }
+}

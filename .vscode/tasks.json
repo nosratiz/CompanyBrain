@@ -370,6 +370,21 @@
 				"CompanyBrain.slnx",
 				"-nologo"
 			]
+		},
+		{
+			"label": "build dashboard project",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"src/CompanyBrain.Dashboard/CompanyBrain.Dashboard.csproj",
+				"-nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "build"
 		}
 	]
 }

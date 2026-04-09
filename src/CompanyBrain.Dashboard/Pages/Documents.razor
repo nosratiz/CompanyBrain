@@ -23,7 +23,7 @@
         <MudPaper Class="pa-4">
             <div class="d-flex justify-space-between align-center mb-4">
                 <MudChip T="string" Size="Size.Small" Color="Color.Primary">@_documentContent.MimeType</MudChip>
-                <MudText Typo="Typo.caption" Color="Color.Secondary">@_documentContent.ResourceUri</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@_documentContent.Uri</MudText>
             </div>
             <MudDivider Class="mb-4" />
             <pre style="white-space: pre-wrap; word-wrap: break-word; font-family: monospace; font-size: 0.9em;">@_documentContent.Content</pre>
@@ -65,13 +65,12 @@ else
                 <MudTh>Name</MudTh>
                 <MudTh>Type</MudTh>
                 <MudTh>Size</MudTh>
-                <MudTh>Last Modified</MudTh>
                 <MudTh>Actions</MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd DataLabel="Name">
-                    <MudLink Href="@($"/documents/{Uri.EscapeDataString(context.FileName)}")">
-                        <strong>@context.FileName</strong>
+                    <MudLink Href="@($"/documents/{Uri.EscapeDataString(context.Name)}")">
+                        <strong>@context.Name</strong>
                     </MudLink>
                 </MudTd>
                 <MudTd DataLabel="Type">
@@ -79,13 +78,12 @@ else
                         @GetMimeTypeLabel(context.MimeType)
                     </MudChip>
                 </MudTd>
-                <MudTd DataLabel="Size">@FormatBytes(context.SizeBytes)</MudTd>
-                <MudTd DataLabel="Last Modified">@context.LastModified.ToLocalTime().ToString("g")</MudTd>
+                <MudTd DataLabel="Size">@FormatBytes(context.Size ?? 0)</MudTd>
                 <MudTd DataLabel="Actions">
                     <MudTooltip Text="View">
                         <MudIconButton Icon="@Icons.Material.Filled.Visibility"
                                        Size="Size.Small"
-                                       OnClick="@(() => ViewDocument(context.FileName))" />
+                                       OnClick="@(() => ViewDocument(context.Name))" />
                     </MudTooltip>
                 </MudTd>
             </RowTemplate>
@@ -109,10 +107,9 @@ else
     private string _searchQuery = "";
 
     private IEnumerable<KnowledgeResourceDescriptor> FilteredResources => string.IsNullOrWhiteSpace(_searchQuery)
-        ? _resources.OrderByDescending(r => r.LastModified)
+        ? _resources
         : _resources
-            .Where(r => r.FileName.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(r => r.LastModified);
+            .Where(r => r.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnParametersSetAsync()
     {
@@ -179,7 +176,7 @@ else
         return $"{size:0.##} {sizes[order]}";
     }
 
-    private static Color GetMimeTypeColor(string mimeType) => mimeType switch
+    private static Color GetMimeTypeColor(string? mimeType) => mimeType switch
     {
         "text/markdown" => Color.Primary,
         "text/plain" => Color.Default,
@@ -187,11 +184,11 @@ else
         _ => Color.Default
     };
 
-    private static string GetMimeTypeLabel(string mimeType) => mimeType switch
+    private static string GetMimeTypeLabel(string? mimeType) => mimeType switch
     {
         "text/markdown" => "Markdown",
         "text/plain" => "Text",
         "text/html" => "HTML",
-        _ => mimeType
+        _ => mimeType ?? "Unknown"
     };
 }
