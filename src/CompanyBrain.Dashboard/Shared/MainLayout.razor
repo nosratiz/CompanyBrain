@@ -2,6 +2,7 @@
 @using CompanyBrain.Dashboard.Features.Auth.Services
 @inject AuthTokenStore TokenStore
 @inject TokenAuthenticationStateProvider AuthStateProvider
+@inject BrowserAuthSessionStorage SessionStorage
 @inject NavigationManager Navigation
 
 <MudThemeProvider Theme="_theme" IsDarkMode="_isDarkMode" />
@@ -9,7 +10,11 @@
 <MudDialogProvider />
 <MudSnackbarProvider />
 
-@if (!TokenStore.IsAuthenticated && !IsLoginPage)
+@if (_isInitializing)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (!TokenStore.IsAuthenticated && !IsLoginPage)
 {
     <RedirectToLogin />
 }
@@ -58,8 +63,25 @@ else
 @code {
     private bool _drawerOpen = true;
     private bool _isDarkMode = false;
+    private bool _isInitializing = true;
 
     private bool IsLoginPage => Navigation.Uri.Contains("/login", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Enable JS interop and restore session from localStorage
+            SessionStorage.EnableJsInterop();
+            var restored = await TokenStore.RestoreSessionAsync();
+            if (restored)
+            {
+                AuthStateProvider.NotifyAuthStateChanged();
+            }
+            _isInitializing = false;
+            StateHasChanged();
+        }
+    }
 
     private MudTheme _theme = new()
     {
@@ -80,9 +102,9 @@ else
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
     private void ToggleDarkMode() => _isDarkMode = !_isDarkMode;
 
-    private void Logout()
+    private async Task Logout()
     {
-        TokenStore.Clear();
+        await TokenStore.ClearAsync();
         AuthStateProvider.NotifyAuthStateChanged();
         Navigation.NavigateTo("/login");
     }

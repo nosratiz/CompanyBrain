@@ -1,0 +1,228 @@
+using CompanyBrain.Dashboard.Api.Serialization;
+using CompanyBrain.Dashboard.Data;
+using CompanyBrain.Dashboard.Features.Auth.Interfaces;
+using CompanyBrain.Dashboard.Features.Auth.Services;
+using CompanyBrain.Dashboard.Features.DocumentTenant.Validators;
+using CompanyBrain.Dashboard.Mcp;
+using CompanyBrain.Dashboard.Mcp.Resources;
+using CompanyBrain.Dashboard.Mcp.Tools;
+using CompanyBrain.Dashboard.Services;
+using FluentValidation;
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.EntityFrameworkCore;
+using MudBlazor.Services;
+
+namespace CompanyBrain.Dashboard.DependencyInjection;
+
+/// <summary>
+/// Extension methods for configuring Dashboard services.
+/// </summary>
+public static class DashboardServiceCollectionExtensions
+{
+    /// <summary>
+    /// Adds all Dashboard services to the service collection.
+    /// </summary>
+    public static IServiceCollection AddDashboardServices(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IWebHostEnvironment environment)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(environment);
+
+        services
+            .AddDashboardBlazor()
+            .AddDashboardAuthentication()
+            .AddDashboardCompanyBrain(environment.ContentRootPath)
+            .AddDashboardSwagger(configuration)
+            .AddDashboardCors()
+            .AddDashboardMcp()
+            .AddDashboardHttpClients(configuration, environment)
+            .AddDashboardDatabase(configuration)
+            .AddDashboardValidation();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds Blazor Server and MudBlazor services.
+    /// </summary>
+    public static IServiceCollection AddDashboardBlazor(this IServiceCollection services)
+    {
+        services.AddRazorComponents()
+            .AddInteractiveServerComponents();
+
+        services.AddMudServices();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds authentication and authorization services.
+    /// </summary>
+    public static IServiceCollection AddDashboardAuthentication(this IServiceCollection services)
+    {
+        services.AddCascadingAuthenticationState();
+        services.AddScoped<IAuthSessionStorage, BrowserAuthSessionStorage>();
+        services.AddScoped<BrowserAuthSessionStorage>(sp =>
+            (BrowserAuthSessionStorage)sp.GetRequiredService<IAuthSessionStorage>());
+        services.AddScoped<AuthTokenStore>();
+        services.AddScoped<TokenAuthenticationStateProvider>();
+        services.AddScoped<AuthenticationStateProvider>(sp =>
+            sp.GetRequiredService<TokenAuthenticationStateProvider>());
+        services.AddAuthorizationCore();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds Company Brain core services.
+    /// </summary>
+    public static IServiceCollection AddDashboardCompanyBrain(this IServiceCollection services, string contentRootPath)
+    {
+        services.AddCompanyBrain(contentRootPath);
+        services.ConfigureHttpJsonOptions(options =>
+        {
+            options.SerializerOptions.TypeInfoResolverChain.Insert(0, CompanyBrainJsonSerializerContext.Default);
+        });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds Swagger/OpenAPI services.
+    /// </summary>
+    public static IServiceCollection AddDashboardSwagger(this IServiceCollection services, IConfiguration configuration)
+    {
+        var swaggerOptions = configuration.GetSection(SwaggerOptions.SectionName).Get<SwaggerOptions>()
+            ?? new SwaggerOptions();
+
+        services.AddEndpointsApiExplorer();
+        services.AddSwaggerGen(options =>
+        {
+            options.SwaggerDoc(swaggerOptions.Version, new()
+            {
+                Title = swaggerOptions.Title,
+                Version = swaggerOptions.Version,
+                Description = swaggerOptions.Description,
+            });
+        });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds CORS configuration.
+    /// </summary>
+    public static IServiceCollection AddDashboardCors(this IServiceCollection services)
+    {
+        services.AddCors(options =>
+        {
+            options.AddDefaultPolicy(policy =>
+            {
+                policy.AllowAnyOrigin()
+                      .AllowAnyMethod()
+                      .AllowAnyHeader();
+            });
+        });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds MCP Server services.
+    /// </summary>
+    public static IServiceCollection AddDashboardMcp(this IServiceCollection services)
+    {
+        services.AddSingleton<McpSessionTracker>();
+        services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<CompanyBrainTools>()
+            .WithListResourcesHandler(KnowledgeResourceHandlers.ListResourcesAsync)
+            .WithReadResourceHandler(KnowledgeResourceHandlers.ReadResourceAsync);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds HTTP client services for external APIs.
+    /// </summary>
+    public static IServiceCollection AddDashboardHttpClients(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IWebHostEnvironment environment)
+    {
+        var dashboardOptions = configuration.GetSection(DashboardOptions.SectionName).Get<DashboardOptions>()
+            ?? new DashboardOptions();
+        var externalApiOptions = configuration.GetSection(ExternalApiOptions.SectionName).Get<ExternalApiOptions>()
+            ?? new ExternalApiOptions();
+
+        // Knowledge API client for Blazor pages
+        services.AddHttpClient<KnowledgeApiClient>((sp, client) =>
+        {
+            var env = sp.GetRequiredService<IWebHostEnvironment>();
+            client.BaseAddress = new Uri(env.IsDevelopment()
+                ? dashboardOptions.DevelopmentBaseUrl
+                : dashboardOptions.ProductionBaseUrl);
+        });
+
+        // MCP Status client
+        services.AddHttpClient<McpStatusClient>((sp, client) =>
+        {
+            var env = sp.GetRequiredService<IWebHostEnvironment>();
+            client.BaseAddress = new Uri(env.IsDevelopment()
+                ? dashboardOptions.DevelopmentBaseUrl
+                : dashboardOptions.ProductionBaseUrl);
+        });
+
+        // Document-Tenant API client (internal API)
+        services.AddHttpClient<DocumentTenantApiClient>((sp, client) =>
+        {
+            var env = sp.GetRequiredService<IWebHostEnvironment>();
+            client.BaseAddress = new Uri(env.IsDevelopment()
+                ? dashboardOptions.DevelopmentBaseUrl
+                : dashboardOptions.ProductionBaseUrl);
+        });
+
+        // Auth API client
+        services.AddHttpClient<AuthApiClient>((_, client) =>
+        {
+            client.BaseAddress = new Uri(externalApiOptions.AuthApiBaseUrl);
+        });
+        services.AddScoped<IAuthApiClient>(sp => sp.GetRequiredService<AuthApiClient>());
+
+        // External Tenant API client
+        services.AddHttpClient<ExternalTenantApiClient>((_, client) =>
+        {
+            client.BaseAddress = new Uri(externalApiOptions.TenantApiBaseUrl);
+        });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds SQLite database context for document-tenant assignments.
+    /// </summary>
+    public static IServiceCollection AddDashboardDatabase(this IServiceCollection services, IConfiguration configuration)
+    {
+        var connectionString = configuration.GetConnectionString("DocumentAssignments")
+            ?? "Data Source=document_assignments.db";
+
+        services.AddDbContext<DocumentAssignmentDbContext>(options =>
+            options.UseSqlite(connectionString));
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds FluentValidation validators.
+    /// </summary>
+    public static IServiceCollection AddDashboardValidation(this IServiceCollection services)
+    {
+        services.AddValidatorsFromAssemblyContaining<AssignDocumentToTenantRequestValidator>();
+
+        return services;
+    }
+}

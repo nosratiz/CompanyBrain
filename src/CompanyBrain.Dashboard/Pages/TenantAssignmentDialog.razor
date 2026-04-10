@@ -1,0 +1,219 @@
+@using CompanyBrain.Dashboard.Features.DocumentTenant.Requests
+@using CompanyBrain.Dashboard.Features.DocumentTenant.Responses
+@inject ExternalTenantApiClient ExternalTenantApi
+@inject DocumentTenantApiClient DocumentTenantApi
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Business" Class="mr-2" />
+            Tenant Access for @FileName
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_loading)
+        {
+            <MudProgressCircular Indeterminate="true" Size="Size.Medium" Class="d-flex mx-auto my-4" />
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                Select which tenants can access this document. Leave empty to make it available to everyone.
+            </MudText>
+
+            <MudPaper Outlined="true" Class="pa-4 mb-4">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Info" Color="Color.Info" Size="Size.Small" />
+                    <MudText Typo="Typo.caption" Color="Color.Info">
+                        @if (_selectedTenants.Count == 0)
+                        {
+                            <span><strong>Public Document</strong> - All tenants can access this document</span>
+                        }
+                        else
+                        {
+                            <span><strong>Restricted Access</strong> - Only @(_selectedTenants.Count) tenant(s) can access this document</span>
+                        }
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            @if (_availableTenants.Count == 0)
+            {
+                <MudAlert Severity="Severity.Warning" Class="mb-4">
+                    No tenants available. Configure tenants in the User Panel first.
+                </MudAlert>
+            }
+            else
+            {
+                <MudTextField @bind-Value="_searchTenant"
+                              Placeholder="Search tenants..."
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              Immediate="true"
+                              Class="mb-3" />
+
+                <MudPaper Outlined="true" Class="pa-2" Style="max-height: 300px; overflow-y: auto;">
+                    @foreach (var tenant in FilteredTenants)
+                    {
+                        var isSelected = _selectedTenants.ContainsKey(tenant.Id);
+                        <MudStack Row="true" 
+                                  AlignItems="AlignItems.Center" 
+                                  Class="@($"pa-2 rounded {(isSelected ? "mud-theme-primary" : "")}")"
+                                  Style="@(isSelected ? "background-color: var(--mud-palette-primary-lighten);" : "")">
+                            <MudCheckBox T="bool"
+                                         Value="isSelected"
+                                         ValueChanged="@(v => ToggleTenant(tenant, v))"
+                                         Color="Color.Primary" />
+                            <MudStack Spacing="0" Class="flex-grow-1">
+                                <MudText Typo="Typo.body1">@tenant.Name</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@tenant.Slug - @tenant.Plan</MudText>
+                            </MudStack>
+                            <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(tenant.Status)">
+                                @tenant.Status
+                            </MudChip>
+                        </MudStack>
+                    }
+                </MudPaper>
+            }
+
+            @if (_selectedTenants.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Selected Tenants:</MudText>
+                <MudChipSet T="Guid">
+                    @foreach (var kvp in _selectedTenants)
+                    {
+                        <MudChip T="Guid"
+                                 Value="kvp.Key"
+                                 Color="Color.Primary"
+                                 OnClose="@(() => RemoveTenant(kvp.Key))">
+                            @kvp.Value
+                        </MudChip>
+                    }
+                </MudChipSet>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Disabled="_saving">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="SaveAsync"
+                   Disabled="_saving || _loading">
+            @if (_saving)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Saving...</span>
+            }
+            else
+            {
+                <span>Save</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public string FileName { get; set; } = string.Empty;
+
+    private bool _loading = true;
+    private bool _saving;
+    private string _searchTenant = string.Empty;
+    private List<TenantSummaryDto> _availableTenants = [];
+    private Dictionary<Guid, string> _selectedTenants = [];
+
+    private IEnumerable<TenantSummaryDto> FilteredTenants => string.IsNullOrWhiteSpace(_searchTenant)
+        ? _availableTenants
+        : _availableTenants.Where(t =>
+            t.Name.Contains(_searchTenant, StringComparison.OrdinalIgnoreCase) ||
+            t.Slug.Contains(_searchTenant, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            // Load available tenants from external API and current assignments in parallel
+            var tenantsTask = ExternalTenantApi.GetTenantsAsync();
+            var assignmentsTask = DocumentTenantApi.GetAssignmentsByDocumentAsync(FileName);
+
+            await Task.WhenAll(tenantsTask, assignmentsTask);
+
+            _availableTenants = (await tenantsTask).ToList();
+            
+            var assignments = await assignmentsTask;
+            if (assignments?.Tenants is not null)
+            {
+                _selectedTenants = assignments.Tenants
+                    .ToDictionary(t => t.TenantId, t => t.TenantName);
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ToggleTenant(TenantSummaryDto tenant, bool selected)
+    {
+        if (selected)
+        {
+            _selectedTenants[tenant.Id] = tenant.Name;
+        }
+        else
+        {
+            _selectedTenants.Remove(tenant.Id);
+        }
+    }
+
+    private void RemoveTenant(Guid tenantId)
+    {
+        _selectedTenants.Remove(tenantId);
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            var tenantAssignments = _selectedTenants
+                .Select(kvp => new TenantAssignment(kvp.Key, kvp.Value))
+                .ToList();
+
+            var result = await DocumentTenantApi.UpdateDocumentTenantsAsync(FileName, tenantAssignments);
+
+            if (result is not null)
+            {
+                var message = _selectedTenants.Count == 0
+                    ? "Document is now available to all tenants"
+                    : $"Document assigned to {_selectedTenants.Count} tenant(s)";
+                Snackbar.Add(message, Severity.Success);
+                MudDialog.Close(DialogResult.Ok(_selectedTenants.Count));
+            }
+            else
+            {
+                Snackbar.Add("Failed to update tenant assignments", Severity.Error);
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private static Color GetStatusColor(string status) => status.ToLowerInvariant() switch
+    {
+        "active" => Color.Success,
+        "suspended" => Color.Warning,
+        "inactive" => Color.Error,
+        _ => Color.Default
+    };
+}

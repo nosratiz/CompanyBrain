@@ -14,7 +14,8 @@ public sealed class KnowledgeApplicationServiceTests : IDisposable
         var store = new KnowledgeStore(tempDirectory);
         using var httpClient = new HttpClient();
         var wikiIngester = new WikiIngester(httpClient);
-        var service = new KnowledgeApplicationService(store, wikiIngester);
+        var databaseSchemaReader = new DatabaseSchemaReader();
+        var service = new KnowledgeApplicationService(store, wikiIngester, databaseSchemaReader);
 
         var result = await service.IngestDocumentFromPathAsync("missing-file.docx", "missing-file", CancellationToken.None);
 

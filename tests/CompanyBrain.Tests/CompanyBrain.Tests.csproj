@@ -23,6 +23,6 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/CompanyBrain.Core/CompanyBrain.Core.csproj" />
-    <ProjectReference Include="../../src/CompanyBrain/CompanyBrain.csproj" />
+    <ProjectReference Include="../../src/CompanyBrain.Dashboard/CompanyBrain.Dashboard.csproj" />
   </ItemGroup>
 </Project>

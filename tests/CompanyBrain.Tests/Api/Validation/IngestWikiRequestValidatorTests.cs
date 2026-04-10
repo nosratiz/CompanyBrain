@@ -1,5 +1,5 @@
-using CompanyBrain.Api.Contracts;
-using CompanyBrain.Api.Validation;
+using CompanyBrain.Dashboard.Api.Contracts;
+using CompanyBrain.Dashboard.Api.Validation;
 using FluentAssertions;
 
 namespace CompanyBrain.Tests.Api.Validation;

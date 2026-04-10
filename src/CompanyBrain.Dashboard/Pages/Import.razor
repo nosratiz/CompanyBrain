@@ -1,11 +1,87 @@
 @page "/import"
+@using CompanyBrain.Dashboard.Features.DocumentTenant.Requests
 @inject KnowledgeApiClient Api
+@inject ExternalTenantApiClient ExternalTenantApi
+@inject DocumentTenantApiClient DocumentTenantApi
 @inject ISnackbar Snackbar
-@inject NavigationManager Navigation
 
 <PageTitle>Import - Company Brain</PageTitle>
 
 <MudText Typo="Typo.h4" Class="mb-4">Import Documents</MudText>
+
+@* Tenant Selection Section *@
+<MudExpansionPanels Class="mb-4">
+    <MudExpansionPanel Text="Tenant Access Settings" Icon="@Icons.Material.Filled.Business" @bind-Expanded="_tenantPanelExpanded">
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+            Select which tenants can access imported documents. Leave empty to make documents available to everyone.
+        </MudText>
+        
+        @if (_loadingTenants)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        }
+        else if (_availableTenants.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true">
+                No tenants configured. All imported documents will be available to everyone.
+            </MudAlert>
+        }
+        else
+        {
+            <MudPaper Outlined="true" Class="pa-3 mb-3">
+                <MudStack Row="true" AlignItems="AlignItems.Center">
+                    <MudIcon Icon="@Icons.Material.Filled.Info" Color="Color.Info" Size="Size.Small" />
+                    <MudText Typo="Typo.caption" Color="Color.Info">
+                        @if (_selectedTenantIds.Count == 0)
+                        {
+                            <span><strong>Public Documents</strong> - All tenants can access imported documents</span>
+                        }
+                        else
+                        {
+                            <span><strong>Restricted Access</strong> - Only @(_selectedTenantIds.Count) tenant(s) can access imported documents</span>
+                        }
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            <MudSelect T="Guid"
+                       Label="Select Tenants"
+                       MultiSelection="true"
+                       @bind-SelectedValues="SelectedTenantIds"
+                       Variant="Variant.Outlined"
+                       AnchorOrigin="Origin.BottomCenter"
+                       Dense="true"
+                       Class="mb-2">
+                @foreach (var tenant in _availableTenants)
+                {
+                    <MudSelectItem T="Guid" Value="@tenant.Id">
+                        @tenant.Name (@tenant.Plan)
+                    </MudSelectItem>
+                }
+            </MudSelect>
+
+            @if (_selectedTenantIds.Count > 0)
+            {
+                <MudChipSet T="Guid" Class="mt-2">
+                    @foreach (var tenantId in _selectedTenantIds)
+                    {
+                        var tenant = _availableTenants.FirstOrDefault(t => t.Id == tenantId);
+                        if (tenant is not null)
+                        {
+                            <MudChip T="Guid" 
+                                     Value="tenantId"
+                                     Color="Color.Primary"
+                                     Size="Size.Small"
+                                     OnClose="() => RemoveTenant(tenantId)">
+                                @tenant.Name
+                            </MudChip>
+                        }
+                    }
+                </MudChipSet>
+            }
+        }
+    </MudExpansionPanel>
+</MudExpansionPanels>
 
 <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6">
     <MudTabPanel Text="Wiki URL" Icon="@Icons.Material.Filled.Link">
@@ -359,12 +435,74 @@
 }
 
 @code {
+    // ── Tenant selection ─────────────────────────────────────────────
+    private bool _tenantPanelExpanded;
+    private bool _loadingTenants = true;
+    private List<TenantSummaryDto> _availableTenants = [];
+    private HashSet<Guid> _selectedTenantIds = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTenantsAsync();
+    }
+
+    private async Task LoadTenantsAsync()
+    {
+        _loadingTenants = true;
+        try
+        {
+            // Fetch tenants directly from external TenantApi
+            var tenants = await ExternalTenantApi.GetTenantsAsync();
+            _availableTenants = tenants.ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load tenants: {ex.Message}", Severity.Warning);
+            _availableTenants = [];
+        }
+        finally
+        {
+            _loadingTenants = false;
+        }
+    }
+
+    private void RemoveTenant(Guid tenantId)
+    {
+        _selectedTenantIds.Remove(tenantId);
+    }
+
+    private IEnumerable<Guid> SelectedTenantIds
+    {
+        get => _selectedTenantIds;
+        set => _selectedTenantIds = value.ToHashSet();
+    }
+
+    private async Task AssignDocumentToTenantsAsync(string fileName)
+    {
+        if (_selectedTenantIds.Count == 0) return;
+
+        var tenantAssignments = _selectedTenantIds
+            .Select(id =>
+            {
+                var tenant = _availableTenants.FirstOrDefault(t => t.Id == id);
+                return new TenantAssignment(id, tenant?.Name ?? "Unknown");
+            })
+            .ToList();
+
+        var result = await DocumentTenantApi.UpdateDocumentTenantsAsync(fileName, tenantAssignments);
+        if (result is not null)
+        {
+            Snackbar.Add($"Document assigned to {tenantAssignments.Count} tenant(s)", Severity.Info);
+        }
+    }
+
+    // ── Wiki import ──────────────────────────────────────────────────
     private string _wikiUrl = "";
     private string _wikiName = "";
     private string _batchUrls = "";
     private string _filePath = "";
     private string _filePathName = "";
-    private bool _importing = false;
+    private bool _importing;
     private string _activeTab = "";
     
     private IngestResultResponse? _lastResult;
@@ -385,6 +523,13 @@
             var name = string.IsNullOrWhiteSpace(_wikiName) ? null : _wikiName;
             _lastResult = await Api.IngestWikiAsync(_wikiUrl, name);
             Snackbar.Add($"Successfully imported {_lastResult?.FileName}", Severity.Success);
+            
+            // Assign to selected tenants
+            if (_lastResult?.FileName is not null)
+            {
+                await AssignDocumentToTenantsAsync(_lastResult.FileName);
+            }
+            
             _wikiUrl = "";
             _wikiName = "";
         }
@@ -430,6 +575,15 @@
             {
                 Snackbar.Add($"Successfully imported {_batchResults.SuccessfullyIngested} of {_batchResults.TotalDiscovered} documents", 
                     _batchResults.Failed > 0 ? Severity.Warning : Severity.Success);
+                
+                // Assign successful imports to selected tenants
+                if (_selectedTenantIds.Count > 0 && _batchResults.Results is not null)
+                {
+                    foreach (var result in _batchResults.Results.Where(r => r.Success && !string.IsNullOrEmpty(r.FileName)))
+                    {
+                        await AssignDocumentToTenantsAsync(result.FileName!);
+                    }
+                }
             }
             else
             {
@@ -460,6 +614,13 @@
             var name = string.IsNullOrWhiteSpace(_filePathName) ? null : _filePathName;
             _lastResult = await Api.IngestDocumentPathAsync(_filePath, name);
             Snackbar.Add($"Successfully imported {_lastResult?.FileName}", Severity.Success);
+            
+            // Assign to selected tenants
+            if (_lastResult?.FileName is not null)
+            {
+                await AssignDocumentToTenantsAsync(_lastResult.FileName);
+            }
+            
             _filePath = "";
             _filePathName = "";
         }
@@ -507,6 +668,8 @@
         _lastResult = null;
         _lastError = null;
 
+        var successfulFileNames = new List<string>();
+
         try
         {
             for (var i = 0; i < _selectedFiles.Count; i++)
@@ -524,6 +687,11 @@
                     var result = await Api.UploadDocumentAsync(stream, file.Name);
                     item.Status = UploadStatus.Success;
                     item.ReplacedExisting = result?.ReplacedExisting ?? false;
+                    
+                    if (result?.FileName is not null)
+                    {
+                        successfulFileNames.Add(result.FileName);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -536,6 +704,15 @@
             if (successCount > 0)
             {
                 Snackbar.Add($"Successfully uploaded {successCount} of {_uploadItems.Count} files", Severity.Success);
+                
+                // Assign successful uploads to selected tenants
+                if (_selectedTenantIds.Count > 0)
+                {
+                    foreach (var fileName in successfulFileNames)
+                    {
+                        await AssignDocumentToTenantsAsync(fileName);
+                    }
+                }
             }
         }
         finally
@@ -592,6 +769,13 @@
         {
             _lastResult = await Api.IngestDatabaseSchemaAsync(_dbConnectionString, _dbSchemaName, _dbProvider);
             Snackbar.Add($"Successfully imported schema as {_lastResult?.FileName}", Severity.Success);
+            
+            // Assign to selected tenants
+            if (_lastResult?.FileName is not null)
+            {
+                await AssignDocumentToTenantsAsync(_lastResult.FileName);
+            }
+            
             _dbConnectionString = "";
             _dbSchemaName = "";
         }
