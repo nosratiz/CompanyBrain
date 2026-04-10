@@ -486,3 +486,9 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+*.db
+
+src/CompanyBrain.Dashboard/document_assignments.db-shm
+
+src/CompanyBrain.Dashboard/document_assignments.db-wal

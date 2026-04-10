@@ -67,10 +67,10 @@
                                          Color="Color.Primary" />
                             <MudStack Spacing="0" Class="flex-grow-1">
                                 <MudText Typo="Typo.body1">@tenant.Name</MudText>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">@tenant.Slug - @tenant.Plan</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@tenant.Slug - @tenant.PlanName</MudText>
                             </MudStack>
                             <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(tenant.Status)">
-                                @tenant.Status
+                                @tenant.StatusName
                             </MudChip>
                         </MudStack>
                     }
@@ -209,11 +209,12 @@
 
     private void Cancel() => MudDialog.Cancel();
 
-    private static Color GetStatusColor(string status) => status.ToLowerInvariant() switch
+    private static Color GetStatusColor(int status) => status switch
     {
-        "active" => Color.Success,
-        "suspended" => Color.Warning,
-        "inactive" => Color.Error,
+        0 => Color.Default,   // Pending
+        1 => Color.Success,   // Active
+        2 => Color.Warning,   // Suspended
+        3 => Color.Error,     // Deleted
         _ => Color.Default
     };
 }

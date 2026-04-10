@@ -1,4 +1,6 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using CompanyBrain.Dashboard.Features.Auth.Services;
 using Microsoft.Extensions.Logging;
 
 namespace CompanyBrain.Dashboard.Services;
@@ -6,14 +8,19 @@ namespace CompanyBrain.Dashboard.Services;
 /// <summary>
 /// Client for fetching tenant information from the external tenant management API.
 /// </summary>
-public sealed class ExternalTenantApiClient
+internal sealed class ExternalTenantApiClient
 {
     private readonly HttpClient _httpClient;
+    private readonly AuthTokenStore _tokenStore;
     private readonly ILogger<ExternalTenantApiClient> _logger;
 
-    public ExternalTenantApiClient(HttpClient httpClient, ILogger<ExternalTenantApiClient> logger)
+    public ExternalTenantApiClient(
+        HttpClient httpClient,
+        AuthTokenStore tokenStore,
+        ILogger<ExternalTenantApiClient> logger)
     {
         _httpClient = httpClient;
+        _tokenStore = tokenStore;
         _logger = logger;
     }
 
@@ -24,7 +31,9 @@ public sealed class ExternalTenantApiClient
     {
         try
         {
+            SetAuthorizationHeader();
             var response = await _httpClient.GetFromJsonAsync<TenantListResponseDto>("/api/tenants", ct);
+            _logger.LogInformation("Fetched {TenantCount} tenants from external API", response?.Tenants.Count ?? 0);
             return response?.Tenants ?? [];
         }
         catch (HttpRequestException ex)
@@ -46,6 +55,7 @@ public sealed class ExternalTenantApiClient
     {
         try
         {
+            SetAuthorizationHeader();
             var response = await _httpClient.GetFromJsonAsync<TenantSummaryDto>($"/api/tenants/{tenantId}", ct);
             return response;
         }
@@ -60,6 +70,15 @@ public sealed class ExternalTenantApiClient
             return null;
         }
     }
+
+    private void SetAuthorizationHeader()
+    {
+        if (!string.IsNullOrEmpty(_tokenStore.Token))
+        {
+            _httpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", _tokenStore.Token);
+        }
+    }
 }
 
 // Response DTOs matching the external CompanyBrainUserPanel API
@@ -69,6 +88,31 @@ public sealed record TenantSummaryDto(
     Guid Id,
     string Name,
     string Slug,
-    string Status,
-    string Plan,
-    DateTime CreatedAt);
+    int Status,
+    int Plan,
+    DateTime CreatedAt)
+{
+    /// <summary>
+    /// Gets the status as a display string.
+    /// </summary>
+    public string StatusName => Status switch
+    {
+        0 => "Pending",
+        1 => "Active",
+        2 => "Suspended",
+        3 => "Deleted",
+        _ => "Unknown"
+    };
+
+    /// <summary>
+    /// Gets the plan as a display string.
+    /// </summary>
+    public string PlanName => Plan switch
+    {
+        0 => "Free",
+        1 => "Basic",
+        2 => "Professional",
+        3 => "Enterprise",
+        _ => "Unknown"
+    };
+}

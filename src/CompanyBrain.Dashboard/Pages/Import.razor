@@ -55,7 +55,7 @@
                 @foreach (var tenant in _availableTenants)
                 {
                     <MudSelectItem T="Guid" Value="@tenant.Id">
-                        @tenant.Name (@tenant.Plan)
+                        @tenant.Name (@tenant.PlanName)
                     </MudSelectItem>
                 }
             </MudSelect>

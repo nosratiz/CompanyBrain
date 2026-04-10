@@ -189,7 +189,8 @@ else
         // Load tenant assignments for each document in parallel (batched for performance)
         var tasks = _resources.Select(async r =>
         {
-            var assignments = await TenantApi.GetAssignmentsByDocumentAsync(r.Name);
+            var actualFileName = StripResourcesPrefix(r.Name);
+            var assignments = await TenantApi.GetAssignmentsByDocumentAsync(actualFileName);
             return (r.Name, Count: assignments?.Tenants.Count ?? 0);
         });
 
