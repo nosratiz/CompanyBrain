@@ -27,9 +27,13 @@ public static class CompanyBrainCoreServiceCollectionExtensions
             sp.GetRequiredService<HttpClient>(),
             sp.GetRequiredService<ILogger<WikiIngester>>()));
 
+        services.AddSingleton(sp => new DatabaseSchemaReader(
+            sp.GetRequiredService<ILogger<DatabaseSchemaReader>>()));
+
         services.AddSingleton(sp => new KnowledgeApplicationService(
             sp.GetRequiredService<KnowledgeStore>(),
             sp.GetRequiredService<WikiIngester>(),
+            sp.GetRequiredService<DatabaseSchemaReader>(),
             sp.GetRequiredService<ILogger<KnowledgeApplicationService>>()));
 
         services.AddHostedService(sp => new KnowledgeFolderBootstrapper(

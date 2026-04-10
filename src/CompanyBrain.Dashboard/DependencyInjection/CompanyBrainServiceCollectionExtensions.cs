@@ -16,6 +16,7 @@ internal static class CompanyBrainServiceCollectionExtensions
         services.AddSingleton<IValidator<IngestPathRequest>, IngestPathRequestValidator>();
         services.AddSingleton<IValidator<SearchRequest>, SearchRequestValidator>();
         services.AddSingleton<IValidator<UploadDocumentRequest>, UploadDocumentRequestValidator>();
+        services.AddSingleton<IValidator<IngestDatabaseSchemaRequest>, IngestDatabaseSchemaRequestValidator>();
         return services;
     }
 }

@@ -2,10 +2,13 @@ using CompanyBrain.Dashboard;
 using CompanyBrain.Dashboard.Api;
 using CompanyBrain.Dashboard.Api.Serialization;
 using CompanyBrain.Dashboard.DependencyInjection;
+using CompanyBrain.Dashboard.Features.Auth.Interfaces;
+using CompanyBrain.Dashboard.Features.Auth.Services;
 using CompanyBrain.Dashboard.Mcp;
 using CompanyBrain.Dashboard.Mcp.Resources;
 using CompanyBrain.Dashboard.Mcp.Tools;
 using CompanyBrain.Dashboard.Services;
+using Microsoft.AspNetCore.Components.Authorization;
 using MudBlazor.Services;
 
 const string mcpRoutePattern = "/mcp";
@@ -26,6 +29,14 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddMudServices();
+
+// Authentication & Authorization (Blazor Server circuit-scoped)
+builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddScoped<AuthTokenStore>();
+builder.Services.AddScoped<TokenAuthenticationStateProvider>();
+builder.Services.AddScoped<AuthenticationStateProvider>(sp =>
+    sp.GetRequiredService<TokenAuthenticationStateProvider>());
+builder.Services.AddAuthorizationCore();
 
 // Add Company Brain API services
 builder.Services.AddCompanyBrain(builder.Environment.ContentRootPath);
@@ -90,6 +101,14 @@ builder.Services.AddHttpClient<McpStatusClient>((sp, client) =>
         ? new Uri("http://localhost:5200")
         : new Uri("http://localhost:8080");
 });
+
+// Auth API client – points at the CompanyBrainUserPanel API
+builder.Services.AddHttpClient<AuthApiClient>((sp, client) =>
+{
+    var baseUrl = builder.Configuration["AuthApi:BaseUrl"] ?? "http://localhost:5000";
+    client.BaseAddress = new Uri(baseUrl);
+});
+builder.Services.AddScoped<IAuthApiClient>(sp => sp.GetRequiredService<AuthApiClient>());
 
 var app = builder.Build();
 

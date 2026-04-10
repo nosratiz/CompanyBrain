@@ -69,6 +69,68 @@
 
 @if (_status.IsRunning)
 {
+    <!-- Inline Tool Tester (always rendered when server running, hidden when no tool selected) -->
+    <MudPaper Class="pa-4 mb-4" Elevation="2" Style="@(_selectedTool is null ? "display:none" : "")">
+        @if (_selectedTool is not null)
+        {
+            <div class="d-flex align-center gap-2 mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Terminal" />
+                <MudText Typo="Typo.h6">Test: @_selectedTool.Name</MudText>
+                <MudSpacer />
+                <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="CloseToolTester" Size="Size.Small" />
+            </div>
+
+            @if (_selectedTool.Description is not null)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">@_selectedTool.Description</MudText>
+            }
+
+            @if (_toolParams.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Parameters</MudText>
+                @for (var i = 0; i < _toolParams.Count; i++)
+                {
+                    var param = _toolParams[i];
+                    <MudTextField @key="param.Name"
+                                  @bind-Value="param.Value"
+                                  Label="@($"{param.Name}{(param.Required ? " *" : "")}")"
+                                  HelperText="@param.Description"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-2" />
+                }
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Tertiary" Class="mb-2">This tool takes no parameters.</MudText>
+            }
+
+            <div class="d-flex justify-end gap-2 mt-3">
+                <MudButton OnClick="CloseToolTester">Close</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RunToolAsync" Disabled="_running">
+                    @if (_running)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    }
+                    Run
+                </MudButton>
+            </div>
+
+            @if (_toolResult is not null)
+            {
+                <MudDivider Class="my-4" />
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Result</MudText>
+                <MudPaper Class="pa-4" Style="background-color: var(--mud-palette-background-grey); max-height: 400px; overflow-y: auto;">
+                    <pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0; font-size: 0.85rem;">@_toolResult</pre>
+                </MudPaper>
+            }
+
+            @if (_toolError is not null)
+            {
+                <MudAlert Severity="Severity.Error" Class="mt-4">@_toolError</MudAlert>
+            }
+        }
+    </MudPaper>
+
     <!-- Tools -->
     <MudText Typo="Typo.h5" Class="mb-2">Tools (@_status.Tools.Count)</MudText>
     <MudTable Items="_status.Tools" Hover="true" Dense="true" Class="mb-4">
@@ -148,6 +210,13 @@
     private bool _loading = true;
     private bool _deleting;
 
+    // Inline tool tester state
+    private McpToolInfo? _selectedTool;
+    private List<ToolParam> _toolParams = [];
+    private string? _toolResult;
+    private string? _toolError;
+    private bool _running;
+
     private string McpEndpointUrl => $"{Navigation.BaseUri.TrimEnd('/')}/mcp";
 
     protected override async Task OnInitializedAsync()
@@ -167,9 +236,104 @@
 
     private async Task OpenToolTester(McpToolInfo tool)
     {
-        var parameters = new DialogParameters<ToolTesterDialog> { { x => x.Tool, tool } };
-        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
-        await DialogService.ShowAsync<ToolTesterDialog>($"Test: {tool.Name}", parameters, options);
+        _selectedTool = tool;
+        _toolResult = null;
+        _toolError = null;
+        _toolParams = ParseParameters(tool);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CloseToolTester()
+    {
+        _selectedTool = null;
+        _toolResult = null;
+        _toolError = null;
+        _toolParams = [];
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RunToolAsync()
+    {
+        if (_selectedTool is null) return;
+
+        _running = true;
+        _toolResult = null;
+        _toolError = null;
+        StateHasChanged();
+
+        try
+        {
+            var args = new Dictionary<string, object>();
+            foreach (var p in _toolParams)
+            {
+                if (!string.IsNullOrWhiteSpace(p.Value))
+                {
+                    args[p.Name] = p.Type == "integer" && int.TryParse(p.Value, out var iv) ? iv : p.Value;
+                }
+            }
+
+            _toolResult = await McpClient.CallToolAsync(_selectedTool.Name, args);
+        }
+        catch (Exception ex)
+        {
+            _toolError = ex.Message;
+        }
+        finally
+        {
+            _running = false;
+            StateHasChanged();
+        }
+    }
+
+    private static List<ToolParam> ParseParameters(McpToolInfo tool)
+    {
+        if (tool.InputSchema is not { ValueKind: System.Text.Json.JsonValueKind.Object } schema)
+            return [];
+
+        var list = new List<ToolParam>();
+
+        if (!schema.TryGetProperty("properties", out var props) ||
+            props.ValueKind != System.Text.Json.JsonValueKind.Object)
+            return list;
+
+        var required = new HashSet<string>(StringComparer.Ordinal);
+        if (schema.TryGetProperty("required", out var req) &&
+            req.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            foreach (var r in req.EnumerateArray())
+                if (r.GetString() is { } n) required.Add(n);
+        }
+
+        foreach (var prop in props.EnumerateObject())
+        {
+            list.Add(new ToolParam
+            {
+                Name = prop.Name,
+                Description = prop.Value.TryGetProperty("description", out var d) ? d.GetString() : null,
+                Type = prop.Value.TryGetProperty("type", out var t) ? GetTypeString(t) : "string",
+                Required = required.Contains(prop.Name),
+            });
+        }
+
+        return list;
+    }
+
+    private static string GetTypeString(System.Text.Json.JsonElement element)
+    {
+        if (element.ValueKind == System.Text.Json.JsonValueKind.String)
+            return element.GetString() ?? "string";
+
+        if (element.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                var val = item.GetString();
+                if (val is not null and not "null")
+                    return val;
+            }
+        }
+
+        return "string";
     }
 
     private async Task DeleteResourceAsync(McpResourceInfo resource)
@@ -228,5 +392,14 @@
           }
         }
         """;
+    }
+
+    private sealed class ToolParam
+    {
+        public string Name { get; set; } = "";
+        public string? Description { get; set; }
+        public string Type { get; set; } = "string";
+        public bool Required { get; set; }
+        public string Value { get; set; } = "";
     }
 }

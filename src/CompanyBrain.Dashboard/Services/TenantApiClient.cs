@@ -85,6 +85,14 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
         var response = await httpClient.DeleteAsync($"/api/knowledge/resources/{Uri.EscapeDataString(fileName)}");
         return response.IsSuccessStatusCode;
     }
+
+    public async Task<IngestResultResponse?> IngestDatabaseSchemaAsync(string connectionString, string name, string provider)
+    {
+        var response = await httpClient.PostAsJsonAsync("/api/knowledge/database-schema",
+            new { ConnectionString = connectionString, Name = name, Provider = provider });
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<IngestResultResponse>();
+    }
 }
 
 // === DTO Records ===

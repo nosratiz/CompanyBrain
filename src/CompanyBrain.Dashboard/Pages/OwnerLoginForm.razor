@@ -1,0 +1,115 @@
+@using CompanyBrain.Dashboard.Features.Auth.Interfaces
+@using CompanyBrain.Dashboard.Features.Auth.Services
+@inject IAuthApiClient AuthClient
+@inject AuthTokenStore TokenStore
+@inject TokenAuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<MudStack Spacing="3">
+    <MudButton Variant="Variant.Text"
+               StartIcon="@Icons.Material.Filled.ArrowBack"
+               OnClick="OnBack"
+               Class="align-self-start"
+               Style="color: #94a3b8; text-transform: none;">
+        Back
+    </MudButton>
+
+    <MudText Typo="Typo.h6" Align="Align.Center" Style="color: #e2e8f0; font-weight: 600;">Owner Sign In</MudText>
+    <MudText Typo="Typo.body2" Align="Align.Center" Style="color: #64748b;" Class="mb-2">
+        Enter your credentials to access the dashboard
+    </MudText>
+
+    <MudTextField @bind-Value="_email"
+                  Label="Email"
+                  Variant="Variant.Outlined"
+                  InputType="InputType.Email"
+                  Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Email"
+                  Required="true"
+                  RequiredError="Email is required"
+                  Disabled="_loading"
+                  Class="login-field" />
+
+    <MudTextField @bind-Value="_password"
+                  Label="Password"
+                  Variant="Variant.Outlined"
+                  InputType="@_passwordInputType"
+                  Adornment="Adornment.End"
+                  AdornmentIcon="@_passwordIcon"
+                  OnAdornmentClick="TogglePasswordVisibility"
+                  Required="true"
+                  RequiredError="Password is required"
+                  Disabled="_loading"
+                  Class="login-field" />
+
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               FullWidth="true"
+               Size="Size.Large"
+               Disabled="_loading"
+               Class="py-3 rounded-lg mt-2"
+               Style="text-transform: none; font-weight: 600; font-size: 0.95rem; letter-spacing: 0;"
+               OnClick="HandleLoginAsync">
+        @if (_loading)
+        {
+            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" Color="Color.Surface" />
+            <span>Signing in…</span>
+        }
+        else
+        {
+            <span>Sign In</span>
+        }
+    </MudButton>
+</MudStack>
+
+@code {
+    [Parameter] public EventCallback OnBack { get; set; }
+
+    private string _email = string.Empty;
+    private string _password = string.Empty;
+    private bool _loading;
+    private bool _showPassword;
+
+    private InputType _passwordInputType => _showPassword ? InputType.Text : InputType.Password;
+    private string _passwordIcon => _showPassword ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility;
+
+    private void TogglePasswordVisibility() => _showPassword = !_showPassword;
+
+    private async Task HandleLoginAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_email) || string.IsNullOrWhiteSpace(_password))
+        {
+            Snackbar.Add("Please enter both email and password.", Severity.Warning);
+            return;
+        }
+
+        _loading = true;
+
+        try
+        {
+            var result = await AuthClient.LoginAsync(_email, _password);
+
+            if (result.IsSuccess)
+            {
+                var auth = result.Value;
+                TokenStore.SetOwnerSession(
+                    auth.Token,
+                    auth.User.DisplayName,
+                    auth.User.Email,
+                    auth.User.Role);
+                AuthStateProvider.NotifyAuthStateChanged();
+                Snackbar.Add("Login successful!", Severity.Success);
+                Navigation.NavigateTo("/");
+            }
+            else
+            {
+                Snackbar.Add(result.Errors.FirstOrDefault()?.Message ?? "Login failed.", Severity.Error);
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

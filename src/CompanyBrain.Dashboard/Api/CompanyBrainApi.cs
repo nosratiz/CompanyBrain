@@ -45,6 +45,14 @@ internal static class CompanyBrainApi
             .ProducesValidationProblem(StatusCodes.Status400BadRequest)
             .DisableAntiforgery();
 
+        group.MapPost("/database-schema", IngestDatabaseSchemaAsync)
+            .WithName("IngestDatabaseSchema")
+            .WithDescription("Read a SQL Server database schema and save it as a knowledge document.")
+            .Produces<IngestResultResponse>(StatusCodes.Status200OK)
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status502BadGateway)
+            .DisableAntiforgery();
+
         group.MapGet("/search", SearchAsync)
             .WithName("SearchKnowledge")
             .Produces<SearchResponse>(StatusCodes.Status200OK)
@@ -248,5 +256,38 @@ internal static class CompanyBrainApi
         await sessionTracker.NotifyResourceListChangedAsync(cancellationToken);
 
         return TypedResults.NoContent();
+    }
+
+    private static async Task<IResult> IngestDatabaseSchemaAsync(
+        IngestDatabaseSchemaRequest request,
+        [FromServices] IValidator<IngestDatabaseSchemaRequest> validator,
+        [FromServices] KnowledgeApplicationService service,
+        [FromServices] McpSessionTracker sessionTracker,
+        CancellationToken cancellationToken)
+    {
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
+        {
+            return validation.ToValidationProblem();
+        }
+
+        if (!Enum.TryParse<CompanyBrain.Models.DatabaseProvider>(request.Provider, ignoreCase: true, out var provider))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["Provider"] = ["Provider must be SqlServer, PostgreSql, or MySql."]
+            });
+        }
+
+        var result = await service.IngestDatabaseSchemaAsync(request.ConnectionString, request.Name, provider, cancellationToken);
+        if (result.IsFailed)
+        {
+            return result.ToProblemResult();
+        }
+
+        await sessionTracker.NotifyResourceListChangedAsync(cancellationToken);
+
+        var document = result.Value;
+        return TypedResults.Ok(new IngestResultResponse(document.FileName, document.ResourceUri, document.Existed));
     }
 }

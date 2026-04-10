@@ -1,0 +1,61 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="_theme" IsDarkMode="true" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<div class="login-page">
+    @Body
+</div>
+
+<style>
+    .login-page {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .login-page::before {
+        content: '';
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
+        top: -200px;
+        right: -100px;
+        pointer-events: none;
+    }
+
+    .login-page::after {
+        content: '';
+        position: absolute;
+        width: 500px;
+        height: 500px;
+        background: radial-gradient(circle, rgba(139, 92, 246, 0.1) 0%, transparent 70%);
+        bottom: -150px;
+        left: -100px;
+        pointer-events: none;
+    }
+</style>
+
+@code {
+    private readonly MudTheme _theme = new()
+    {
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#3b82f6",
+            Secondary = "#8b5cf6",
+            Surface = "#1e293b",
+            Background = "#0f172a",
+            AppbarBackground = "#0f172a",
+            DrawerBackground = "#0f172a",
+            TextPrimary = "#f1f5f9",
+            TextSecondary = "#94a3b8"
+        }
+    };
+}
