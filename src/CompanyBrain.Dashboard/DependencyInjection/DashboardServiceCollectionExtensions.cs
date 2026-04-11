@@ -6,6 +6,7 @@ using CompanyBrain.Dashboard.Features.DocumentTenant.Validators;
 using CompanyBrain.Dashboard.Mcp;
 using CompanyBrain.Dashboard.Mcp.Resources;
 using CompanyBrain.Dashboard.Mcp.Tools;
+using CompanyBrain.Dashboard.Middleware;
 using CompanyBrain.Dashboard.Services;
 using FluentValidation;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -160,6 +161,9 @@ public static class DashboardServiceCollectionExtensions
         var externalApiOptions = configuration.GetSection(ExternalApiOptions.SectionName).Get<ExternalApiOptions>()
             ?? new ExternalApiOptions();
 
+        // Register the 401 redirect handler
+        services.AddTransient<UnauthorizedRedirectHandler>();
+
         // Knowledge API client for Blazor pages
         services.AddHttpClient<KnowledgeApiClient>((sp, client) =>
         {
@@ -167,7 +171,8 @@ public static class DashboardServiceCollectionExtensions
             client.BaseAddress = new Uri(env.IsDevelopment()
                 ? dashboardOptions.DevelopmentBaseUrl
                 : dashboardOptions.ProductionBaseUrl);
-        });
+        })
+        .AddHttpMessageHandler<UnauthorizedRedirectHandler>();
 
         // MCP Status client
         services.AddHttpClient<McpStatusClient>((sp, client) =>
@@ -176,7 +181,8 @@ public static class DashboardServiceCollectionExtensions
             client.BaseAddress = new Uri(env.IsDevelopment()
                 ? dashboardOptions.DevelopmentBaseUrl
                 : dashboardOptions.ProductionBaseUrl);
-        });
+        })
+        .AddHttpMessageHandler<UnauthorizedRedirectHandler>();
 
         // Document-Tenant API client (internal API)
         services.AddHttpClient<DocumentTenantApiClient>((sp, client) =>
@@ -185,9 +191,10 @@ public static class DashboardServiceCollectionExtensions
             client.BaseAddress = new Uri(env.IsDevelopment()
                 ? dashboardOptions.DevelopmentBaseUrl
                 : dashboardOptions.ProductionBaseUrl);
-        });
+        })
+        .AddHttpMessageHandler<UnauthorizedRedirectHandler>();
 
-        // Auth API client
+        // Auth API client (no redirect handler - this handles login itself)
         services.AddHttpClient<AuthApiClient>((_, client) =>
         {
             client.BaseAddress = new Uri(externalApiOptions.AuthApiBaseUrl);
@@ -198,7 +205,8 @@ public static class DashboardServiceCollectionExtensions
         services.AddHttpClient<ExternalTenantApiClient>((_, client) =>
         {
             client.BaseAddress = new Uri(externalApiOptions.TenantApiBaseUrl);
-        });
+        })
+        .AddHttpMessageHandler<UnauthorizedRedirectHandler>();
 
         return services;
     }
