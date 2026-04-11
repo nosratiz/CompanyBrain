@@ -1,0 +1,118 @@
+/* MainLayout — Dashboard shell with glass morphism styling */
+
+/* ═══════ AppBar Animations ═══════ */
+::deep .mud-appbar {
+    transition: background 0.3s ease;
+    animation: navbar-slide-down 0.6s ease-out both;
+}
+
+@keyframes navbar-slide-down {
+    from { opacity: 0; transform: translateY(-100%); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══════ Drawer Styling ═══════ */
+::deep .mud-drawer {
+    animation: drawer-slide-in 0.4s ease-out;
+}
+
+@keyframes drawer-slide-in {
+    from { opacity: 0; transform: translateX(-20px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+::deep .mud-nav-link {
+    transition: all 0.2s ease;
+}
+
+::deep .mud-nav-link:hover {
+    background: rgba(102, 126, 234, 0.15) !important;
+    color: #667eea !important;
+}
+
+::deep .mud-nav-link.active {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.15) 100%) !important;
+    color: #667eea !important;
+    border-left: 3px solid #667eea;
+}
+
+::deep .mud-nav-link .mud-nav-link-icon {
+    transition: transform 0.2s ease;
+}
+
+::deep .mud-nav-link:hover .mud-nav-link-icon {
+    transform: scale(1.1);
+}
+
+/* ═══════ Main Content ═══════ */
+::deep .mud-main-content {
+    animation: content-fade-in 0.5s ease-out 0.2s both;
+}
+
+@keyframes content-fade-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══════ Nav link hover underline animation ═══════ */
+::deep .mud-appbar .mud-button-text {
+    position: relative;
+}
+
+::deep .mud-appbar .mud-button-text::after {
+    content: "";
+    position: absolute;
+    bottom: 4px;
+    left: 50%;
+    width: 0;
+    height: 1.5px;
+    background: linear-gradient(90deg, #667eea, #764ba2);
+    transition: width 0.3s ease, left 0.3s ease;
+    border-radius: 2px;
+}
+
+::deep .mud-appbar .mud-button-text:hover::after {
+    width: 60%;
+    left: 20%;
+}
+
+/* ═══════ Scrollbar Styling ═══════ */
+::deep ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::deep ::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 4px;
+}
+
+::deep ::-webkit-scrollbar-thumb {
+    background: rgba(102, 126, 234, 0.3);
+    border-radius: 4px;
+    transition: background 0.3s ease;
+}
+
+::deep ::-webkit-scrollbar-thumb:hover {
+    background: rgba(102, 126, 234, 0.5);
+}
+
+/* ═══════ Logo Icon Container ═══════ */
+::deep .logo-icon-container {
+    animation: logo-pulse 2s ease-in-out infinite;
+}
+
+@keyframes logo-pulse {
+    0%, 100% { box-shadow: 0 0 20px rgba(102, 126, 234, 0.3); }
+    50% { box-shadow: 0 0 30px rgba(102, 126, 234, 0.5); }
+}
+
+/* ═══════ User Chip ═══════ */
+::deep .mud-chip {
+    transition: all 0.2s ease;
+}
+
+::deep .mud-chip:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}

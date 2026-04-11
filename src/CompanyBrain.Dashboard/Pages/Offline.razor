@@ -1,0 +1,308 @@
+@page "/offline"
+@layout OfflineLayout
+@inject Services.NetworkStatusService NetworkStatus
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<div class="offline-container">
+    <div class="offline-card">
+        @* Animated Icon *@
+        <div class="offline-icon @(_isChecking ? "checking" : "")">
+            @if (_isChecking)
+            {
+                <MudIcon Icon="@Icons.Material.Filled.Sync" Style="font-size: 64px; color: #667eea;" />
+            }
+            else
+            {
+                <MudIcon Icon="@Icons.Material.Filled.WifiOff" Style="font-size: 64px; color: #ef4444;" />
+            }
+        </div>
+        
+        @* Status Text *@
+        <MudText Typo="Typo.h4" Class="gradient-text" Style="font-weight: 700; margin-top: 24px;">
+            @(_isChecking ? "Checking Connection..." : "You're Offline")
+        </MudText>
+        
+        <MudText Typo="Typo.body1" Style="color: rgba(255,255,255,0.6); margin-top: 12px; text-align: center; max-width: 400px;">
+            @if (_isChecking)
+            {
+                <text>Attempting to reconnect to the internet...</text>
+            }
+            else
+            {
+                <text>It looks like you've lost your internet connection. Please check your network settings and try again.</text>
+            }
+        </MudText>
+        
+        @* Connection Status Indicator *@
+        <div class="connection-status @(_isOnline ? "online" : "offline")">
+            <span class="status-dot"></span>
+            <span>@(_isOnline ? "Connected" : "Disconnected")</span>
+        </div>
+        
+        @* Retry Button *@
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   Size="Size.Large"
+                   Class="retry-btn"
+                   OnClick="CheckConnectionAsync"
+                   Disabled="_isChecking">
+            @if (_isChecking)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <text>Checking...</text>
+            }
+            else
+            {
+                <MudIcon Icon="@Icons.Material.Filled.Refresh" Class="mr-2" />
+                <text>Try Again</text>
+            }
+        </MudButton>
+        
+        @* Auto-retry indicator *@
+        <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4); margin-top: 16px;">
+            Auto-checking every @(_autoRetrySeconds) seconds...
+        </MudText>
+        
+        @* Progress bar for auto-retry *@
+        <div class="auto-retry-progress">
+            <div class="auto-retry-fill" style="animation-duration: @(_autoRetrySeconds)s;"></div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .offline-container {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+    }
+    
+    .offline-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 48px;
+        background: linear-gradient(145deg, rgba(18, 18, 26, 0.95) 0%, rgba(24, 24, 32, 0.9) 100%);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 24px;
+        backdrop-filter: blur(24px);
+        position: relative;
+        overflow: hidden;
+        max-width: 500px;
+        width: 100%;
+    }
+    
+    .offline-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.1) 50%, transparent 100%);
+    }
+    
+    .offline-icon {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(239, 68, 68, 0.1);
+        border: 2px solid rgba(239, 68, 68, 0.2);
+        transition: all 0.3s ease;
+    }
+    
+    .offline-icon.checking {
+        background: rgba(102, 126, 234, 0.1);
+        border-color: rgba(102, 126, 234, 0.3);
+        animation: pulse-check 1.5s ease-in-out infinite;
+    }
+    
+    .offline-icon.checking .mud-icon-root {
+        animation: spin 1s linear infinite;
+    }
+    
+    @@keyframes pulse-check {
+        0%, 100% { 
+            box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.4);
+            transform: scale(1);
+        }
+        50% { 
+            box-shadow: 0 0 0 20px rgba(102, 126, 234, 0);
+            transform: scale(1.02);
+        }
+    }
+    
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    
+    .gradient-text {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    
+    .connection-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        border-radius: 20px;
+        margin-top: 24px;
+        font-size: 14px;
+        font-weight: 500;
+        transition: all 0.3s ease;
+    }
+    
+    .connection-status.offline {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.2);
+        color: #f87171;
+    }
+    
+    .connection-status.online {
+        background: rgba(16, 185, 129, 0.1);
+        border: 1px solid rgba(16, 185, 129, 0.2);
+        color: #34d399;
+    }
+    
+    .connection-status .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+    
+    .connection-status.offline .status-dot {
+        background: #ef4444;
+        box-shadow: 0 0 8px #ef4444;
+    }
+    
+    .connection-status.online .status-dot {
+        background: #10b981;
+        box-shadow: 0 0 8px #10b981;
+        animation: pulse-dot 2s infinite;
+    }
+    
+    @@keyframes pulse-dot {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    
+    .retry-btn {
+        margin-top: 24px;
+        padding: 12px 32px !important;
+        border-radius: 12px !important;
+        font-weight: 600 !important;
+        text-transform: none !important;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3) !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    .retry-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4) !important;
+    }
+    
+    .auto-retry-progress {
+        width: 200px;
+        height: 3px;
+        background: rgba(255,255,255,0.1);
+        border-radius: 3px;
+        margin-top: 12px;
+        overflow: hidden;
+    }
+    
+    .auto-retry-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        border-radius: 3px;
+        animation: progress-fill linear infinite;
+    }
+    
+    @@keyframes progress-fill {
+        from { width: 0%; }
+        to { width: 100%; }
+    }
+</style>
+
+@code {
+    private bool _isOnline;
+    private bool _isChecking;
+    private readonly int _autoRetrySeconds = 10;
+    private Timer? _autoRetryTimer;
+    private string? _returnUrl;
+
+    protected override void OnInitialized()
+    {
+        _isOnline = NetworkStatus.IsOnline;
+        NetworkStatus.OnStatusChanged += HandleNetworkStatusChanged;
+        
+        // Get return URL from query string
+        var uri = new Uri(Navigation.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        _returnUrl = query["returnUrl"] ?? "/";
+        
+        // Start auto-retry timer
+        _autoRetryTimer = new Timer(AutoRetryCallback, null, 
+            TimeSpan.FromSeconds(_autoRetrySeconds), 
+            TimeSpan.FromSeconds(_autoRetrySeconds));
+    }
+
+    private async void AutoRetryCallback(object? state)
+    {
+        await InvokeAsync(async () =>
+        {
+            if (!_isChecking)
+            {
+                await CheckConnectionAsync();
+            }
+        });
+    }
+
+    private void HandleNetworkStatusChanged(bool isOnline)
+    {
+        _isOnline = isOnline;
+        
+        if (isOnline)
+        {
+            // Redirect back when online
+            Navigation.NavigateTo(_returnUrl ?? "/", forceLoad: true);
+        }
+        
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CheckConnectionAsync()
+    {
+        _isChecking = true;
+        StateHasChanged();
+        
+        // Add small delay for UX
+        await Task.Delay(1500);
+        
+        var isOnline = await NetworkStatus.CheckConnectionAsync();
+        _isOnline = isOnline;
+        _isChecking = false;
+        
+        if (isOnline)
+        {
+            Navigation.NavigateTo(_returnUrl ?? "/", forceLoad: true);
+        }
+        
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        NetworkStatus.OnStatusChanged -= HandleNetworkStatusChanged;
+        _autoRetryTimer?.Dispose();
+    }
+}

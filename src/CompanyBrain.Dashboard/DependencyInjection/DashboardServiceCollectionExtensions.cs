@@ -55,6 +55,9 @@ public static class DashboardServiceCollectionExtensions
             .AddInteractiveServerComponents();
 
         services.AddMudServices();
+        
+        // Network status monitoring
+        services.AddScoped<NetworkStatusService>();
 
         return services;
     }

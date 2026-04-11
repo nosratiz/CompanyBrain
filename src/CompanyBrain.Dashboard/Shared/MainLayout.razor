@@ -1,18 +1,33 @@
 @inherits LayoutComponentBase
 @using CompanyBrain.Dashboard.Features.Auth.Services
+@using CompanyBrain.Dashboard.Services
 @inject AuthTokenStore TokenStore
 @inject TokenAuthenticationStateProvider AuthStateProvider
 @inject BrowserAuthSessionStorage SessionStorage
 @inject NavigationManager Navigation
+@inject NetworkStatusService NetworkStatus
+@implements IDisposable
 
-<MudThemeProvider Theme="_theme" IsDarkMode="_isDarkMode" />
+<MudThemeProvider Theme="_theme" IsDarkMode="true" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
 
 @if (_isInitializing)
 {
-    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    <div class="loading-screen">
+        <div class="loading-content">
+            <div class="loading-logo">
+                <MudIcon Icon="@Icons.Material.Filled.Psychology" 
+                         Style="font-size: 48px; color: white;" />
+            </div>
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" 
+                               Style="width: 200px; border-radius: 4px;" />
+            <MudText Typo="Typo.body2" Style="margin-top: 16px; color: rgba(255,255,255,0.5);">
+                Loading...
+            </MudText>
+        </div>
+    </div>
 }
 else if (!TokenStore.IsAuthenticated && !IsLoginPage)
 {
@@ -21,57 +36,274 @@ else if (!TokenStore.IsAuthenticated && !IsLoginPage)
 else
 {
     <MudLayout>
-        <MudAppBar Elevation="1">
-            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="ToggleDrawer" />
-            <MudText Typo="Typo.h5" Class="ml-3">Company Brain</MudText>
+        @* ── Floating Orbs (Background Decoration) ── *@
+        <div class="orb orb-primary" style="width: 400px; height: 400px; top: -100px; left: -100px;"></div>
+        <div class="orb orb-secondary" style="width: 300px; height: 300px; bottom: 10%; right: -50px; animation-delay: -5s;"></div>
+        <div class="orb orb-accent" style="width: 200px; height: 200px; top: 40%; left: 30%; animation-delay: -10s; opacity: 0.3;"></div>
+
+        @* ── Top Bar ── *@
+        <MudAppBar Elevation="0" Class="app-bar-glass">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                           Class="nav-icon-btn"
+                           Edge="Edge.Start"
+                           OnClick="ToggleDrawer" />
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="ml-2">
+                <div class="logo-container">
+                    <MudIcon Icon="@Icons.Material.Filled.Psychology" Size="Size.Small" Style="color: white;" />
+                </div>
+                <MudLink Href="/" Style="text-decoration: none;">
+                    <MudText Typo="Typo.h6" Class="brand-text">
+                        Company Brain
+                    </MudText>
+                </MudLink>
+            </MudStack>
             <MudSpacer />
             @if (TokenStore.IsAuthenticated)
             {
-                <MudText Typo="Typo.body2" Color="Color.Inherit" Class="mr-3">@TokenStore.DisplayName</MudText>
-                <MudIconButton Icon="@Icons.Material.Filled.Logout"
-                               Color="Color.Inherit"
-                               OnClick="Logout" />
+                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                    <div class="status-indicator">
+                        <span class="status-dot online"></span>
+                        <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.6);">Connected</MudText>
+                    </div>
+                    <MudChip T="string" Size="Size.Small" Class="user-chip">
+                        @TokenStore.DisplayName
+                    </MudChip>
+                    <MudIconButton Icon="@Icons.Material.Filled.Logout"
+                                   Class="nav-icon-btn"
+                                   OnClick="Logout" />
+                </MudStack>
             }
-            <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
-                           Color="Color.Inherit"
-                           OnClick="ToggleDarkMode" />
         </MudAppBar>
-        <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
-            <MudNavMenu>
+
+        @* ── Sidebar Drawer ── *@
+        <MudDrawer @bind-Open="_drawerOpen"
+                   ClipMode="DrawerClipMode.Always"
+                   Elevation="0"
+                   Class="drawer-glass">
+            <MudNavMenu Class="mt-4 nav-menu">
                 @if (TokenStore.IsAuthenticated)
                 {
-                    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
-                    <MudNavLink Href="/documents" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Description">Documents</MudNavLink>
-                    <MudNavLink Href="/search" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Search">Search</MudNavLink>
-                    <MudNavLink Href="/import" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.CloudUpload">Import</MudNavLink>
-                    <MudNavLink Href="/mcp-server" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Hub">MCP Server</MudNavLink>
+                    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard" Class="nav-item">
+                        Dashboard
+                    </MudNavLink>
+                    <MudNavLink Href="/documents" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Description" Class="nav-item">
+                        Documents
+                    </MudNavLink>
+                    <MudNavLink Href="/search" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Search" Class="nav-item">
+                        Search
+                    </MudNavLink>
+                    <MudNavLink Href="/import" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.CloudUpload" Class="nav-item">
+                        Import
+                    </MudNavLink>
+                    <MudNavLink Href="/mcp-server" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Hub" Class="nav-item">
+                        MCP Server
+                    </MudNavLink>
                 }
                 else
                 {
-                    <MudNavLink Href="/login" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Login">Login</MudNavLink>
+                    <MudNavLink Href="/login" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Login" Class="nav-item">
+                        Login
+                    </MudNavLink>
                 }
             </MudNavMenu>
         </MudDrawer>
-        <MudMainContent Class="pt-16 px-4">
-            <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="my-4">
+
+        @* ── Main Content ── *@
+        <MudMainContent Class="main-content">
+            <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-6 px-4 page-enter">
                 @Body
             </MudContainer>
         </MudMainContent>
     </MudLayout>
 }
 
+<style>
+    /* Loading Screen */
+    .loading-screen {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        background: var(--bg-base, #0a0a0f);
+    }
+    
+    .loading-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 24px;
+    }
+    
+    .loading-logo {
+        width: 80px;
+        height: 80px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: pulse-glow 2s ease-in-out infinite;
+    }
+    
+    /* App Bar */
+    .app-bar-glass {
+        background: rgba(10, 10, 15, 0.8) !important;
+        backdrop-filter: blur(24px) saturate(180%);
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    
+    .nav-icon-btn {
+        color: rgba(255,255,255,0.6) !important;
+        transition: all 0.2s ease;
+    }
+    
+    .nav-icon-btn:hover {
+        color: rgba(255,255,255,0.9) !important;
+        background: rgba(102, 126, 234, 0.15) !important;
+    }
+    
+    .logo-container {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 38px;
+        height: 38px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 12px;
+        box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+        transition: all 0.3s ease;
+    }
+    
+    .logo-container:hover {
+        transform: scale(1.05);
+        box-shadow: 0 6px 24px rgba(102, 126, 234, 0.4);
+    }
+    
+    .brand-text {
+        font-weight: 800;
+        font-family: 'Inter', sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #a855f7 50%, #f093fb 100%);
+        background-size: 200% 200%;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: gradient-shift 4s ease-in-out infinite;
+    }
+    
+    @@keyframes gradient-shift {
+        0%, 100% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+    }
+    
+    .status-indicator {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        background: rgba(16, 185, 129, 0.1);
+        border: 1px solid rgba(16, 185, 129, 0.2);
+        border-radius: 20px;
+    }
+    
+    .user-chip {
+        background: rgba(102, 126, 234, 0.12) !important; 
+        color: #a5b4fc !important; 
+        font-family: 'Inter', sans-serif; 
+        font-weight: 500;
+        border: 1px solid rgba(102, 126, 234, 0.2) !important;
+    }
+    
+    /* Drawer */
+    .drawer-glass {
+        background: rgba(18, 18, 26, 0.95) !important;
+        backdrop-filter: blur(24px);
+        border-right: 1px solid rgba(255,255,255,0.04) !important;
+    }
+    
+    .nav-menu {
+        padding: 0 12px;
+    }
+    
+    .nav-item {
+        border-radius: 12px !important;
+        margin-bottom: 6px !important;
+        color: rgba(255,255,255,0.6) !important;
+        font-family: 'Inter', sans-serif;
+        font-weight: 500;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .nav-item::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 3px;
+        height: 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 0 4px 4px 0;
+        transition: height 0.2s ease;
+    }
+    
+    .nav-item:hover {
+        background: rgba(102, 126, 234, 0.08) !important;
+        color: rgba(255,255,255,0.9) !important;
+    }
+    
+    .nav-item:hover::before {
+        height: 20px;
+    }
+    
+    .nav-item.active,
+    .mud-nav-link.active {
+        background: rgba(102, 126, 234, 0.15) !important;
+        color: #a5b4fc !important;
+    }
+    
+    .nav-item.active::before,
+    .mud-nav-link.active::before {
+        height: 24px;
+    }
+    
+    /* Main Content */
+    .main-content {
+        background: transparent !important;
+        min-height: 100vh;
+        padding-top: 80px;
+        position: relative;
+        z-index: 1;
+    }
+    
+    @@keyframes pulse-glow {
+        0%, 100% { box-shadow: 0 0 20px rgba(102, 126, 234, 0.3); }
+        50% { box-shadow: 0 0 40px rgba(102, 126, 234, 0.5), 0 0 60px rgba(118, 75, 162, 0.3); }
+    }
+</style>
+
 @code {
     private bool _drawerOpen = true;
-    private bool _isDarkMode = false;
     private bool _isInitializing = true;
 
     private bool IsLoginPage => Navigation.Uri.Contains("/login", StringComparison.OrdinalIgnoreCase);
+    private bool IsOfflinePage => Navigation.Uri.Contains("/offline", StringComparison.OrdinalIgnoreCase);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            // Enable JS interop and restore session from localStorage
+            // Initialize network status monitoring
+            await NetworkStatus.InitializeAsync();
+            NetworkStatus.OnStatusChanged += HandleNetworkStatusChanged;
+            
+            // Check initial network status
+            if (!NetworkStatus.IsOnline && !IsOfflinePage)
+            {
+                RedirectToOffline();
+                return;
+            }
+            
             SessionStorage.EnableJsInterop();
             var restored = await TokenStore.RestoreSessionAsync();
             if (restored)
@@ -82,30 +314,65 @@ else
             StateHasChanged();
         }
     }
-
-    private MudTheme _theme = new()
+    
+    private void HandleNetworkStatusChanged(bool isOnline)
     {
-        PaletteLight = new PaletteLight
+        if (!isOnline && !IsOfflinePage)
         {
-            Primary = "#1976d2",
-            Secondary = "#dc004e",
-            AppbarBackground = "#1976d2"
-        },
+            InvokeAsync(() => RedirectToOffline());
+        }
+    }
+    
+    private void RedirectToOffline()
+    {
+        var currentUrl = Uri.EscapeDataString(Navigation.Uri);
+        Navigation.NavigateTo($"/offline?returnUrl={currentUrl}", forceLoad: true);
+    }
+
+    private readonly MudTheme _theme = new()
+    {
         PaletteDark = new PaletteDark
         {
-            Primary = "#90caf9",
-            Secondary = "#f48fb1",
-            AppbarBackground = "#1e1e1e"
+            Primary = "#667eea",
+            Secondary = "#764ba2",
+            Tertiary = "#f093fb",
+            Background = "#0a0a0f",
+            Surface = "#12121a",
+            AppbarBackground = "#0a0a0fD9",
+            DrawerBackground = "#12121a",
+            TextPrimary = "#EBEBEBEA",
+            TextSecondary = "#FFFFFF8C",
+            ActionDefault = "#FFFFFF8C",
+            ActionDisabled = "#FFFFFF4D",
+            ActionDisabledBackground = "#FFFFFF1A"
+        },
+        LayoutProperties = new LayoutProperties
+        {
+            DefaultBorderRadius = "16px"
+        },
+        Typography = new Typography
+        {
+            Default = new DefaultTypography { FontFamily = ["Inter", "system-ui", "sans-serif"] },
+            H1 = new H1Typography { FontWeight = "900", LineHeight = "1.05", LetterSpacing = "-0.03em" },
+            H2 = new H2Typography { FontWeight = "800", LineHeight = "1.1", LetterSpacing = "-0.02em" },
+            H3 = new H3Typography { FontWeight = "700", LineHeight = "1.15" },
+            H4 = new H4Typography { FontWeight = "700", LineHeight = "1.2" },
+            H5 = new H5Typography { FontWeight = "600", LineHeight = "1.3" },
+            H6 = new H6Typography { FontWeight = "600" }
         }
     };
 
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
-    private void ToggleDarkMode() => _isDarkMode = !_isDarkMode;
 
     private async Task Logout()
     {
         await TokenStore.ClearAsync();
         AuthStateProvider.NotifyAuthStateChanged();
         Navigation.NavigateTo("/login");
+    }
+    
+    public void Dispose()
+    {
+        NetworkStatus.OnStatusChanged -= HandleNetworkStatusChanged;
     }
 }
