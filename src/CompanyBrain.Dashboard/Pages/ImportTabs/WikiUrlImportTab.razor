@@ -1,0 +1,95 @@
+@inject KnowledgeApiClient Api
+@inject DocumentTenantApiClient DocumentTenantApi
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h6" Class="mb-4">Import from Wiki URL</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Import a single wiki page by providing its URL. The page will be converted to Markdown and stored in the knowledge base.
+</MudText>
+
+<MudTextField @bind-Value="_url"
+              Label="Wiki URL"
+              Placeholder="https://wiki.example.com/page"
+              Variant="Variant.Outlined"
+              FullWidth="true"
+              Class="mb-4" />
+
+<MudTextField @bind-Value="_name"
+              Label="Document Name (optional)"
+              Placeholder="My Wiki Page"
+              Variant="Variant.Outlined"
+              FullWidth="true"
+              HelperText="Leave empty to auto-generate from page title"
+              Class="mb-4" />
+
+<MudButton Variant="Variant.Filled"
+           Color="Color.Primary"
+           StartIcon="@Icons.Material.Filled.CloudDownload"
+           OnClick="ImportAsync"
+           Disabled="@(string.IsNullOrWhiteSpace(_url) || Importing)">
+    @if (Importing)
+    {
+        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+        <span>Importing...</span>
+    }
+    else
+    {
+        <span>Import Wiki Page</span>
+    }
+</MudButton>
+
+@code {
+    [Parameter] public bool Importing { get; set; }
+    [Parameter] public EventCallback<bool> ImportingChanged { get; set; }
+    [Parameter] public Func<List<TenantAssignment>>? GetTenantAssignments { get; set; }
+    [Parameter] public EventCallback<IngestResultResponse?> OnImportSuccess { get; set; }
+    [Parameter] public EventCallback<string> OnImportError { get; set; }
+
+    private string _url = "";
+    private string _name = "";
+
+    private async Task ImportAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_url)) return;
+
+        await ImportingChanged.InvokeAsync(true);
+
+        try
+        {
+            var name = string.IsNullOrWhiteSpace(_name) ? null : _name;
+            var result = await Api.IngestWikiAsync(_url, name);
+            Snackbar.Add($"Successfully imported {result?.FileName}", Severity.Success);
+
+            // Assign to selected tenants
+            if (result?.FileName is not null)
+            {
+                await AssignDocumentToTenantsAsync(result.FileName);
+            }
+
+            await OnImportSuccess.InvokeAsync(result);
+            _url = "";
+            _name = "";
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
+            await OnImportError.InvokeAsync(ex.Message);
+        }
+        finally
+        {
+            await ImportingChanged.InvokeAsync(false);
+        }
+    }
+
+    private async Task AssignDocumentToTenantsAsync(string fileName)
+    {
+        var tenantAssignments = GetTenantAssignments?.Invoke();
+        if (tenantAssignments is null || tenantAssignments.Count == 0) return;
+
+        var result = await DocumentTenantApi.UpdateDocumentTenantsAsync(fileName, tenantAssignments);
+        if (result is not null)
+        {
+            Snackbar.Add($"Document assigned to {tenantAssignments.Count} tenant(s)", Severity.Info);
+        }
+    }
+}

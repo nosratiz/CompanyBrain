@@ -140,8 +140,9 @@ public static class DashboardServiceCollectionExtensions
             .AddMcpServer()
             .WithHttpTransport()
             .WithTools<CompanyBrainTools>()
-            .WithListResourcesHandler(KnowledgeResourceHandlers.ListResourcesAsync)
-            .WithReadResourceHandler(KnowledgeResourceHandlers.ReadResourceAsync);
+            .WithTools<ResourceTemplateTools>()
+            .WithListResourcesHandler(CompositeResourceHandlers.ListResourcesAsync)
+            .WithReadResourceHandler(CompositeResourceHandlers.ReadResourceAsync);
 
         return services;
     }

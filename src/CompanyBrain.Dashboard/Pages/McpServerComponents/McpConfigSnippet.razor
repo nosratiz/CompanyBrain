@@ -1,0 +1,30 @@
+@* Configuration snippet for MCP clients *@
+
+<MudExpansionPanels Class="mt-4">
+    <MudExpansionPanel Text="MCP Client Configuration">
+        <MudText Typo="Typo.body2" Class="mb-2">
+            Add this to your MCP client configuration to connect to this server:
+        </MudText>
+        <MudPaper Class="pa-3" Style="background-color: var(--mud-palette-background-gray); font-family: monospace; white-space: pre-wrap; overflow-x: auto;">
+            @GetConfigSnippet()
+        </MudPaper>
+    </MudExpansionPanel>
+</MudExpansionPanels>
+
+@code {
+    [Parameter]
+    public string EndpointUrl { get; set; } = string.Empty;
+
+    private string GetConfigSnippet()
+    {
+        return $$"""
+{
+  "mcpServers": {
+    "company-brain": {
+      "url": "{{EndpointUrl}}"
+    }
+  }
+}
+""";
+    }
+}

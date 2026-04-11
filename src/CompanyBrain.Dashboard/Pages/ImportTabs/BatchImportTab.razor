@@ -1,0 +1,149 @@
+@inject KnowledgeApiClient Api
+@inject DocumentTenantApiClient DocumentTenantApi
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h6" Class="mb-4">Batch Import Wiki URLs</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Import multiple wiki pages at once. Enter one URL per line.
+</MudText>
+
+<MudTextField @bind-Value="_batchUrls"
+              Label="Wiki URLs (one per line)"
+              Placeholder="https://wiki.example.com/page1&#10;https://wiki.example.com/page2&#10;https://wiki.example.com/page3"
+              Variant="Variant.Outlined"
+              Lines="8"
+              FullWidth="true"
+              Class="mb-4" />
+
+<MudButton Variant="Variant.Filled"
+           Color="Color.Primary"
+           StartIcon="@Icons.Material.Filled.CloudDownload"
+           OnClick="ImportAsync"
+           Disabled="@(string.IsNullOrWhiteSpace(_batchUrls) || Importing)">
+    @if (Importing)
+    {
+        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+        <span>Importing...</span>
+    }
+    else
+    {
+        <span>Import All</span>
+    }
+</MudButton>
+
+@if (_batchResults is not null)
+{
+    <MudDivider Class="my-4" />
+    <MudText Typo="Typo.subtitle1" Class="mb-2">Import Results</MudText>
+    <MudSimpleTable Dense="true" Bordered="true">
+        <thead>
+            <tr>
+                <th>URL</th>
+                <th>Status</th>
+                <th>File</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var result in _batchResults.Results)
+            {
+                <tr>
+                    <td><code style="font-size: 0.85em;">@FormatHelper.Truncate(result.Url, 50)</code></td>
+                    <td>
+                        @if (result.Success)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success">Success</MudChip>
+                        }
+                        else
+                        {
+                            <MudTooltip Text="@result.Error">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Error">Failed</MudChip>
+                            </MudTooltip>
+                        }
+                    </td>
+                    <td>
+                        @if (!string.IsNullOrEmpty(result.FileName))
+                        {
+                            <MudLink Href="@($"/documents/{Uri.EscapeDataString(result.FileName)}")">@result.FileName</MudLink>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+    <MudText Typo="Typo.caption" Class="mt-2">
+        Total: @_batchResults.TotalDiscovered | 
+        Success: @_batchResults.SuccessfullyIngested | 
+        Failed: @_batchResults.Failed
+    </MudText>
+}
+
+@code {
+    [Parameter] public bool Importing { get; set; }
+    [Parameter] public EventCallback<bool> ImportingChanged { get; set; }
+    [Parameter] public Func<List<TenantAssignment>>? GetTenantAssignments { get; set; }
+
+    private string _batchUrls = "";
+    private IngestWikiBatchResponse? _batchResults;
+
+    private async Task ImportAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_batchUrls)) return;
+
+        await ImportingChanged.InvokeAsync(true);
+        _batchResults = null;
+
+        try
+        {
+            var urls = _batchUrls
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(u => u.Trim())
+                .Where(u => !string.IsNullOrWhiteSpace(u))
+                .ToList();
+
+            if (urls.Count == 0)
+            {
+                Snackbar.Add("Please enter at least one URL", Severity.Warning);
+                return;
+            }
+
+            _batchResults = await Api.IngestWikiBatchAsync(urls.First());
+
+            if (_batchResults?.SuccessfullyIngested > 0)
+            {
+                Snackbar.Add($"Successfully imported {_batchResults.SuccessfullyIngested} of {_batchResults.TotalDiscovered} documents",
+                    _batchResults.Failed > 0 ? Severity.Warning : Severity.Success);
+
+                // Assign successful imports to selected tenants
+                var tenantAssignments = GetTenantAssignments?.Invoke();
+                if (tenantAssignments is not null && tenantAssignments.Count > 0 && _batchResults.Results is not null)
+                {
+                    foreach (var result in _batchResults.Results.Where(r => r.Success && !string.IsNullOrEmpty(r.FileName)))
+                    {
+                        await AssignDocumentToTenantsAsync(result.FileName!, tenantAssignments);
+                    }
+                }
+            }
+            else
+            {
+                Snackbar.Add("All imports failed", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Batch import failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            await ImportingChanged.InvokeAsync(false);
+        }
+    }
+
+    private async Task AssignDocumentToTenantsAsync(string fileName, List<TenantAssignment> tenantAssignments)
+    {
+        var result = await DocumentTenantApi.UpdateDocumentTenantsAsync(fileName, tenantAssignments);
+        if (result is not null)
+        {
+            Snackbar.Add($"Document assigned to {tenantAssignments.Count} tenant(s)", Severity.Info);
+        }
+    }
+}

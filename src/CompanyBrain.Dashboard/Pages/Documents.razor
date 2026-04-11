@@ -77,11 +77,11 @@ else
                     </MudLink>
                 </MudTd>
                 <MudTd DataLabel="Type">
-                    <MudChip T="string" Size="Size.Small" Color="@GetMimeTypeColor(context.MimeType)">
-                        @GetMimeTypeLabel(context.MimeType)
+                    <MudChip T="string" Size="Size.Small" Color="@UiDisplayHelper.GetMimeTypeColor(context.MimeType)">
+                        @UiDisplayHelper.GetMimeTypeLabel(context.MimeType)
                     </MudChip>
                 </MudTd>
-                <MudTd DataLabel="Size">@FormatBytes(context.Size ?? 0)</MudTd>
+                <MudTd DataLabel="Size">@FormatHelper.FormatBytes(context.Size ?? 0)</MudTd>
                 <MudTd DataLabel="Tenant Access">
                     @{
                         var tenantCount = GetTenantCount(context.Name);
@@ -189,7 +189,7 @@ else
         // Load tenant assignments for each document in parallel (batched for performance)
         var tasks = _resources.Select(async r =>
         {
-            var actualFileName = StripResourcesPrefix(r.Name);
+            var actualFileName = FormatHelper.StripResourcesPrefix(r.Name);
             var assignments = await TenantApi.GetAssignmentsByDocumentAsync(actualFileName);
             return (r.Name, Count: assignments?.Tenants.Count ?? 0);
         });
@@ -207,7 +207,7 @@ else
         try
         {
             var rawName = Uri.UnescapeDataString(FileName!);
-            var actualFileName = StripResourcesPrefix(rawName);
+            var actualFileName = FormatHelper.StripResourcesPrefix(rawName);
             _documentContent = await Api.GetResourceAsync(actualFileName);
         }
         catch (Exception ex)
@@ -225,12 +225,9 @@ else
         Navigation.NavigateTo($"/documents/{Uri.EscapeDataString(name)}");
     }
 
-    private static string StripResourcesPrefix(string name) =>
-        name.StartsWith("resources/", StringComparison.OrdinalIgnoreCase) ? name["resources/".Length..] : name;
-
     private async Task DeleteDocumentAsync(string name)
     {
-        var actualFileName = StripResourcesPrefix(name);
+        var actualFileName = FormatHelper.StripResourcesPrefix(name);
 
         var confirmed = await DialogService.ShowMessageBox(
             "Delete Document",
@@ -265,38 +262,9 @@ else
         }
     }
 
-    private static string FormatBytes(long bytes)
-    {
-        string[] sizes = ["B", "KB", "MB", "GB"];
-        int order = 0;
-        double size = bytes;
-        while (size >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            size /= 1024;
-        }
-        return $"{size:0.##} {sizes[order]}";
-    }
-
-    private static Color GetMimeTypeColor(string? mimeType) => mimeType switch
-    {
-        "text/markdown" => Color.Primary,
-        "text/plain" => Color.Default,
-        "text/html" => Color.Info,
-        _ => Color.Default
-    };
-
-    private static string GetMimeTypeLabel(string? mimeType) => mimeType switch
-    {
-        "text/markdown" => "Markdown",
-        "text/plain" => "Text",
-        "text/html" => "HTML",
-        _ => mimeType ?? "Unknown"
-    };
-
     private async Task OpenTenantDialogAsync(string name)
     {
-        var actualFileName = StripResourcesPrefix(name);
+        var actualFileName = FormatHelper.StripResourcesPrefix(name);
         
         var parameters = new DialogParameters<TenantAssignmentDialog>
         {

@@ -33,6 +33,7 @@ app.MapRazorComponents<App>()
 
 app.MapGet("/dashboard", () => Results.Redirect("/"));
 app.MapCompanyBrainApi();
+app.MapResourceTemplateApi();
 app.MapDocumentTenantApi();
 app.MapMcp(mcpRoutePattern);
 

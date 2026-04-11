@@ -1,0 +1,31 @@
+@* MCP endpoint URL card with copy functionality *@
+@inject ISnackbar Snackbar
+
+<MudCard>
+    <MudCardHeader>
+        <CardHeaderAvatar>
+            <MudAvatar Color="Color.Info">
+                <MudIcon Icon="@Icons.Material.Filled.Link" />
+            </MudAvatar>
+        </CardHeaderAvatar>
+        <CardHeaderContent>
+            <MudText Typo="Typo.h6">Endpoint</MudText>
+            <MudText Typo="Typo.body2" Style="font-family: monospace;">@EndpointUrl</MudText>
+        </CardHeaderContent>
+        <CardHeaderActions>
+            <MudTooltip Text="Copy URL">
+                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" OnClick="CopyEndpointUrl" />
+            </MudTooltip>
+        </CardHeaderActions>
+    </MudCardHeader>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired]
+    public string EndpointUrl { get; set; } = string.Empty;
+
+    private void CopyEndpointUrl()
+    {
+        Snackbar.Add($"MCP Endpoint: {EndpointUrl}", Severity.Info);
+    }
+}

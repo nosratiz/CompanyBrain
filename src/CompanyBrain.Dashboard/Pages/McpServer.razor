@@ -1,9 +1,7 @@
 @page "/mcp-server"
+@using CompanyBrain.Dashboard.Pages.McpServerComponents
 @inject McpStatusClient McpClient
-@inject ISnackbar Snackbar
-@inject IDialogService DialogService
 @inject NavigationManager Navigation
-@inject KnowledgeApiClient KnowledgeApi
 
 <PageTitle>MCP Server - Company Brain</PageTitle>
 
@@ -14,208 +12,30 @@
     <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
 }
 
-<!-- Status + Endpoint -->
 <MudGrid Class="mb-4">
     <MudItem xs="12" md="6">
-        <MudCard>
-            <MudCardHeader>
-                <CardHeaderAvatar>
-                    <MudAvatar Color="@(_status.IsRunning ? Color.Success : Color.Error)">
-                        <MudIcon Icon="@(_status.IsRunning ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
-                    </MudAvatar>
-                </CardHeaderAvatar>
-                <CardHeaderContent>
-                    <MudText Typo="Typo.h6">@(_status.IsRunning ? "MCP Server Running" : "MCP Server Offline")</MudText>
-                    @if (_status.IsRunning)
-                    {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">
-                            @_status.ServerName @_status.ServerVersion &middot; Protocol @_status.ProtocolVersion
-                        </MudText>
-                    }
-                    else if (_status.Error is not null)
-                    {
-                        <MudText Typo="Typo.body2" Color="Color.Error">@_status.Error</MudText>
-                    }
-                </CardHeaderContent>
-                <CardHeaderActions>
-                    <MudTooltip Text="Refresh">
-                        <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="RefreshStatus" Disabled="_loading" />
-                    </MudTooltip>
-                </CardHeaderActions>
-            </MudCardHeader>
-        </MudCard>
+        <McpStatusCard Status="_status" Loading="_loading" OnRefresh="RefreshStatus" />
     </MudItem>
     <MudItem xs="12" md="6">
-        <MudCard>
-            <MudCardHeader>
-                <CardHeaderAvatar>
-                    <MudAvatar Color="Color.Info">
-                        <MudIcon Icon="@Icons.Material.Filled.Link" />
-                    </MudAvatar>
-                </CardHeaderAvatar>
-                <CardHeaderContent>
-                    <MudText Typo="Typo.h6">Endpoint</MudText>
-                    <MudText Typo="Typo.body2" Style="font-family: monospace;">@McpEndpointUrl</MudText>
-                </CardHeaderContent>
-                <CardHeaderActions>
-                    <MudTooltip Text="Copy URL">
-                        <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" OnClick="CopyEndpointUrl" />
-                    </MudTooltip>
-                </CardHeaderActions>
-            </MudCardHeader>
-        </MudCard>
+        <McpEndpointCard EndpointUrl="@McpEndpointUrl" />
     </MudItem>
 </MudGrid>
 
 @if (_status.IsRunning)
 {
-    <!-- Inline Tool Tester (always rendered when server running, hidden when no tool selected) -->
-    <MudPaper Class="pa-4 mb-4" Elevation="2" Style="@(_selectedTool is null ? "display:none" : "")">
-        @if (_selectedTool is not null)
-        {
-            <div class="d-flex align-center gap-2 mb-3">
-                <MudIcon Icon="@Icons.Material.Filled.Terminal" />
-                <MudText Typo="Typo.h6">Test: @_selectedTool.Name</MudText>
-                <MudSpacer />
-                <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="CloseToolTester" Size="Size.Small" />
-            </div>
+    <McpToolTester Tool="_selectedTool" OnClose="CloseToolTester" />
 
-            @if (_selectedTool.Description is not null)
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">@_selectedTool.Description</MudText>
-            }
+    <McpToolsTable Tools="_status.Tools" OnTestTool="OpenToolTester" />
 
-            @if (_toolParams.Count > 0)
-            {
-                <MudText Typo="Typo.subtitle2" Class="mb-2">Parameters</MudText>
-                @for (var i = 0; i < _toolParams.Count; i++)
-                {
-                    var param = _toolParams[i];
-                    <MudTextField @key="param.Name"
-                                  @bind-Value="param.Value"
-                                  Label="@($"{param.Name}{(param.Required ? " *" : "")}")"
-                                  HelperText="@param.Description"
-                                  Variant="Variant.Outlined"
-                                  Class="mb-2" />
-                }
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="Color.Tertiary" Class="mb-2">This tool takes no parameters.</MudText>
-            }
+    <McpResourcesTable Resources="_status.Resources" OnResourceDeleted="RefreshStatus" />
 
-            <div class="d-flex justify-end gap-2 mt-3">
-                <MudButton OnClick="CloseToolTester">Close</MudButton>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RunToolAsync" Disabled="_running">
-                    @if (_running)
-                    {
-                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-                    }
-                    Run
-                </MudButton>
-            </div>
-
-            @if (_toolResult is not null)
-            {
-                <MudDivider Class="my-4" />
-                <MudText Typo="Typo.subtitle2" Class="mb-2">Result</MudText>
-                <MudPaper Class="pa-4" Style="background-color: var(--mud-palette-background-grey); max-height: 400px; overflow-y: auto;">
-                    <pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0; font-size: 0.85rem;">@_toolResult</pre>
-                </MudPaper>
-            }
-
-            @if (_toolError is not null)
-            {
-                <MudAlert Severity="Severity.Error" Class="mt-4">@_toolError</MudAlert>
-            }
-        }
-    </MudPaper>
-
-    <!-- Tools -->
-    <MudText Typo="Typo.h5" Class="mb-2">Tools (@_status.Tools.Count)</MudText>
-    <MudTable Items="_status.Tools" Hover="true" Dense="true" Class="mb-4">
-        <HeaderContent>
-            <MudTh>Name</MudTh>
-            <MudTh>Description</MudTh>
-            <MudTh>Actions</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Name">
-                <MudChip T="string" Size="Size.Small" Color="Color.Primary">@context.Name</MudChip>
-            </MudTd>
-            <MudTd DataLabel="Description">@context.Description</MudTd>
-            <MudTd DataLabel="Actions">
-                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
-                           OnClick="@(() => OpenToolTester(context))">Test</MudButton>
-            </MudTd>
-        </RowTemplate>
-    </MudTable>
-
-    <!-- Resources -->
-    <MudText Typo="Typo.h5" Class="mb-2">Resources (@_status.Resources.Count)</MudText>
-    <MudTable Items="_status.Resources" Hover="true" Dense="true" Class="mb-4">
-        <HeaderContent>
-            <MudTh>Name</MudTh>
-            <MudTh>Title</MudTh>
-            <MudTh>URI</MudTh>
-            <MudTh>Description</MudTh>
-            <MudTh>Type</MudTh>
-            <MudTh>Actions</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Name">@context.Name</MudTd>
-            <MudTd DataLabel="Title">@context.Title</MudTd>
-            <MudTd DataLabel="URI">
-                <MudText Typo="Typo.body2" Style="font-family: monospace; font-size: 0.8rem;">@context.Uri</MudText>
-            </MudTd>
-            <MudTd DataLabel="Description">
-                <MudText Typo="Typo.body2" Style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">
-                    @context.Description
-                </MudText>
-            </MudTd>
-            <MudTd DataLabel="Type">
-                @if (context.MimeType is not null)
-                {
-                    <MudChip T="string" Size="Size.Small">@context.MimeType</MudChip>
-                }
-            </MudTd>
-            <MudTd DataLabel="Actions">
-                <MudTooltip Text="Delete">
-                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
-                                   OnClick="@(() => DeleteResourceAsync(context))" 
-                                   Disabled="_deleting" />
-                </MudTooltip>
-            </MudTd>
-        </RowTemplate>
-        <NoRecordsContent>
-            <MudText>No MCP resources registered.</MudText>
-        </NoRecordsContent>
-    </MudTable>
-
-    <!-- Configuration Snippet -->
-    <MudExpansionPanels Class="mb-4">
-        <MudExpansionPanel Text="Client Configuration">
-            <MudText Typo="Typo.body2" Class="mb-2">
-                Use this JSON to connect MCP clients (VS Code, Claude Desktop, etc.) to this server:
-            </MudText>
-            <MudPaper Class="pa-4" Style="background-color: var(--mud-palette-background-grey);">
-                <pre style="margin: 0; font-size: 0.85rem;">@GetConfigSnippet()</pre>
-            </MudPaper>
-        </MudExpansionPanel>
-    </MudExpansionPanels>
+    <McpConfigSnippet EndpointUrl="@McpEndpointUrl" />
 }
 
 @code {
     private McpServerStatus _status = new();
     private bool _loading = true;
-    private bool _deleting;
-
-    // Inline tool tester state
     private McpToolInfo? _selectedTool;
-    private List<ToolParam> _toolParams = [];
-    private string? _toolResult;
-    private string? _toolError;
-    private bool _running;
 
     private string McpEndpointUrl => $"{Navigation.BaseUri.TrimEnd('/')}/mcp";
 
@@ -234,172 +54,13 @@
         _loading = false;
     }
 
-    private async Task OpenToolTester(McpToolInfo tool)
+    private void OpenToolTester(McpToolInfo tool)
     {
         _selectedTool = tool;
-        _toolResult = null;
-        _toolError = null;
-        _toolParams = ParseParameters(tool);
-        await InvokeAsync(StateHasChanged);
     }
 
-    private async Task CloseToolTester()
+    private void CloseToolTester()
     {
         _selectedTool = null;
-        _toolResult = null;
-        _toolError = null;
-        _toolParams = [];
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private async Task RunToolAsync()
-    {
-        if (_selectedTool is null) return;
-
-        _running = true;
-        _toolResult = null;
-        _toolError = null;
-        StateHasChanged();
-
-        try
-        {
-            var args = new Dictionary<string, object>();
-            foreach (var p in _toolParams)
-            {
-                if (!string.IsNullOrWhiteSpace(p.Value))
-                {
-                    args[p.Name] = p.Type == "integer" && int.TryParse(p.Value, out var iv) ? iv : p.Value;
-                }
-            }
-
-            _toolResult = await McpClient.CallToolAsync(_selectedTool.Name, args);
-        }
-        catch (Exception ex)
-        {
-            _toolError = ex.Message;
-        }
-        finally
-        {
-            _running = false;
-            StateHasChanged();
-        }
-    }
-
-    private static List<ToolParam> ParseParameters(McpToolInfo tool)
-    {
-        if (tool.InputSchema is not { ValueKind: System.Text.Json.JsonValueKind.Object } schema)
-            return [];
-
-        var list = new List<ToolParam>();
-
-        if (!schema.TryGetProperty("properties", out var props) ||
-            props.ValueKind != System.Text.Json.JsonValueKind.Object)
-            return list;
-
-        var required = new HashSet<string>(StringComparer.Ordinal);
-        if (schema.TryGetProperty("required", out var req) &&
-            req.ValueKind == System.Text.Json.JsonValueKind.Array)
-        {
-            foreach (var r in req.EnumerateArray())
-                if (r.GetString() is { } n) required.Add(n);
-        }
-
-        foreach (var prop in props.EnumerateObject())
-        {
-            list.Add(new ToolParam
-            {
-                Name = prop.Name,
-                Description = prop.Value.TryGetProperty("description", out var d) ? d.GetString() : null,
-                Type = prop.Value.TryGetProperty("type", out var t) ? GetTypeString(t) : "string",
-                Required = required.Contains(prop.Name),
-            });
-        }
-
-        return list;
-    }
-
-    private static string GetTypeString(System.Text.Json.JsonElement element)
-    {
-        if (element.ValueKind == System.Text.Json.JsonValueKind.String)
-            return element.GetString() ?? "string";
-
-        if (element.ValueKind == System.Text.Json.JsonValueKind.Array)
-        {
-            foreach (var item in element.EnumerateArray())
-            {
-                var val = item.GetString();
-                if (val is not null and not "null")
-                    return val;
-            }
-        }
-
-        return "string";
-    }
-
-    private async Task DeleteResourceAsync(McpResourceInfo resource)
-    {
-        var fileName = resource.Name?.Replace("resources/", "");
-        if (string.IsNullOrWhiteSpace(fileName)) return;
-
-        var confirmed = await DialogService.ShowMessageBox(
-            "Delete Resource",
-            $"Are you sure you want to delete '{fileName}'? This cannot be undone.",
-            yesText: "Delete", cancelText: "Cancel");
-
-        if (confirmed != true) return;
-
-        _deleting = true;
-        StateHasChanged();
-
-        try
-        {
-            var success = await KnowledgeApi.DeleteResourceAsync(fileName);
-            if (success)
-            {
-                Snackbar.Add($"Deleted '{fileName}'", Severity.Success);
-                await RefreshStatus();
-            }
-            else
-            {
-                Snackbar.Add($"Failed to delete '{fileName}'", Severity.Error);
-            }
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _deleting = false;
-        }
-    }
-
-    private async Task CopyEndpointUrl()
-    {
-        await Task.CompletedTask;
-        Snackbar.Add($"MCP Endpoint: {McpEndpointUrl}", Severity.Info);
-    }
-
-    private string GetConfigSnippet()
-    {
-        return $$"""
-        {
-          "mcpServers": {
-            "company-brain": {
-              "type": "http",
-              "url": "{{McpEndpointUrl}}"
-            }
-          }
-        }
-        """;
-    }
-
-    private sealed class ToolParam
-    {
-        public string Name { get; set; } = "";
-        public string? Description { get; set; }
-        public string Type { get; set; } = "string";
-        public bool Required { get; set; }
-        public string Value { get; set; } = "";
     }
 }
