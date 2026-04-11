@@ -7,6 +7,7 @@ using CompanyBrain.Dashboard.Mcp;
 using CompanyBrain.Dashboard.Mcp.Resources;
 using CompanyBrain.Dashboard.Mcp.Tools;
 using CompanyBrain.Dashboard.Middleware;
+using CompanyBrain.Dashboard.Scripting;
 using CompanyBrain.Dashboard.Services;
 using FluentValidation;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -39,6 +40,7 @@ public static class DashboardServiceCollectionExtensions
             .AddDashboardSwagger(configuration)
             .AddDashboardCors()
             .AddDashboardMcp()
+            .AddDashboardScripting()
             .AddDashboardHttpClients(configuration, environment)
             .AddDashboardDatabase(configuration)
             .AddDashboardValidation();
@@ -135,7 +137,7 @@ public static class DashboardServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds MCP Server services.
+    /// Adds MCP Server services with dynamic tool support.
     /// </summary>
     public static IServiceCollection AddDashboardMcp(this IServiceCollection services)
     {
@@ -145,9 +147,21 @@ public static class DashboardServiceCollectionExtensions
             .WithHttpTransport()
             .WithTools<CompanyBrainTools>()
             .WithTools<ResourceTemplateTools>()
+            .WithDynamicTools()
             .WithListResourcesHandler(CompositeResourceHandlers.ListResourcesAsync)
             .WithReadResourceHandler(CompositeResourceHandlers.ReadResourceAsync);
 
+        return services;
+    }
+    
+    /// <summary>
+    /// Adds scripting services for the Dynamic MCP Tool Builder.
+    /// </summary>
+    public static IServiceCollection AddDashboardScripting(this IServiceCollection services)
+    {
+        services.AddScoped<ScriptRunnerService>();
+        services.AddScoped<CustomToolService>();
+        
         return services;
     }
 
