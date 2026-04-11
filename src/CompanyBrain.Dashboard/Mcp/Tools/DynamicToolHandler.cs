@@ -2,6 +2,7 @@ using System.Text.Json;
 using CompanyBrain.Dashboard.Data;
 using CompanyBrain.Dashboard.Data.Models;
 using CompanyBrain.Dashboard.Scripting;
+using CompanyBrain.Dashboard.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
@@ -14,6 +15,7 @@ namespace CompanyBrain.Dashboard.Mcp.Tools;
 /// </summary>
 public sealed class DynamicToolHandler(
     IServiceProvider serviceProvider,
+    SettingsService settingsService,
     ILogger<DynamicToolHandler> logger)
 {
     /// <summary>
@@ -115,7 +117,7 @@ public sealed class DynamicToolHandler(
             
             var result = await scriptRunner.ExecuteAsync(tool.CSharpCode, context, cancellationToken);
             
-            return CreateToolResponse(result);
+            return await CreateToolResponse(result, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -201,12 +203,22 @@ public sealed class DynamicToolHandler(
     
     /// <summary>
     /// Creates an MCP tool response from a script execution result.
+    /// Applies governance filtering (PII masking) if enabled.
     /// </summary>
-    private static CallToolResult CreateToolResponse(ScriptExecutionResult result)
+    private async Task<CallToolResult> CreateToolResponse(ScriptExecutionResult result, CancellationToken cancellationToken)
     {
+        var outputText = result.GetOutputString();
+        
+        // Apply PII masking if enabled
+        var settings = await settingsService.GetSettingsAsync(cancellationToken);
+        if (settings.EnablePiiMasking)
+        {
+            outputText = Helpers.SecurityHelpers.RedactPii(outputText);
+        }
+        
         var content = new List<ContentBlock>
         {
-            new TextContentBlock { Text = result.GetOutputString() }
+            new TextContentBlock { Text = outputText }
         };
         
         return new CallToolResult

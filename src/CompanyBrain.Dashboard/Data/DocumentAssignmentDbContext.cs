@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 namespace CompanyBrain.Dashboard.Data;
 
 /// <summary>
-/// SQLite database context for storing document-tenant assignments and custom MCP tools.
+/// SQLite database context for storing document-tenant assignments, custom MCP tools, and application settings.
 /// </summary>
 public sealed class DocumentAssignmentDbContext : DbContext
 {
@@ -16,6 +16,8 @@ public sealed class DocumentAssignmentDbContext : DbContext
     public DbSet<DocumentTenantAssignment> DocumentTenantAssignments => Set<DocumentTenantAssignment>();
     
     public DbSet<CustomTool> CustomTools => Set<CustomTool>();
+    
+    public DbSet<AppSettings> AppSettings => Set<AppSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -23,6 +25,7 @@ public sealed class DocumentAssignmentDbContext : DbContext
 
         ConfigureDocumentTenantAssignment(modelBuilder);
         ConfigureCustomTool(modelBuilder);
+        ConfigureAppSettings(modelBuilder);
     }
     
     private static void ConfigureDocumentTenantAssignment(ModelBuilder modelBuilder)
@@ -109,6 +112,75 @@ public sealed class DocumentAssignmentDbContext : DbContext
             
             // Index for querying enabled tools by tenant
             entity.HasIndex(e => new { e.TenantId, e.IsEnabled });
+        });
+    }
+    
+    private static void ConfigureAppSettings(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<AppSettings>(entity =>
+        {
+            entity.ToTable("AppSettings");
+            
+            entity.HasKey(e => e.Id);
+            
+            entity.Property(e => e.EnablePiiMasking)
+                .IsRequired()
+                .HasDefaultValue(false);
+            
+            entity.Property(e => e.MaxStorageGb)
+                .IsRequired()
+                .HasDefaultValue(10);
+            
+            entity.Property(e => e.SecurityMode)
+                .IsRequired()
+                .HasMaxLength(50)
+                .HasDefaultValue("Moderate");
+            
+            entity.Property(e => e.ExcludedPatterns)
+                .HasMaxLength(2000)
+                .HasDefaultValue(string.Empty);
+            
+            entity.Property(e => e.SystemPromptPrefix)
+                .HasMaxLength(4000)
+                .HasDefaultValue(string.Empty);
+            
+            entity.Property(e => e.TenantId);
+            
+            entity.Property(e => e.UpdatedAtUtc)
+                .IsRequired();
+            
+            entity.Property(e => e.McpRequireAuth)
+                .IsRequired()
+                .HasDefaultValue(false);
+            
+            entity.Property(e => e.McpIpWhitelist)
+                .HasMaxLength(2000)
+                .HasDefaultValue(string.Empty);
+            
+            entity.Property(e => e.McpEnableIpWhitelist)
+                .IsRequired()
+                .HasDefaultValue(false);
+            
+            entity.Property(e => e.McpApiKey)
+                .HasMaxLength(256)
+                .HasDefaultValue(string.Empty);
+            
+            // Seed the singleton settings row
+            entity.HasData(new AppSettings
+            {
+                Id = AppSettingsConstants.SingletonId,
+                EnablePiiMasking = false,
+                MaxStorageGb = 10,
+                SecurityMode = "Moderate",
+                ExcludedPatterns = string.Empty,
+                SystemPromptPrefix = string.Empty,
+                TenantId = null,
+                UpdatedAtUtc = DateTime.UtcNow,
+                McpRequireAuth = false,
+                McpIpWhitelist = string.Empty,
+                McpEnableIpWhitelist = false,
+                McpApiKey = string.Empty
+            });
         });
     }
 }

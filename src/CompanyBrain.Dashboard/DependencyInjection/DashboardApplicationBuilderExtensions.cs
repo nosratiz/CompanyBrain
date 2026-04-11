@@ -33,6 +33,8 @@ public static class DashboardApplicationBuilderExtensions
         app.UseSwaggerUI();
 
         app.UseStaticFiles();
+        app.UseAuthentication();
+        app.UseAuthorization();
         app.UseAntiforgery();
 
         return app;

@@ -77,6 +77,15 @@ public static class DashboardServiceCollectionExtensions
         services.AddScoped<TokenAuthenticationStateProvider>();
         services.AddScoped<AuthenticationStateProvider>(sp =>
             sp.GetRequiredService<TokenAuthenticationStateProvider>());
+        
+        // Add server-side authentication for [Authorize] attribute support
+        services.AddAuthentication()
+            .AddCookie(options =>
+            {
+                options.LoginPath = "/login";
+                options.AccessDeniedPath = "/access-denied";
+            });
+        services.AddAuthorization();
         services.AddAuthorizationCore();
 
         return services;
@@ -137,11 +146,13 @@ public static class DashboardServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds MCP Server services with dynamic tool support.
+    /// Adds MCP Server services with dynamic tool support and governance filtering.
     /// </summary>
     public static IServiceCollection AddDashboardMcp(this IServiceCollection services)
     {
         services.AddSingleton<McpSessionTracker>();
+        services.AddSingleton<McpGovernanceFilter>();
+        services.AddSingleton<GovernanceToolWrapper>();
         services
             .AddMcpServer()
             .WithHttpTransport()
@@ -236,8 +247,15 @@ public static class DashboardServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("DocumentAssignments")
             ?? "Data Source=document_assignments.db";
 
-        services.AddDbContext<DocumentAssignmentDbContext>(options =>
-            options.UseSqlite(connectionString));
+        // Use AddDbContextFactory with ServiceLifetime.Singleton for IDbContextFactory<T>
+        // - Factory is singleton for thread-safe access from singletons (SettingsService, MCP handlers)
+        // - DbContext instances created by the factory are still short-lived and disposed properly
+        services.AddDbContextFactory<DocumentAssignmentDbContext>(
+            options => options.UseSqlite(connectionString),
+            ServiceLifetime.Singleton);
+        
+        // Register SettingsService as singleton for cross-request caching
+        services.AddSingleton<SettingsService>();
 
         return services;
     }
