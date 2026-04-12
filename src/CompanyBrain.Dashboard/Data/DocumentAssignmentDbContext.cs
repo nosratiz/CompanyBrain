@@ -165,6 +165,31 @@ public sealed class DocumentAssignmentDbContext : DbContext
                 .HasMaxLength(256)
                 .HasDefaultValue(string.Empty);
             
+            // SharePoint sync settings
+            entity.Property(e => e.SharePointClientId)
+                .HasMaxLength(100)
+                .HasDefaultValue(string.Empty);
+            
+            entity.Property(e => e.SharePointTenantId)
+                .HasMaxLength(100)
+                .HasDefaultValue(string.Empty);
+            
+            entity.Property(e => e.SharePointClientSecret)
+                .HasMaxLength(500)
+                .HasDefaultValue(string.Empty);
+            
+            entity.Property(e => e.SharePointSyncIntervalMinutes)
+                .IsRequired()
+                .HasDefaultValue(30);
+            
+            entity.Property(e => e.SharePointLocalBasePath)
+                .HasMaxLength(500)
+                .HasDefaultValue(string.Empty);
+            
+            entity.Property(e => e.SharePointSyncEnabled)
+                .IsRequired()
+                .HasDefaultValue(false);
+            
             // Seed the singleton settings row
             entity.HasData(new AppSettings
             {
@@ -179,7 +204,13 @@ public sealed class DocumentAssignmentDbContext : DbContext
                 McpRequireAuth = false,
                 McpIpWhitelist = string.Empty,
                 McpEnableIpWhitelist = false,
-                McpApiKey = string.Empty
+                McpApiKey = string.Empty,
+                SharePointClientId = string.Empty,
+                SharePointTenantId = string.Empty,
+                SharePointClientSecret = string.Empty,
+                SharePointSyncIntervalMinutes = 30,
+                SharePointLocalBasePath = string.Empty,
+                SharePointSyncEnabled = false
             });
         });
     }

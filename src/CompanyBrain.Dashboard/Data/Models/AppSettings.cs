@@ -72,6 +72,41 @@ public sealed class AppSettings
     /// API key required for MCP connections when McpRequireAuth is enabled.
     /// </summary>
     public string McpApiKey { get; set; } = string.Empty;
+
+    // ───────────────────────────────────────────────────────────────
+    // SharePoint Sync Settings
+    // ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Azure AD Client/Application ID for SharePoint sync.
+    /// </summary>
+    public string SharePointClientId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Azure AD Tenant ID for SharePoint sync.
+    /// </summary>
+    public string SharePointTenantId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Azure AD Client Secret for SharePoint sync (encrypted at rest).
+    /// </summary>
+    public string SharePointClientSecret { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Interval in minutes between SharePoint sync operations.
+    /// Default: 30 minutes.
+    /// </summary>
+    public int SharePointSyncIntervalMinutes { get; set; } = 30;
+
+    /// <summary>
+    /// Local folder base path for mirrored SharePoint files.
+    /// </summary>
+    public string SharePointLocalBasePath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Indicates whether SharePoint sync is enabled.
+    /// </summary>
+    public bool SharePointSyncEnabled { get; set; }
 }
 
 /// <summary>

@@ -20,6 +20,11 @@
     
     <!-- Roslyn Scripting for Dynamic Tool Builder -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.14.0" />
+    
+    <!-- Microsoft Graph SDK for SharePoint Integration -->
+    <PackageReference Include="Microsoft.Graph" Version="5.77.0" />
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.67.2" />
+    <PackageReference Include="Azure.Identity" Version="1.13.2" />
   </ItemGroup>
 
   <ItemGroup>

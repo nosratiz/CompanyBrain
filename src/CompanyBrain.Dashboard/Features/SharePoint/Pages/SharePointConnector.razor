@@ -1,0 +1,293 @@
+@page "/sharepoint"
+@using CompanyBrain.Dashboard.Features.SharePoint.Data
+@using CompanyBrain.Dashboard.Features.SharePoint.Models
+@using CompanyBrain.Dashboard.Features.SharePoint.Services
+@inject SharePointSyncService SyncService
+@inject SharePointOAuthService OAuthService
+@inject IDbContextFactory<SharePointDbContext> DbContextFactory
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IOptions<SharePointSyncOptions> Options
+
+<PageTitle>SharePoint Connector - Company Brain</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudText Typo="Typo.h4" Class="mb-4">
+        <MudIcon Icon="@Icons.Material.Filled.Cloud" Class="mr-2" />
+        SharePoint Local Mirror
+    </MudText>
+
+    <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
+        <!-- Sites & Drives Tab -->
+        <MudTabPanel Text="Connect Site" Icon="@Icons.Material.Filled.Link">
+            <MudGrid>
+                <!-- Authentication Section -->
+                <MudItem xs="12">
+                    <MudPaper Class="pa-4 mb-4" Elevation="1">
+                        <MudText Typo="Typo.h6" Class="mb-3">
+                            <MudIcon Icon="@Icons.Material.Filled.Security" Class="mr-2" />
+                            Authentication
+                        </MudText>
+
+                        @if (_isAuthenticated)
+                        {
+                            <MudAlert Severity="Severity.Success" Class="mb-3">
+                                Signed in as <strong>@_userPrincipalName</strong>
+                            </MudAlert>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="SignOutAsync">
+                                Sign Out
+                            </MudButton>
+                        }
+                        else
+                        {
+                            <MudAlert Severity="Severity.Info" Class="mb-3">
+                                Sign in with your Microsoft account to access SharePoint sites.
+                            </MudAlert>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Login"
+                                       OnClick="SignInAsync" Disabled="_isAuthenticating">
+                                @if (_isAuthenticating)
+                                {
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                }
+                                Sign in with Microsoft
+                            </MudButton>
+                        }
+                    </MudPaper>
+                </MudItem>
+
+                <!-- Site Search Section -->
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-4" Elevation="1">
+                        <MudText Typo="Typo.h6" Class="mb-3">
+                            <MudIcon Icon="@Icons.Material.Filled.Search" Class="mr-2" />
+                            Search SharePoint Sites
+                        </MudText>
+
+                        <MudTextField @bind-Value="_siteSearchQuery"
+                                      Label="Site Name"
+                                      Variant="Variant.Outlined"
+                                      Adornment="Adornment.End"
+                                      AdornmentIcon="@Icons.Material.Filled.Search"
+                                      OnAdornmentClick="SearchSitesAsync"
+                                      OnKeyDown="@(async (e) => { if (e.Key == "Enter") await SearchSitesAsync(); })"
+                                      Disabled="@(!_isAuthenticated || _searchingSites)"
+                                      Class="mb-3" />
+
+                        @if (_searchingSites)
+                        {
+                            <MudProgressLinear Indeterminate="true" Class="mb-3" />
+                        }
+
+                        <MudList T="SharePointSite" Dense="true">
+                            @foreach (var site in _sites)
+                            {
+                                <MudListItem @key="site.Id" OnClick="@(() => SelectSiteAsync(site))">
+                                    <div class="d-flex align-center">
+                                        <MudIcon Icon="@Icons.Material.Filled.Web" Class="mr-3" />
+                                        <div>
+                                            <MudText Typo="Typo.body1">@site.DisplayName</MudText>
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">@site.WebUrl</MudText>
+                                        </div>
+                                    </div>
+                                </MudListItem>
+                            }
+                        </MudList>
+                    </MudPaper>
+                </MudItem>
+
+                <!-- Drive & Folder Selection -->
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-4" Elevation="1">
+                        <MudText Typo="Typo.h6" Class="mb-3">
+                            <MudIcon Icon="@Icons.Material.Filled.Folder" Class="mr-2" />
+                            Document Libraries
+                        </MudText>
+
+                        @if (_selectedSite is null)
+                        {
+                            <MudAlert Severity="Severity.Info">
+                                Select a site to view document libraries.
+                            </MudAlert>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.subtitle1" Class="mb-3">
+                                Selected: <strong>@_selectedSite.DisplayName</strong>
+                            </MudText>
+
+                            @if (_loadingDrives)
+                            {
+                                <MudProgressLinear Indeterminate="true" Class="mb-3" />
+                            }
+
+                            @foreach (var drive in _drives)
+                            {
+                                <MudExpansionPanels Class="mb-2">
+                                    <MudExpansionPanel @key="drive.Id">
+                                        <TitleContent>
+                                            <div class="d-flex align-center justify-space-between">
+                                                <div class="d-flex align-center">
+                                                    <MudIcon Icon="@Icons.Material.Filled.Storage" Class="mr-2" />
+                                                    <MudText>@drive.Name</MudText>
+                                                </div>
+                                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                                           StartIcon="@Icons.Material.Filled.Sync"
+                                                           OnClick="@(() => ConfigureSyncAsync(drive, string.Empty))"
+                                                           OnClickStopPropagation="true">
+                                                    Sync Root
+                                                </MudButton>
+                                            </div>
+                                        </TitleContent>
+                                        <ChildContent>
+                                            <MudButton Variant="Variant.Text" OnClick="@(() => LoadDriveItemsAsync(drive))">
+                                                Browse Folders
+                                            </MudButton>
+
+                                            @if (_currentDriveItems.TryGetValue(drive.Id, out var items))
+                                            {
+                                                <MudList T="SharePointDriveItem" Dense="true">
+                                                    @foreach (var item in items.Where(i => i.IsFolder))
+                                                    {
+                                                        <MudListItem @key="item.Id">
+                                                            <div class="d-flex align-center justify-space-between">
+                                                                <div class="d-flex align-center">
+                                                                    <MudIcon Icon="@Icons.Material.Filled.Folder" Color="Color.Warning" Class="mr-2" />
+                                                                    <MudText>@item.Name</MudText>
+                                                                </div>
+                                                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                                                                           StartIcon="@Icons.Material.Filled.Sync"
+                                                                           OnClick="@(() => ConfigureSyncAsync(drive, item.Name))">
+                                                                    Sync
+                                                                </MudButton>
+                                                            </div>
+                                                        </MudListItem>
+                                                    }
+                                                </MudList>
+                                            }
+
+                                            @if (drive.QuotaUsed.HasValue && drive.QuotaTotal.HasValue)
+                                            {
+                                                <div class="mt-3">
+                                                    <MudProgressLinear Value="@((drive.QuotaUsed.Value * 100.0 / drive.QuotaTotal.Value))"
+                                                                       Color="Color.Primary" Class="mb-1" />
+                                                    <MudText Typo="Typo.caption">
+                                                        @FormatBytes(drive.QuotaUsed.Value) / @FormatBytes(drive.QuotaTotal.Value) used
+                                                    </MudText>
+                                                </div>
+                                            }
+                                        </ChildContent>
+                                    </MudExpansionPanel>
+                                </MudExpansionPanels>
+                            }
+                        }
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+        </MudTabPanel>
+
+        <!-- Synced Folders Tab -->
+        <MudTabPanel Text="Synced Folders" Icon="@Icons.Material.Filled.FolderShared" BadgeData="@_syncedFolders.Count" BadgeColor="Color.Primary">
+            <MudTable Items="@_syncedFolders" Hover="true" Striped="true" Loading="_loadingSyncedFolders">
+                <HeaderContent>
+                    <MudTh>Site / Drive</MudTh>
+                    <MudTh>Local Path</MudTh>
+                    <MudTh>Files</MudTh>
+                    <MudTh>Size</MudTh>
+                    <MudTh>Last Sync</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Site / Drive">
+                        <MudText Typo="Typo.body2"><strong>@context.SiteName</strong></MudText>
+                        <MudText Typo="Typo.caption">@context.DriveName / @(string.IsNullOrEmpty(context.FolderPath) ? "/" : context.FolderPath)</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Local Path">
+                        <MudText Typo="Typo.caption" Style="word-break: break-all;">@context.LocalPath</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Files">@context.SyncedFileCount</MudTd>
+                    <MudTd DataLabel="Size">@FormatBytes(context.SyncedSizeBytes)</MudTd>
+                    <MudTd DataLabel="Last Sync">
+                        @if (context.LastSyncedAtUtc.HasValue)
+                        {
+                            <MudText Typo="Typo.body2">@context.LastSyncedAtUtc.Value.LocalDateTime.ToString("g")</MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Never</MudText>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        @if (!string.IsNullOrEmpty(context.LastSyncError))
+                        {
+                            <MudTooltip Text="@context.LastSyncError">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Error">Error</MudChip>
+                            </MudTooltip>
+                        }
+                        else if (context.IsEnabled)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success">Active</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default">Disabled</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Actions">
+                        <MudIconButton Icon="@Icons.Material.Filled.Sync" Size="Size.Small" Color="Color.Primary"
+                                       OnClick="@(() => TriggerSyncAsync(context.Id))" Disabled="_syncingFolderId == context.Id" />
+                        <MudIconButton Icon="@(context.IsEnabled ? Icons.Material.Filled.Pause : Icons.Material.Filled.PlayArrow)"
+                                       Size="Size.Small" Color="Color.Secondary"
+                                       OnClick="@(() => ToggleSyncEnabledAsync(context))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small"
+                                       OnClick="@(() => OpenFolderAsync(context.LocalPath))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="@(() => RemoveSyncFolderAsync(context))" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudTabPanel>
+
+        <!-- Conflicts Tab -->
+        <MudTabPanel Text="Conflicts" Icon="@Icons.Material.Filled.Warning" BadgeData="@_conflicts.Count(c => c.Status == "Pending")" BadgeColor="Color.Warning">
+            @if (!_conflicts.Any(c => c.Status == "Pending"))
+            {
+                <MudAlert Severity="Severity.Success">No unresolved conflicts.</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="@_conflicts.Where(c => c.Status == "Pending")" Hover="true">
+                    <HeaderContent>
+                        <MudTh>File</MudTh>
+                        <MudTh>Local Modified</MudTh>
+                        <MudTh>Remote Modified</MudTh>
+                        <MudTh>Detected</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="File">
+                            <MudText Typo="Typo.body2">@Path.GetFileName(context.LocalPath)</MudText>
+                            <MudText Typo="Typo.caption">@context.LocalPath</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Local Modified">@context.LocalLastModified.LocalDateTime.ToString("g")</MudTd>
+                        <MudTd DataLabel="Remote Modified">@context.RemoteLastModified.LocalDateTime.ToString("g")</MudTd>
+                        <MudTd DataLabel="Detected">@context.DetectedAtUtc.LocalDateTime.ToString("g")</MudTd>
+                        <MudTd DataLabel="Actions">
+                            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                                <MudButton Color="Color.Primary" OnClick="@(() => ResolveConflictAsync(context.Id, "KeepLocal"))">
+                                    Keep Local
+                                </MudButton>
+                                <MudButton Color="Color.Secondary" OnClick="@(() => ResolveConflictAsync(context.Id, "KeepRemote"))">
+                                    Keep Remote
+                                </MudButton>
+                                <MudButton Color="Color.Warning" OnClick="@(() => ResolveConflictAsync(context.Id, "Ignored"))">
+                                    Ignore
+                                </MudButton>
+                            </MudButtonGroup>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudTabPanel>
+    </MudTabs>
+</MudContainer>

@@ -3,6 +3,7 @@ using CompanyBrain.Dashboard.Data;
 using CompanyBrain.Dashboard.Features.Auth.Interfaces;
 using CompanyBrain.Dashboard.Features.Auth.Services;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Validators;
+using CompanyBrain.Dashboard.Features.SharePoint.DependencyInjection;
 using CompanyBrain.Dashboard.Mcp;
 using CompanyBrain.Dashboard.Mcp.Resources;
 using CompanyBrain.Dashboard.Mcp.Tools;
@@ -43,7 +44,8 @@ public static class DashboardServiceCollectionExtensions
             .AddDashboardScripting()
             .AddDashboardHttpClients(configuration, environment)
             .AddDashboardDatabase(configuration)
-            .AddDashboardValidation();
+            .AddDashboardValidation()
+            .AddSharePointMirror(configuration);
 
         return services;
     }
@@ -158,6 +160,7 @@ public static class DashboardServiceCollectionExtensions
             .WithHttpTransport()
             .WithTools<CompanyBrainTools>()
             .WithTools<ResourceTemplateTools>()
+            .WithSharePointTools()
             .WithDynamicTools()
             .WithListResourcesHandler(CompositeResourceHandlers.ListResourcesAsync)
             .WithReadResourceHandler(CompositeResourceHandlers.ReadResourceAsync);
