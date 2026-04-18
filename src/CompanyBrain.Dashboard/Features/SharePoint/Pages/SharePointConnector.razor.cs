@@ -1,5 +1,7 @@
 using CompanyBrain.Dashboard.Features.SharePoint.Data;
 using CompanyBrain.Dashboard.Features.SharePoint.Models;
+using CompanyBrain.Dashboard.Features.SharePoint.Services;
+using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor;
 using System.Diagnostics;
@@ -8,10 +10,9 @@ namespace CompanyBrain.Dashboard.Features.SharePoint.Pages;
 
 public partial class SharePointConnector : IDisposable
 {
-    // Authentication state
-    private bool _isAuthenticated;
-    private bool _isAuthenticating;
-    private string? _userPrincipalName;
+    // SharePoint connection state (separate from app login)
+    private bool _isConnected;
+    private string? _connectedUser;
     private string? _tenantId;
 
     // Site search
@@ -33,62 +34,49 @@ public partial class SharePointConnector : IDisposable
     // Conflicts
     private List<SharePointSyncConflict> _conflicts = [];
 
+    // Sync all
+    private bool _syncingAll;
+    private DateTime? _lastSyncAllUtc;
+    private string? _lastSyncAllMessage;
+    private Severity _lastSyncAllSeverity = Severity.Normal;
+
     private readonly CancellationTokenSource _cts = new();
 
     protected override async Task OnInitializedAsync()
     {
-        await CheckAuthenticationAsync();
+        await CheckSharePointConnectionAsync();
         await LoadSyncedFoldersAsync();
         await LoadConflictsAsync();
     }
 
-    private async Task CheckAuthenticationAsync()
+    private async Task CheckSharePointConnectionAsync()
     {
-        var token = await OAuthService.GetStoredTokenAsync(Options.Value.TenantId, _cts.Token);
+        var options = await SettingsProvider.GetEffectiveOptionsAsync(_cts.Token);
+        _tenantId = options.TenantId;
+
+        if (string.IsNullOrEmpty(_tenantId)) return;
+
+        var token = await OAuthService.GetActiveConnectionAsync(_tenantId, _cts.Token);
         if (token is not null)
         {
-            _isAuthenticated = true;
-            _userPrincipalName = token.UserPrincipalName;
-            _tenantId = token.TenantId;
+            _isConnected = true;
+            _connectedUser = token.UserPrincipalName;
         }
     }
 
-    private async Task SignInAsync()
+    private void ConnectSharePoint()
     {
-        _isAuthenticating = true;
-        StateHasChanged();
-
-        try
-        {
-            var result = await OAuthService.AcquireTokenInteractiveAsync(_cts.Token);
-            _isAuthenticated = true;
-            _userPrincipalName = result.Account?.Username;
-            _tenantId = result.TenantId;
-            Snackbar.Add($"Signed in as {_userPrincipalName}", Severity.Success);
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Sign-in failed: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _isAuthenticating = false;
-        }
+        NavigationManager.NavigateTo("/api/sharepoint/connect", forceLoad: true);
     }
 
-    private async Task SignOutAsync()
+    private async Task DisconnectSharePointAsync()
     {
-        // For now, just clear state - full sign-out would revoke tokens
-        _isAuthenticated = false;
-        _userPrincipalName = null;
-        _tenantId = null;
-        _sites = [];
-        _selectedSite = null;
-        _drives = [];
-        _currentDriveItems.Clear();
-        
-        Snackbar.Add("Signed out", Severity.Info);
-        await Task.CompletedTask;
+        if (_tenantId is null) return;
+
+        await OAuthService.DisconnectAsync(_tenantId, _cts.Token);
+        _isConnected = false;
+        _connectedUser = null;
+        Snackbar.Add("SharePoint disconnected", Severity.Info);
     }
 
     private async Task SearchSitesAsync()
@@ -241,6 +229,66 @@ public partial class SharePointConnector : IDisposable
         }
     }
 
+    private async Task SyncAllAsync()
+    {
+        if (_syncingAll) return;
+
+        _syncingAll = true;
+        _lastSyncAllMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var enabledCount = _syncedFolders.Count(f => f.IsEnabled);
+            if (enabledCount == 0)
+            {
+                _lastSyncAllMessage = "No enabled folders to sync. Add and enable folders first.";
+                _lastSyncAllSeverity = Severity.Info;
+                Snackbar.Add(_lastSyncAllMessage, Severity.Info);
+                return;
+            }
+
+            var (success, failed) = await SyncWorker.TriggerSyncAllAsync(_cts.Token);
+            _lastSyncAllUtc = DateTime.UtcNow;
+
+            if (failed == 0 && success > 0)
+            {
+                _lastSyncAllMessage = $"Successfully synced {success} folder(s)";
+                _lastSyncAllSeverity = Severity.Success;
+            }
+            else if (failed > 0 && success > 0)
+            {
+                _lastSyncAllMessage = $"Synced {success} folder(s), {failed} failed";
+                _lastSyncAllSeverity = Severity.Warning;
+            }
+            else if (failed > 0)
+            {
+                _lastSyncAllMessage = $"All {failed} folder(s) failed to sync";
+                _lastSyncAllSeverity = Severity.Error;
+            }
+            else
+            {
+                _lastSyncAllMessage = "No folders were synced";
+                _lastSyncAllSeverity = Severity.Info;
+            }
+
+            Snackbar.Add(_lastSyncAllMessage, _lastSyncAllSeverity);
+
+            await LoadSyncedFoldersAsync();
+            await LoadConflictsAsync();
+        }
+        catch (Exception ex)
+        {
+            _lastSyncAllMessage = $"Sync failed: {ex.Message}";
+            _lastSyncAllSeverity = Severity.Error;
+            Snackbar.Add(_lastSyncAllMessage, Severity.Error);
+        }
+        finally
+        {
+            _syncingAll = false;
+        }
+    }
+
     private async Task ToggleSyncEnabledAsync(SyncedSharePointFolder folder)
     {
         try
@@ -295,18 +343,34 @@ public partial class SharePointConnector : IDisposable
     {
         try
         {
+            if (!Directory.Exists(path))
+            {
+                Snackbar.Add($"Folder not found: {path}", Severity.Warning);
+                return;
+            }
+
+            var psi = new ProcessStartInfo
+            {
+                UseShellExecute = true
+            };
+
             if (OperatingSystem.IsWindows())
             {
-                Process.Start("explorer.exe", path);
+                psi.FileName = "explorer.exe";
+                psi.Arguments = $"\"{path}\"";
             }
             else if (OperatingSystem.IsMacOS())
             {
-                Process.Start("open", path);
+                psi.FileName = "open";
+                psi.Arguments = $"\"{path}\"";
             }
             else
             {
-                Process.Start("xdg-open", path);
+                psi.FileName = "xdg-open";
+                psi.Arguments = $"\"{path}\"";
             }
+
+            Process.Start(psi);
         }
         catch (Exception ex)
         {

@@ -115,4 +115,41 @@ public sealed class SharePointSyncWorker(
         var syncService = scope.ServiceProvider.GetRequiredService<SharePointSyncService>();
         await syncService.SyncFolderAsync(folderId, cancellationToken);
     }
+
+    /// <summary>
+    /// Triggers an immediate sync for all enabled folders.
+    /// Returns (successCount, failCount).
+    /// </summary>
+    public async Task<(int Success, int Failed)> TriggerSyncAllAsync(CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation("Manual sync-all triggered");
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var folderIds = await db.SyncedFolders
+            .Where(f => f.IsEnabled)
+            .Select(f => f.Id)
+            .ToListAsync(cancellationToken);
+
+        if (folderIds.Count == 0)
+            return (0, 0);
+
+        var success = 0;
+        var failed = 0;
+
+        foreach (var id in folderIds)
+        {
+            try
+            {
+                await TriggerSyncAsync(id, cancellationToken);
+                success++;
+            }
+            catch (Exception ex)
+            {
+                failed++;
+                logger.LogError(ex, "Manual sync failed for folder {FolderId}", id);
+            }
+        }
+
+        return (success, failed);
+    }
 }

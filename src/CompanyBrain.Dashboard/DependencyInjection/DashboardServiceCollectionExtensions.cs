@@ -36,7 +36,7 @@ public static class DashboardServiceCollectionExtensions
 
         services
             .AddDashboardBlazor()
-            .AddDashboardAuthentication()
+            .AddDashboardAuthentication(configuration)
             .AddDashboardCompanyBrain(environment.ContentRootPath)
             .AddDashboardSwagger(configuration)
             .AddDashboardCors()
@@ -69,7 +69,9 @@ public static class DashboardServiceCollectionExtensions
     /// <summary>
     /// Adds authentication and authorization services.
     /// </summary>
-    public static IServiceCollection AddDashboardAuthentication(this IServiceCollection services)
+    public static IServiceCollection AddDashboardAuthentication(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
         services.AddCascadingAuthenticationState();
         services.AddScoped<IAuthSessionStorage, BrowserAuthSessionStorage>();
@@ -79,14 +81,8 @@ public static class DashboardServiceCollectionExtensions
         services.AddScoped<TokenAuthenticationStateProvider>();
         services.AddScoped<AuthenticationStateProvider>(sp =>
             sp.GetRequiredService<TokenAuthenticationStateProvider>());
-        
-        // Add server-side authentication for [Authorize] attribute support
-        services.AddAuthentication()
-            .AddCookie(options =>
-            {
-                options.LoginPath = "/login";
-                options.AccessDeniedPath = "/access-denied";
-            });
+
+        services.AddAuthentication();
         services.AddAuthorization();
         services.AddAuthorizationCore();
 

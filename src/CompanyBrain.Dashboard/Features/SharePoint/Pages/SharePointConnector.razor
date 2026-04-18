@@ -3,11 +3,13 @@
 @using CompanyBrain.Dashboard.Features.SharePoint.Models
 @using CompanyBrain.Dashboard.Features.SharePoint.Services
 @inject SharePointSyncService SyncService
+@inject SharePointSyncWorker SyncWorker
 @inject SharePointOAuthService OAuthService
+@inject NavigationManager NavigationManager
 @inject IDbContextFactory<SharePointDbContext> DbContextFactory
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
-@inject IOptions<SharePointSyncOptions> Options
+@inject SharePointSettingsProvider SettingsProvider
 
 <PageTitle>SharePoint Connector - Company Brain</PageTitle>
 
@@ -26,30 +28,26 @@
                     <MudPaper Class="pa-4 mb-4" Elevation="1">
                         <MudText Typo="Typo.h6" Class="mb-3">
                             <MudIcon Icon="@Icons.Material.Filled.Security" Class="mr-2" />
-                            Authentication
+                            SharePoint Connection
                         </MudText>
 
-                        @if (_isAuthenticated)
+                        @if (_isConnected)
                         {
                             <MudAlert Severity="Severity.Success" Class="mb-3">
-                                Signed in as <strong>@_userPrincipalName</strong>
+                                Connected as <strong>@_connectedUser</strong>
                             </MudAlert>
-                            <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="SignOutAsync">
-                                Sign Out
+                            <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="DisconnectSharePointAsync">
+                                Disconnect
                             </MudButton>
                         }
                         else
                         {
                             <MudAlert Severity="Severity.Info" Class="mb-3">
-                                Sign in with your Microsoft account to access SharePoint sites.
+                                Connect your Microsoft account to access SharePoint sites.
                             </MudAlert>
-                            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Login"
-                                       OnClick="SignInAsync" Disabled="_isAuthenticating">
-                                @if (_isAuthenticating)
-                                {
-                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-                                }
-                                Sign in with Microsoft
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Link"
+                                       OnClick="ConnectSharePoint">
+                                Connect to SharePoint
                             </MudButton>
                         }
                     </MudPaper>
@@ -70,7 +68,7 @@
                                       AdornmentIcon="@Icons.Material.Filled.Search"
                                       OnAdornmentClick="SearchSitesAsync"
                                       OnKeyDown="@(async (e) => { if (e.Key == "Enter") await SearchSitesAsync(); })"
-                                      Disabled="@(!_isAuthenticated || _searchingSites)"
+                                      Disabled="@(!_isConnected || _searchingSites)"
                                       Class="mb-3" />
 
                         @if (_searchingSites)
@@ -187,6 +185,54 @@
 
         <!-- Synced Folders Tab -->
         <MudTabPanel Text="Synced Folders" Icon="@Icons.Material.Filled.FolderShared" BadgeData="@_syncedFolders.Count" BadgeColor="Color.Primary">
+            @* Last sync result banner *@
+            @if (_lastSyncAllMessage is not null)
+            {
+                <MudAlert Severity="_lastSyncAllSeverity" Class="mb-3" ShowCloseIcon="true" CloseIconClicked="() => _lastSyncAllMessage = null">
+                    @_lastSyncAllMessage
+                    @if (_lastSyncAllUtc.HasValue)
+                    {
+                        <span class="ml-2" style="opacity: 0.7;">— @_lastSyncAllUtc.Value.ToLocalTime().ToString("g")</span>
+                    }
+                </MudAlert>
+            }
+
+            <div class="d-flex align-center justify-space-between mb-3">
+                <div>
+                    @if (_syncedFolders.Any(f => f.LastSyncedAtUtc.HasValue))
+                    {
+                        var mostRecent = _syncedFolders.Where(f => f.LastSyncedAtUtc.HasValue).Max(f => f.LastSyncedAtUtc!.Value);
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                            Last synced: @mostRecent.LocalDateTime.ToString("g")
+                        </MudText>
+                    }
+                </div>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Sync"
+                           OnClick="SyncAllAsync"
+                           Disabled="@(_syncingAll || _syncedFolders.Count == 0)">
+                    @if (_syncingAll)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Syncing...</span>
+                    }
+                    else
+                    {
+                        <span>Sync All Now</span>
+                    }
+                </MudButton>
+            </div>
+
+            @if (!_loadingSyncedFolders && _syncedFolders.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Class="mb-3">
+                    <MudText Typo="Typo.body1">No synced folders configured yet.</MudText>
+                    <MudText Typo="Typo.body2">Go to the <strong>Connect Site</strong> tab to search for a SharePoint site and configure folder sync.</MudText>
+                </MudAlert>
+            }
+            else
+            {
             <MudTable Items="@_syncedFolders" Hover="true" Striped="true" Loading="_loadingSyncedFolders">
                 <HeaderContent>
                     <MudTh>Site / Drive</MudTh>
@@ -246,6 +292,7 @@
                     </MudTd>
                 </RowTemplate>
             </MudTable>
+            }
         </MudTabPanel>
 
         <!-- Conflicts Tab -->

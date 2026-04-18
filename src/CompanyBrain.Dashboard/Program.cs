@@ -37,6 +37,7 @@ app.MapGet("/dashboard", () => Results.Redirect("/"));
 app.MapCompanyBrainApi();
 app.MapResourceTemplateApi();
 app.MapDocumentTenantApi();
+app.MapSharePointAuthApi();
 app.MapMcp(mcpRoutePattern);
 
 app.Run();

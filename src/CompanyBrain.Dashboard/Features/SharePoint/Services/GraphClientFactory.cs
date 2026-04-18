@@ -18,20 +18,23 @@ public sealed class GraphClientFactory(
     private SharePointSyncOptions? _lastOptions;
 
     /// <summary>
-    /// Creates a Graph client for the specified tenant using delegated permissions.
+    /// Creates a Graph client for the specified tenant using a stored delegated access token.
+    /// The token is stored encrypted in SQLite during the "Connect to SharePoint" OAuth flow.
+    /// Returns null if no valid (non-expired) token is available — user must reconnect.
     /// </summary>
     public async Task<GraphServiceClient?> CreateDelegatedClientAsync(
         string tenantId,
         CancellationToken cancellationToken = default)
     {
-        var authResult = await oAuthService.AcquireTokenSilentAsync(tenantId, cancellationToken);
-        if (authResult is null)
+        var accessToken = await oAuthService.GetValidAccessTokenAsync(tenantId, cancellationToken);
+
+        if (accessToken is null)
         {
-            logger.LogWarning("Could not acquire token for tenant {TenantId}", tenantId);
+            logger.LogWarning("No valid stored access token for tenant {TenantId} — user must reconnect SharePoint", tenantId);
             return null;
         }
 
-        var tokenProvider = new StaticTokenProvider(authResult.AccessToken);
+        var tokenProvider = new StaticTokenProvider(accessToken);
         var authProvider = new BaseBearerTokenAuthenticationProvider(tokenProvider);
         return new GraphServiceClient(authProvider);
     }
@@ -85,6 +88,17 @@ public sealed class GraphClientFactory(
     {
         var authResult = await oAuthService.AcquireTokenInteractiveAsync(cancellationToken);
         var tokenProvider = new StaticTokenProvider(authResult.AccessToken);
+        var authProvider = new BaseBearerTokenAuthenticationProvider(tokenProvider);
+        return new GraphServiceClient(authProvider);
+    }
+
+    /// <summary>
+    /// Creates a Graph client using a pre-acquired access token.
+    /// Used with Microsoft.Identity.Web's ITokenAcquisition for the current OIDC user.
+    /// </summary>
+    public GraphServiceClient CreateFromAccessToken(string accessToken)
+    {
+        var tokenProvider = new StaticTokenProvider(accessToken);
         var authProvider = new BaseBearerTokenAuthenticationProvider(tokenProvider);
         return new GraphServiceClient(authProvider);
     }
