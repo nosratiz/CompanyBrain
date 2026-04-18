@@ -2,6 +2,7 @@ using CompanyBrain.Dashboard;
 using CompanyBrain.Dashboard.Api;
 using CompanyBrain.Dashboard.DependencyInjection;
 using CompanyBrain.Dashboard.Features.DocumentTenant;
+using CompanyBrain.Dashboard.Features.Confluence.DependencyInjection;
 using CompanyBrain.Dashboard.Features.SharePoint.DependencyInjection;
 
 const string mcpRoutePattern = "/mcp";
@@ -25,6 +26,7 @@ var app = builder.Build();
 // Initialize databases
 await app.InitializeDatabaseAsync();
 await app.Services.InitializeSharePointDatabaseAsync();
+await app.Services.InitializeConfluenceDatabaseAsync();
 
 // Configure middleware pipeline
 app.UseDashboardMiddleware();

@@ -3,6 +3,7 @@ using CompanyBrain.Dashboard.Data;
 using CompanyBrain.Dashboard.Features.Auth.Interfaces;
 using CompanyBrain.Dashboard.Features.Auth.Services;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Validators;
+using CompanyBrain.Dashboard.Features.Confluence.DependencyInjection;
 using CompanyBrain.Dashboard.Features.SharePoint.DependencyInjection;
 using CompanyBrain.Dashboard.Mcp;
 using CompanyBrain.Dashboard.Mcp.Resources;
@@ -45,7 +46,8 @@ public static class DashboardServiceCollectionExtensions
             .AddDashboardHttpClients(configuration, environment)
             .AddDashboardDatabase(configuration)
             .AddDashboardValidation()
-            .AddSharePointMirror(configuration);
+            .AddSharePointMirror(configuration)
+            .AddConfluenceMirror(configuration);
 
         return services;
     }

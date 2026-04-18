@@ -1,0 +1,316 @@
+@page "/confluence"
+@using CompanyBrain.Dashboard.Features.Confluence.Data
+@using CompanyBrain.Dashboard.Features.Confluence.Models
+@using CompanyBrain.Dashboard.Features.Confluence.Services
+@inject ConfluenceSettingsProvider SettingsProvider
+@inject ConfluenceApiService ApiService
+@inject ConfluenceSyncService SyncService
+@inject ConfluenceSyncWorker SyncWorker
+@inject IDbContextFactory<ConfluenceDbContext> DbContextFactory
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<MudText Typo="Typo.h4" Class="mb-1" Style="font-weight: 800;">Confluence</MudText>
+<MudText Typo="Typo.body2" Class="mb-6" Style="color: rgba(255,255,255,0.5);">
+    Connect to Confluence Cloud and sync spaces to local markdown files.
+</MudText>
+
+<MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4">
+
+    @* ── Tab 1: Connection ── *@
+    <MudTabPanel Text="Connection" Icon="@Icons.Material.Filled.Link">
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-6" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px;">
+                    <MudText Typo="Typo.h6" Class="mb-4">Atlassian Credentials</MudText>
+                    <MudText Typo="Typo.body2" Class="mb-4" Style="color: rgba(255,255,255,0.5);">
+                        Generate an API token at
+                        <MudLink Href="https://id.atlassian.com/manage-profile/security/api-tokens" Target="_blank">
+                            id.atlassian.com/manage-profile/security/api-tokens
+                        </MudLink>
+                    </MudText>
+
+                    <MudTextField @bind-Value="_domain"
+                                  Label="Atlassian Domain"
+                                  Adornment="Adornment.End"
+                                  AdornmentText=".atlassian.net"
+                                  Placeholder="your-company"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-3"
+                                  Disabled="_testing || _isConnected" />
+
+                    <MudTextField @bind-Value="_email"
+                                  Label="Atlassian Account Email"
+                                  InputType="InputType.Email"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-3"
+                                  Disabled="_testing || _isConnected" />
+
+                    <MudTextField @bind-Value="_apiToken"
+                                  Label="API Token"
+                                  InputType="@(_showToken ? InputType.Text : InputType.Password)"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-4"
+                                  Disabled="_testing || _isConnected"
+                                  Adornment="Adornment.End"
+                                  AdornmentIcon="@(_showToken ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                                  OnAdornmentClick="() => _showToken = !_showToken" />
+
+                    @if (_isConnected)
+                    {
+                        <MudAlert Severity="Severity.Success" Class="mb-4" Dense="true">
+                            Connected as <strong>@_connectedEmail</strong> to
+                            <strong>@($"{_connectedDomain}.atlassian.net")</strong>
+                        </MudAlert>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Error"
+                                   StartIcon="@Icons.Material.Filled.LinkOff"
+                                   OnClick="DisconnectAsync">
+                            Disconnect
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Link"
+                                   OnClick="TestAndSaveAsync"
+                                   Disabled="@(_testing || string.IsNullOrWhiteSpace(_domain) || string.IsNullOrWhiteSpace(_email) || string.IsNullOrWhiteSpace(_apiToken))"
+                                   FullWidth="true">
+                            @if (_testing)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                <span>Testing connection...</span>
+                            }
+                            else
+                            {
+                                <span>Test &amp; Save</span>
+                            }
+                        </MudButton>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </MudTabPanel>
+
+    @* ── Tab 2: Browse Spaces ── *@
+    <MudTabPanel Text="Browse Spaces" Icon="@Icons.Material.Filled.GridView" Disabled="!_isConnected">
+        <MudStack Spacing="3">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Refresh"
+                           OnClick="LoadSpacesAsync"
+                           Disabled="_loadingSpaces">
+                    @if (_loadingSpaces)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Loading...</span>
+                    }
+                    else
+                    {
+                        <span>Load Spaces</span>
+                    }
+                </MudButton>
+                <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.4);">
+                    @(_spaces.Count > 0 ? $"{_spaces.Count} spaces found" : "Click to load your Confluence spaces")
+                </MudText>
+            </MudStack>
+
+            @if (_spaces.Count > 0)
+            {
+                <MudGrid>
+                    @foreach (var space in _spaces)
+                    {
+                        var isAlreadySynced = _syncedSpaceIds.Contains(space.Id);
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudPaper Class="pa-4" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; height: 100%;">
+                                <MudStack Spacing="2" Style="height: 100%;">
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                        <MudIcon Icon="@Icons.Material.Filled.Folder"
+                                                 Style="@($"color: {(space.Type == "personal" ? "#f093fb" : "#667eea")}")"
+                                                 Size="Size.Small" />
+                                        <MudText Typo="Typo.subtitle2" Style="font-weight: 700;">@space.Name</MudText>
+                                    </MudStack>
+                                    <MudChip T="string" Size="Size.Small"
+                                             Style="background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5); width: fit-content;">
+                                        @space.Key
+                                    </MudChip>
+                                    @if (!string.IsNullOrEmpty(space.Description))
+                                    {
+                                        <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4); flex: 1;">
+                                            @(space.Description.Length > 80 ? space.Description[..80] + "…" : space.Description)
+                                        </MudText>
+                                    }
+                                    <MudSpacer />
+                                    @if (isAlreadySynced)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.Check">
+                                            Syncing
+                                        </MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudButton Variant="Variant.Outlined"
+                                                   Color="Color.Primary"
+                                                   Size="Size.Small"
+                                                   StartIcon="@Icons.Material.Filled.Add"
+                                                   OnClick="() => AddSpaceAsync(space)"
+                                                   Disabled="_addingSpaceId == space.Id">
+                                            @if (_addingSpaceId == space.Id)
+                                            {
+                                                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                            }
+                                            else
+                                            {
+                                                <span>Add &amp; Sync</span>
+                                            }
+                                        </MudButton>
+                                    }
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+        </MudStack>
+    </MudTabPanel>
+
+    @* ── Tab 3: Synced Spaces ── *@
+    <MudTabPanel Text="Synced Spaces" Icon="@Icons.Material.Filled.Sync">
+        <MudStack Spacing="3">
+            @if (_syncedSpaces.Count > 0)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.SyncAlt"
+                               OnClick="SyncAllAsync"
+                               Disabled="_syncingAll">
+                        @if (_syncingAll)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            <span>Syncing...</span>
+                        }
+                        else
+                        {
+                            <span>Sync All</span>
+                        }
+                    </MudButton>
+                    @if (_lastSyncMessage is not null)
+                    {
+                        <MudAlert Severity="@_lastSyncSeverity" Dense="true" Class="flex-1">
+                            @_lastSyncMessage
+                        </MudAlert>
+                    }
+                </MudStack>
+            }
+
+            @if (_loadingSyncedSpaces)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+            else if (_syncedSpaces.Count == 0)
+            {
+                <MudPaper Class="pa-8" Style="background: rgba(255,255,255,0.02); border: 1px dashed rgba(255,255,255,0.1); border-radius: 16px; text-align: center;">
+                    <MudIcon Icon="@Icons.Material.Filled.GridView"
+                             Style="font-size: 48px; color: rgba(255,255,255,0.2);" Class="mb-3" />
+                    <MudText Typo="Typo.h6" Style="color: rgba(255,255,255,0.3);">No spaces synced yet</MudText>
+                    <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.2);">
+                        Go to Browse Spaces and click "Add &amp; Sync" to get started.
+                    </MudText>
+                </MudPaper>
+            }
+            else
+            {
+                <MudTable Items="_syncedSpaces" Dense="true" Hover="true"
+                          Style="background: transparent;"
+                          Class="confluence-table">
+                    <HeaderContent>
+                        <MudTh>Space</MudTh>
+                        <MudTh>Local Path</MudTh>
+                        <MudTh>Pages</MudTh>
+                        <MudTh>Last Sync</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                <MudIcon Icon="@Icons.Material.Filled.Folder"
+                                         Style="color: #667eea;" Size="Size.Small" />
+                                <div>
+                                    <MudText Typo="Typo.body2" Style="font-weight: 600;">@context.SpaceName</MudText>
+                                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">@context.SpaceKey</MudText>
+                                </div>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd>
+                            <MudText Typo="Typo.caption" Style="font-family: monospace; color: rgba(255,255,255,0.5);">
+                                @context.LocalPath
+                            </MudText>
+                        </MudTd>
+                        <MudTd>@context.SyncedPageCount</MudTd>
+                        <MudTd>
+                            @if (context.LastSyncedAtUtc.HasValue)
+                            {
+                                <MudText Typo="Typo.caption">@context.LastSyncedAtUtc.Value.LocalDateTime.ToString("MM/dd HH:mm")</MudText>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.3);">Never</MudText>
+                            }
+                        </MudTd>
+                        <MudTd>
+                            @if (!string.IsNullOrEmpty(context.LastSyncError))
+                            {
+                                <MudTooltip Text="@context.LastSyncError">
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Filled.Error">
+                                        Error
+                                    </MudChip>
+                                </MudTooltip>
+                            }
+                            else if (!context.IsEnabled)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default">Paused</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success">Active</MudChip>
+                            }
+                        </MudTd>
+                        <MudTd>
+                            <MudStack Row="true" Spacing="1">
+                                <MudTooltip Text="Sync now">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Sync"
+                                                   Size="Size.Small"
+                                                   Color="Color.Primary"
+                                                   OnClick="() => TriggerSyncAsync(context.Id)"
+                                                   Disabled="_syncingSpaceId == context.Id" />
+                                </MudTooltip>
+                                <MudTooltip Text="@(context.IsEnabled ? "Pause" : "Resume")">
+                                    <MudIconButton Icon="@(context.IsEnabled ? Icons.Material.Filled.Pause : Icons.Material.Filled.PlayArrow)"
+                                                   Size="Size.Small"
+                                                   Color="Color.Default"
+                                                   OnClick="() => ToggleSpaceEnabledAsync(context)" />
+                                </MudTooltip>
+                                <MudTooltip Text="Open folder">
+                                    <MudIconButton Icon="@Icons.Material.Filled.FolderOpen"
+                                                   Size="Size.Small"
+                                                   Color="Color.Default"
+                                                   OnClick="() => OpenFolderAsync(context.LocalPath)" />
+                                </MudTooltip>
+                                <MudTooltip Text="Remove">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                   Size="Size.Small"
+                                                   Color="Color.Error"
+                                                   OnClick="() => RemoveSpaceAsync(context)" />
+                                </MudTooltip>
+                            </MudStack>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudStack>
+    </MudTabPanel>
+</MudTabs>
