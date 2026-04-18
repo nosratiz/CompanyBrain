@@ -1,0 +1,28 @@
+@* Table displaying available MCP tools with test button *@
+
+<MudText Typo="Typo.h5" Class="mb-2">Tools (@Tools.Count)</MudText>
+<MudTable Items="Tools" Hover="true" Dense="true" Class="mb-4">
+    <HeaderContent>
+        <MudTh>Name</MudTh>
+        <MudTh>Description</MudTh>
+        <MudTh>Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Name">
+            <MudChip T="string" Size="Size.Small" Color="Color.Primary">@context.Name</MudChip>
+        </MudTd>
+        <MudTd DataLabel="Description">@context.Description</MudTd>
+        <MudTd DataLabel="Actions">
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                       OnClick="@(() => OnTestTool.InvokeAsync(context))">Test</MudButton>
+        </MudTd>
+    </RowTemplate>
+</MudTable>
+
+@code {
+    [Parameter, EditorRequired]
+    public List<McpToolInfo> Tools { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<McpToolInfo> OnTestTool { get; set; }
+}

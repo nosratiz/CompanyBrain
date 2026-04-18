@@ -1,6 +1,7 @@
 @page "/documents"
 @page "/documents/{FileName}"
 @inject KnowledgeApiClient Api
+@inject DocumentTenantApiClient TenantApi
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 @inject NavigationManager Navigation
@@ -66,6 +67,7 @@ else
                 <MudTh>Name</MudTh>
                 <MudTh>Type</MudTh>
                 <MudTh>Size</MudTh>
+                <MudTh>Tenant Access</MudTh>
                 <MudTh>Actions</MudTh>
             </HeaderContent>
             <RowTemplate>
@@ -75,16 +77,39 @@ else
                     </MudLink>
                 </MudTd>
                 <MudTd DataLabel="Type">
-                    <MudChip T="string" Size="Size.Small" Color="@GetMimeTypeColor(context.MimeType)">
-                        @GetMimeTypeLabel(context.MimeType)
+                    <MudChip T="string" Size="Size.Small" Color="@UiDisplayHelper.GetMimeTypeColor(context.MimeType)">
+                        @UiDisplayHelper.GetMimeTypeLabel(context.MimeType)
                     </MudChip>
                 </MudTd>
-                <MudTd DataLabel="Size">@FormatBytes(context.Size ?? 0)</MudTd>
+                <MudTd DataLabel="Size">@FormatHelper.FormatBytes(context.Size ?? 0)</MudTd>
+                <MudTd DataLabel="Tenant Access">
+                    @{
+                        var tenantCount = GetTenantCount(context.Name);
+                    }
+                    @if (tenantCount == 0)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.Public">
+                            Everyone
+                        </MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info" Icon="@Icons.Material.Filled.Business">
+                            @tenantCount tenant@(tenantCount > 1 ? "s" : "")
+                        </MudChip>
+                    }
+                </MudTd>
                 <MudTd DataLabel="Actions">
                     <MudTooltip Text="View">
                         <MudIconButton Icon="@Icons.Material.Filled.Visibility"
                                        Size="Size.Small"
                                        OnClick="@(() => ViewDocument(context.Name))" />
+                    </MudTooltip>
+                    <MudTooltip Text="Manage Tenant Access">
+                        <MudIconButton Icon="@Icons.Material.Filled.Business"
+                                       Size="Size.Small"
+                                       Color="Color.Primary"
+                                       OnClick="@(() => OpenTenantDialogAsync(context.Name))" />
                     </MudTooltip>
                     <MudTooltip Text="Delete">
                         <MudIconButton Icon="@Icons.Material.Filled.Delete"
@@ -114,11 +139,15 @@ else
     private List<KnowledgeResourceDescriptor> _resources = [];
     private KnowledgeResourceContent? _documentContent;
     private string _searchQuery = "";
+    private Dictionary<string, int> _tenantCounts = [];
 
     private IEnumerable<KnowledgeResourceDescriptor> FilteredResources => string.IsNullOrWhiteSpace(_searchQuery)
         ? _resources
         : _resources
             .Where(r => r.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase));
+
+    private int GetTenantCount(string fileName) =>
+        _tenantCounts.TryGetValue(fileName, out var count) ? count : 0;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -139,6 +168,9 @@ else
         {
             var response = await Api.ListResourcesAsync();
             _resources = response?.ToList() ?? [];
+            
+            // Load tenant counts for each document
+            await LoadTenantCountsAsync();
         }
         catch (Exception ex)
         {
@@ -150,13 +182,32 @@ else
         }
     }
 
+    private async Task LoadTenantCountsAsync()
+    {
+        _tenantCounts.Clear();
+        
+        // Load tenant assignments for each document in parallel (batched for performance)
+        var tasks = _resources.Select(async r =>
+        {
+            var actualFileName = FormatHelper.StripResourcesPrefix(r.Name);
+            var assignments = await TenantApi.GetAssignmentsByDocumentAsync(actualFileName);
+            return (r.Name, Count: assignments?.Tenants.Count ?? 0);
+        });
+
+        var results = await Task.WhenAll(tasks);
+        foreach (var (name, count) in results)
+        {
+            _tenantCounts[name] = count;
+        }
+    }
+
     private async Task LoadDocumentContent()
     {
         _loadingContent = true;
         try
         {
             var rawName = Uri.UnescapeDataString(FileName!);
-            var actualFileName = StripResourcesPrefix(rawName);
+            var actualFileName = FormatHelper.StripResourcesPrefix(rawName);
             _documentContent = await Api.GetResourceAsync(actualFileName);
         }
         catch (Exception ex)
@@ -174,12 +225,9 @@ else
         Navigation.NavigateTo($"/documents/{Uri.EscapeDataString(name)}");
     }
 
-    private static string StripResourcesPrefix(string name) =>
-        name.StartsWith("resources/", StringComparison.OrdinalIgnoreCase) ? name["resources/".Length..] : name;
-
     private async Task DeleteDocumentAsync(string name)
     {
-        var actualFileName = StripResourcesPrefix(name);
+        var actualFileName = FormatHelper.StripResourcesPrefix(name);
 
         var confirmed = await DialogService.ShowMessageBox(
             "Delete Document",
@@ -214,32 +262,34 @@ else
         }
     }
 
-    private static string FormatBytes(long bytes)
+    private async Task OpenTenantDialogAsync(string name)
     {
-        string[] sizes = ["B", "KB", "MB", "GB"];
-        int order = 0;
-        double size = bytes;
-        while (size >= 1024 && order < sizes.Length - 1)
+        var actualFileName = FormatHelper.StripResourcesPrefix(name);
+        
+        var parameters = new DialogParameters<TenantAssignmentDialog>
         {
-            order++;
-            size /= 1024;
+            { x => x.FileName, actualFileName }
+        };
+
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true,
+            CloseOnEscapeKey = true
+        };
+
+        var dialog = await DialogService.ShowAsync<TenantAssignmentDialog>(
+            "Manage Tenant Access",
+            parameters,
+            options);
+
+        var result = await dialog.Result;
+        
+        if (result is not null && !result.Canceled)
+        {
+            // Refresh tenant counts after changes
+            await LoadTenantCountsAsync();
+            StateHasChanged();
         }
-        return $"{size:0.##} {sizes[order]}";
     }
-
-    private static Color GetMimeTypeColor(string? mimeType) => mimeType switch
-    {
-        "text/markdown" => Color.Primary,
-        "text/plain" => Color.Default,
-        "text/html" => Color.Info,
-        _ => Color.Default
-    };
-
-    private static string GetMimeTypeLabel(string? mimeType) => mimeType switch
-    {
-        "text/markdown" => "Markdown",
-        "text/plain" => "Text",
-        "text/html" => "HTML",
-        _ => mimeType ?? "Unknown"
-    };
 }

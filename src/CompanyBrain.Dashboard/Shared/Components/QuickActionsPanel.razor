@@ -1,0 +1,30 @@
+@* Quick action buttons for the dashboard *@
+
+<MudText Typo="Typo.h6" Class="mb-3">Quick Actions</MudText>
+<MudGrid>
+    @foreach (var action in Actions)
+    {
+        <MudItem xs="12" sm="6" md="3">
+            <MudButton Variant="@action.Variant"
+                       Color="@action.Color"
+                       FullWidth="true"
+                       StartIcon="@action.Icon"
+                       Href="@action.Href">
+                @action.Label
+            </MudButton>
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    [Parameter, EditorRequired]
+    public IEnumerable<QuickAction> Actions { get; set; } = [];
+
+    public record QuickAction(
+        string Label,
+        string Href,
+        string Icon,
+        Color Color = Color.Primary,
+        Variant Variant = Variant.Outlined
+    );
+}

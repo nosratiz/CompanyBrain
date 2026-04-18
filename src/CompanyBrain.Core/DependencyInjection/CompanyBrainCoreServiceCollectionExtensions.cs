@@ -27,10 +27,22 @@ public static class CompanyBrainCoreServiceCollectionExtensions
             sp.GetRequiredService<HttpClient>(),
             sp.GetRequiredService<ILogger<WikiIngester>>()));
 
+        services.AddSingleton(sp => new DatabaseSchemaReader(
+            sp.GetRequiredService<ILogger<DatabaseSchemaReader>>()));
+
         services.AddSingleton(sp => new KnowledgeApplicationService(
             sp.GetRequiredService<KnowledgeStore>(),
             sp.GetRequiredService<WikiIngester>(),
+            sp.GetRequiredService<DatabaseSchemaReader>(),
             sp.GetRequiredService<ILogger<KnowledgeApplicationService>>()));
+
+        services.AddSingleton(sp => new GitRepositoryService(
+            knowledgeRoot,
+            sp.GetRequiredService<ILogger<GitRepositoryService>>()));
+
+        services.AddSingleton(sp => new ResourceTemplateApplicationService(
+            sp.GetRequiredService<GitRepositoryService>(),
+            sp.GetRequiredService<ILogger<ResourceTemplateApplicationService>>()));
 
         services.AddHostedService(sp => new KnowledgeFolderBootstrapper(
             sp.GetRequiredService<KnowledgeStore>(),

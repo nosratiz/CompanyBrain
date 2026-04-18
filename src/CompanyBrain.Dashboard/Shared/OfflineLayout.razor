@@ -1,0 +1,110 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="_theme" IsDarkMode="true" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<div class="offline-layout">
+    @* Floating Orbs *@
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    
+    @* Grid Background *@
+    <div class="grid-bg"></div>
+    
+    @Body
+</div>
+
+<style>
+    .offline-layout {
+        min-height: 100vh;
+        background: #0a0a0f;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .grid-bg {
+        position: absolute;
+        inset: 0;
+        background-image: 
+            linear-gradient(rgba(239, 68, 68, 0.02) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(239, 68, 68, 0.02) 1px, transparent 1px);
+        background-size: 60px 60px;
+        mask-image: radial-gradient(ellipse 60% 50% at 50% 50%, black 40%, transparent 100%);
+        animation: grid-pulse 4s ease-in-out infinite;
+    }
+    
+    @@keyframes grid-pulse {
+        0%, 100% { opacity: 0.5; }
+        50% { opacity: 0.8; }
+    }
+
+    .orb {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(80px);
+        pointer-events: none;
+        animation: float 20s ease-in-out infinite;
+    }
+    
+    .orb-1 {
+        width: 500px;
+        height: 500px;
+        background: radial-gradient(circle, rgba(239, 68, 68, 0.12) 0%, transparent 70%);
+        top: -150px;
+        right: -100px;
+        animation-duration: 15s;
+    }
+    
+    .orb-2 {
+        width: 400px;
+        height: 400px;
+        background: radial-gradient(circle, rgba(118, 75, 162, 0.1) 0%, transparent 70%);
+        bottom: -100px;
+        left: -50px;
+        animation-delay: -7s;
+        animation-duration: 18s;
+    }
+
+    @@keyframes float {
+        0%, 100% { 
+            transform: translate(0, 0) scale(1); 
+            opacity: 0.8;
+        }
+        50% { 
+            transform: translate(-20px, 20px) scale(0.95); 
+            opacity: 0.6;
+        }
+    }
+    
+    .offline-layout > :not(.orb):not(.grid-bg) {
+        position: relative;
+        z-index: 1;
+    }
+</style>
+
+@code {
+    private readonly MudTheme _theme = new()
+    {
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#667eea",
+            Secondary = "#764ba2",
+            Tertiary = "#f093fb",
+            Error = "#ef4444",
+            Surface = "#12121a",
+            Background = "#0a0a0f",
+            TextPrimary = "#EBEBEBEA",
+            TextSecondary = "#FFFFFF8C"
+        },
+        LayoutProperties = new LayoutProperties
+        {
+            DefaultBorderRadius = "16px"
+        },
+        Typography = new Typography
+        {
+            Default = new DefaultTypography { FontFamily = ["Inter", "system-ui", "sans-serif"] }
+        }
+    };
+}

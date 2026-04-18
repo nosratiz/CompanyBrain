@@ -1,12 +1,8 @@
 using CompanyBrain.Dashboard;
 using CompanyBrain.Dashboard.Api;
-using CompanyBrain.Dashboard.Api.Serialization;
 using CompanyBrain.Dashboard.DependencyInjection;
-using CompanyBrain.Dashboard.Mcp;
-using CompanyBrain.Dashboard.Mcp.Resources;
-using CompanyBrain.Dashboard.Mcp.Tools;
-using CompanyBrain.Dashboard.Services;
-using MudBlazor.Services;
+using CompanyBrain.Dashboard.Features.DocumentTenant;
+using CompanyBrain.Dashboard.Features.SharePoint.DependencyInjection;
 
 const string mcpRoutePattern = "/mcp";
 
@@ -21,95 +17,17 @@ builder.Logging.AddSimpleConsole(options =>
     options.SingleLine = true;
 });
 
-// Add Blazor Server services
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
-
-builder.Services.AddMudServices();
-
-// Add Company Brain API services
-builder.Services.AddCompanyBrain(builder.Environment.ContentRootPath);
-builder.Services.ConfigureHttpJsonOptions(options =>
-{
-    options.SerializerOptions.TypeInfoResolverChain.Insert(0, CompanyBrainJsonSerializerContext.Default);
-});
-
-// Add OpenAPI/Swagger
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options =>
-{
-    options.SwaggerDoc("v1", new()
-    {
-        Title = "Company Brain API",
-        Version = "v1",
-        Description = "HTTP API for ingesting internal knowledge, browsing stored Markdown resources, and searching the company knowledge base. Also serves as an MCP server.",
-    });
-});
-
-// Configure CORS to allow all origins
-builder.Services.AddCors(options =>
-{
-    options.AddDefaultPolicy(policy =>
-    {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
-    });
-});
-
-// Configure MCP Server
-builder.Services.AddSingleton<McpSessionTracker>();
-builder.Services
-    .AddMcpServer()
-    .WithHttpTransport()
-    .WithTools<CompanyBrainTools>()
-    .WithListResourcesHandler(KnowledgeResourceHandlers.ListResourcesAsync)
-    .WithReadResourceHandler(KnowledgeResourceHandlers.ReadResourceAsync);
-
-// Register HttpClient and KnowledgeApiClient for Blazor pages
-// For server-side Blazor, we use a base address that will be configured at runtime
-builder.Services.AddHttpClient<KnowledgeApiClient>((sp, client) =>
-{
-    // Use a localhost URL with the app's port (configured via launchSettings)
-    var env = sp.GetRequiredService<IWebHostEnvironment>();
-    if (env.IsDevelopment())
-    {
-        client.BaseAddress = new Uri("http://localhost:5200");
-    }
-    else
-    {
-        // In production, use HTTPS with the configured host
-        client.BaseAddress = new Uri("http://localhost:8080");
-    }
-});
-
-builder.Services.AddHttpClient<McpStatusClient>((sp, client) =>
-{
-    var env = sp.GetRequiredService<IWebHostEnvironment>();
-    client.BaseAddress = env.IsDevelopment()
-        ? new Uri("http://localhost:5200")
-        : new Uri("http://localhost:8080");
-});
+// Add all Dashboard services
+builder.Services.AddDashboardServices(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline
-if (app.Environment.IsDevelopment())
-{
-    app.UseDeveloperExceptionPage();
-}
-else
-{
-    app.UseExceptionHandler("/Error");
-    app.UseHsts();
-}
+// Initialize databases
+await app.InitializeDatabaseAsync();
+await app.Services.InitializeSharePointDatabaseAsync();
 
-app.UseCors();
-app.UseSwagger();
-app.UseSwaggerUI();
-
-app.UseStaticFiles();
-app.UseAntiforgery();
+// Configure middleware pipeline
+app.UseDashboardMiddleware();
 
 // Map Blazor components and API endpoints
 app.MapRazorComponents<App>()
@@ -117,6 +35,9 @@ app.MapRazorComponents<App>()
 
 app.MapGet("/dashboard", () => Results.Redirect("/"));
 app.MapCompanyBrainApi();
+app.MapResourceTemplateApi();
+app.MapDocumentTenantApi();
+app.MapSharePointAuthApi();
 app.MapMcp(mcpRoutePattern);
 
 app.Run();

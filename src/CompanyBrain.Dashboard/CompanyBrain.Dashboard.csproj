@@ -1,21 +1,31 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>CompanyBrain.Dashboard</RootNamespace>
+    <UserSecretsId>227bccb2-d1f4-4fdb-b9e3-0e3030732cbf</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Blazor Server -->
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
     <PackageReference Include="MudBlazor" Version="8.0.0" />
     
     <!-- Backend API -->
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.0" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.2.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="8.1.1" />
+    
+    <!-- Roslyn Scripting for Dynamic Tool Builder -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.14.0" />
+    
+    <!-- Microsoft Graph SDK for SharePoint Integration -->
+    <PackageReference Include="Microsoft.Graph" Version="5.77.0" />
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.83.1" />
+    <PackageReference Include="Azure.Identity" Version="1.13.2" />
   </ItemGroup>
 
   <ItemGroup>

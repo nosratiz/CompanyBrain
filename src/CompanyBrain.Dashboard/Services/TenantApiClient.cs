@@ -85,6 +85,54 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
         var response = await httpClient.DeleteAsync($"/api/knowledge/resources/{Uri.EscapeDataString(fileName)}");
         return response.IsSuccessStatusCode;
     }
+
+    public async Task<IngestResultResponse?> IngestDatabaseSchemaAsync(string connectionString, string name, string provider)
+    {
+        var response = await httpClient.PostAsJsonAsync("/api/knowledge/database-schema",
+            new { ConnectionString = connectionString, Name = name, Provider = provider });
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<IngestResultResponse>();
+    }
+
+    // === Resource Templates ===
+
+    public async Task<CloneGitRepositoryResponse?> CloneGitRepositoryAsync(string repositoryUrl, string templateName, string? branch = null)
+    {
+        var response = await httpClient.PostAsJsonAsync("/api/templates/clone",
+            new { RepositoryUrl = repositoryUrl, TemplateName = templateName, Branch = branch });
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<CloneGitRepositoryResponse>();
+    }
+
+    public async Task<IReadOnlyList<ResourceTemplateInfo>?> ListTemplatesAsync()
+    {
+        try
+        {
+            return await httpClient.GetFromJsonAsync<IReadOnlyList<ResourceTemplateInfo>>("/api/templates");
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    public async Task<string?> GetTemplateFileAsync(string templateName, string relativePath)
+    {
+        try
+        {
+            return await httpClient.GetStringAsync($"/api/templates/{Uri.EscapeDataString(templateName)}/files/{relativePath}");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<bool> DeleteTemplateAsync(string templateName)
+    {
+        var response = await httpClient.DeleteAsync($"/api/templates/{Uri.EscapeDataString(templateName)}");
+        return response.IsSuccessStatusCode;
+    }
 }
 
 // === DTO Records ===
@@ -131,3 +179,22 @@ public sealed record IngestWikiBatchItemResult(
     string? ResourceUri,
     bool Success,
     string? Error);
+
+// === Resource Template DTOs ===
+
+public sealed record CloneGitRepositoryResponse(
+    string TemplateName,
+    string RepositoryUrl,
+    string LocalPath,
+    string Branch,
+    int FileCount,
+    bool AlreadyExisted);
+
+public sealed record ResourceTemplateInfo(
+    string Name,
+    string RepositoryUrl,
+    string LocalPath,
+    string Branch,
+    DateTimeOffset ClonedAt,
+    int FileCount,
+    IReadOnlyList<string> Files);

@@ -12,120 +12,45 @@
 else
 {
     <MudGrid>
-        <!-- Total Documents Card -->
         <MudItem xs="12" md="6" lg="3">
-            <MudCard>
-                <MudCardHeader>
-                    <CardHeaderAvatar>
-                        <MudAvatar Color="Color.Primary">
-                            <MudIcon Icon="@Icons.Material.Filled.Description" />
-                        </MudAvatar>
-                    </CardHeaderAvatar>
-                    <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Documents</MudText>
-                        <MudText Typo="Typo.h4">@_resources.Count</MudText>
-                    </CardHeaderContent>
-                </MudCardHeader>
-            </MudCard>
+            <StatCard Title="Documents"
+                      Value="@_resources.Count.ToString()"
+                      Icon="@Icons.Material.Filled.Description"
+                      AvatarColor="Color.Primary" />
         </MudItem>
 
-        <!-- Total Size Card -->
         <MudItem xs="12" md="6" lg="3">
-            <MudCard>
-                <MudCardHeader>
-                    <CardHeaderAvatar>
-                        <MudAvatar Color="Color.Info">
-                            <MudIcon Icon="@Icons.Material.Filled.Storage" />
-                        </MudAvatar>
-                    </CardHeaderAvatar>
-                    <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Total Size</MudText>
-                        <MudText Typo="Typo.h4">@FormatBytes(_resources.Sum(r => r.Size ?? 0))</MudText>
-                    </CardHeaderContent>
-                </MudCardHeader>
-            </MudCard>
+            <StatCard Title="Total Size"
+                      Value="@FormatHelper.FormatBytes(_resources.Sum(r => r.Size ?? 0))"
+                      Icon="@Icons.Material.Filled.Storage"
+                      AvatarColor="Color.Info" />
         </MudItem>
 
-        <!-- Markdown Files Card -->
         <MudItem xs="12" md="6" lg="3">
-            <MudCard>
-                <MudCardHeader>
-                    <CardHeaderAvatar>
-                        <MudAvatar Color="Color.Success">
-                            <MudIcon Icon="@Icons.Material.Filled.Article" />
-                        </MudAvatar>
-                    </CardHeaderAvatar>
-                    <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Markdown</MudText>
-                        <MudText Typo="Typo.h4">@_resources.Count(r => r.MimeType == "text/markdown")</MudText>
-                    </CardHeaderContent>
-                </MudCardHeader>
-            </MudCard>
+            <StatCard Title="Markdown"
+                      Value="@_resources.Count(r => r.MimeType == "text/markdown").ToString()"
+                      Icon="@Icons.Material.Filled.Article"
+                      AvatarColor="Color.Success" />
         </MudItem>
 
-        <!-- Recent Updates Card -->
         <MudItem xs="12" md="6" lg="3">
-            <MudCard>
-                <MudCardHeader>
-                    <CardHeaderAvatar>
-                        <MudAvatar Color="Color.Warning">
-                            <MudIcon Icon="@Icons.Material.Filled.Update" />
-                        </MudAvatar>
-                    </CardHeaderAvatar>
-                    <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Status</MudText>
-                        <MudText Typo="Typo.body1">@(_resources.Count > 0 ? "Ready" : "Empty")</MudText>
-                    </CardHeaderContent>
-                </MudCardHeader>
-            </MudCard>
+            <StatCard Title="Status"
+                      Value="@(_resources.Count > 0 ? "Ready" : "Empty")"
+                      Icon="@Icons.Material.Filled.Update"
+                      AvatarColor="Color.Warning"
+                      UseBodyText="true" />
         </MudItem>
 
-        <!-- Recent Documents Table -->
         <MudItem xs="12">
-            <MudPaper Class="pa-4">
-                <div class="d-flex justify-space-between align-center mb-4">
-                    <MudText Typo="Typo.h6">Recent Documents</MudText>
-                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/documents">View All</MudButton>
-                </div>
-                <MudTable Items="@_resources.Take(5)" Hover="true" Dense="true">
-                    <HeaderContent>
-                        <MudTh>Name</MudTh>
-                        <MudTh>Type</MudTh>
-                        <MudTh>Size</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Name">
-                            <MudLink Href="@($"/documents/{Uri.EscapeDataString(context.Name)}")">@context.Name</MudLink>
-                        </MudTd>
-                        <MudTd DataLabel="Type">
-                            <MudChip T="string" Size="Size.Small" Color="@GetMimeTypeColor(context.MimeType)">@GetMimeTypeLabel(context.MimeType)</MudChip>
-                        </MudTd>
-                        <MudTd DataLabel="Size">@FormatBytes(context.Size ?? 0)</MudTd>
-                    </RowTemplate>
-                    <NoRecordsContent>
-                        <MudText>No documents found. <MudLink Href="/import">Import your first document</MudLink>.</MudText>
-                    </NoRecordsContent>
-                </MudTable>
-            </MudPaper>
+            <RecentDocumentsPanel Documents="@_resources.Take(5)">
+                <EmptyMessage>
+                    No documents found. <MudLink Href="/import">Import your first document</MudLink>.
+                </EmptyMessage>
+            </RecentDocumentsPanel>
         </MudItem>
 
-        <!-- Quick Actions -->
         <MudItem xs="12">
-            <MudText Typo="Typo.h6" Class="mb-3">Quick Actions</MudText>
-            <MudGrid>
-                <MudItem xs="12" sm="6" md="3">
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" FullWidth="true"
-                               StartIcon="@Icons.Material.Filled.Search" Href="/search">
-                        Search Knowledge
-                    </MudButton>
-                </MudItem>
-                <MudItem xs="12" sm="6" md="3">
-                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" FullWidth="true"
-                               StartIcon="@Icons.Material.Filled.Link" Href="/import">
-                        Import from Wiki
-                    </MudButton>
-                </MudItem>
-            </MudGrid>
+            <QuickActionsPanel Actions="@_quickActions" />
         </MudItem>
     </MudGrid>
 }
@@ -133,6 +58,12 @@ else
 @code {
     private bool _loading = true;
     private List<KnowledgeResourceDescriptor> _resources = [];
+
+    private static readonly QuickActionsPanel.QuickAction[] _quickActions =
+    [
+        new("Search Knowledge", "/search", Icons.Material.Filled.Search, Color.Primary),
+        new("Import from Wiki", "/import", Icons.Material.Filled.Link, Color.Secondary)
+    ];
 
     protected override async Task OnInitializedAsync()
     {
@@ -150,33 +81,4 @@ else
             _loading = false;
         }
     }
-
-    private static string FormatBytes(long bytes)
-    {
-        string[] sizes = ["B", "KB", "MB", "GB"];
-        int order = 0;
-        double size = bytes;
-        while (size >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            size /= 1024;
-        }
-        return $"{size:0.##} {sizes[order]}";
-    }
-
-    private static Color GetMimeTypeColor(string? mimeType) => mimeType switch
-    {
-        "text/markdown" => Color.Primary,
-        "text/plain" => Color.Default,
-        "text/html" => Color.Info,
-        _ => Color.Default
-    };
-
-    private static string GetMimeTypeLabel(string? mimeType) => mimeType switch
-    {
-        "text/markdown" => "Markdown",
-        "text/plain" => "Text",
-        "text/html" => "HTML",
-        _ => mimeType ?? "Unknown"
-    };
 }

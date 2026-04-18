@@ -1,0 +1,131 @@
+@inject KnowledgeApiClient Api
+@inject DocumentTenantApiClient DocumentTenantApi
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h6" Class="mb-4">Import Database Schema</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Connect to a SQL Server, PostgreSQL, or MySQL database and import the full schema (tables, columns, relationships, stored procedures, functions, triggers, views) as a JSON knowledge document.
+</MudText>
+
+<MudSelect @bind-Value="_provider"
+           Label="Database Provider"
+           Variant="Variant.Outlined"
+           FullWidth="true"
+           Class="mb-4">
+    <MudSelectItem Value="@("SqlServer")">SQL Server</MudSelectItem>
+    <MudSelectItem Value="@("PostgreSql")">PostgreSQL</MudSelectItem>
+    <MudSelectItem Value="@("MySql")">MySQL</MudSelectItem>
+</MudSelect>
+
+<MudTextField @bind-Value="_connectionString"
+              Label="Connection String"
+              Placeholder="@ConnectionPlaceholder"
+              Variant="Variant.Outlined"
+              InputType="InputType.Password"
+              Adornment="Adornment.End"
+              AdornmentIcon="@(_showConnectionString ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+              OnAdornmentClick="() => _showConnectionString = !_showConnectionString"
+              FullWidth="true"
+              Lines="@(_showConnectionString ? 3 : 1)"
+              Class="mb-4" />
+
+@if (_showConnectionString && !string.IsNullOrWhiteSpace(_connectionString))
+{
+    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+        <code style="word-break: break-all;">@_connectionString</code>
+    </MudAlert>
+}
+
+<MudTextField @bind-Value="_schemaName"
+              Label="Document Name"
+              Placeholder="my-database-schema"
+              Variant="Variant.Outlined"
+              FullWidth="true"
+              HelperText="Name used to store the schema in the knowledge base"
+              Class="mb-4" />
+
+<MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4">
+    <MudText Typo="Typo.body2">
+        The connection string is used only to read the schema and is not stored. Ensure the database user has read access to system views.
+    </MudText>
+</MudAlert>
+
+<MudButton Variant="Variant.Filled"
+           Color="Color.Primary"
+           StartIcon="@Icons.Material.Filled.Schema"
+           OnClick="ImportAsync"
+           Disabled="@(string.IsNullOrWhiteSpace(_connectionString) || string.IsNullOrWhiteSpace(_schemaName) || Importing)">
+    @if (Importing)
+    {
+        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+        <span>Reading Schema...</span>
+    }
+    else
+    {
+        <span>Import Schema</span>
+    }
+</MudButton>
+
+@code {
+    [Parameter] public bool Importing { get; set; }
+    [Parameter] public EventCallback<bool> ImportingChanged { get; set; }
+    [Parameter] public Func<List<TenantAssignment>>? GetTenantAssignments { get; set; }
+    [Parameter] public EventCallback<IngestResultResponse?> OnImportSuccess { get; set; }
+    [Parameter] public EventCallback<string> OnImportError { get; set; }
+
+    private string _connectionString = "";
+    private string _schemaName = "";
+    private string _provider = "SqlServer";
+    private bool _showConnectionString;
+
+    private string ConnectionPlaceholder => _provider switch
+    {
+        "PostgreSql" => "Host=myserver;Database=mydb;Username=postgres;Password=***",
+        "MySql" => "Server=myserver;Database=mydb;User=root;Password=***",
+        _ => "Server=myserver;Database=mydb;User Id=sa;Password=***;TrustServerCertificate=True",
+    };
+
+    private async Task ImportAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_connectionString) || string.IsNullOrWhiteSpace(_schemaName)) return;
+
+        await ImportingChanged.InvokeAsync(true);
+
+        try
+        {
+            var result = await Api.IngestDatabaseSchemaAsync(_connectionString, _schemaName, _provider);
+            Snackbar.Add($"Successfully imported schema as {result?.FileName}", Severity.Success);
+
+            // Assign to selected tenants
+            if (result?.FileName is not null)
+            {
+                await AssignDocumentToTenantsAsync(result.FileName);
+            }
+
+            await OnImportSuccess.InvokeAsync(result);
+            _connectionString = "";
+            _schemaName = "";
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Schema import failed: {ex.Message}", Severity.Error);
+            await OnImportError.InvokeAsync(ex.Message);
+        }
+        finally
+        {
+            await ImportingChanged.InvokeAsync(false);
+        }
+    }
+
+    private async Task AssignDocumentToTenantsAsync(string fileName)
+    {
+        var tenantAssignments = GetTenantAssignments?.Invoke();
+        if (tenantAssignments is null || tenantAssignments.Count == 0) return;
+
+        var result = await DocumentTenantApi.UpdateDocumentTenantsAsync(fileName, tenantAssignments);
+        if (result is not null)
+        {
+            Snackbar.Add($"Document assigned to {tenantAssignments.Count} tenant(s)", Severity.Info);
+        }
+    }
+}

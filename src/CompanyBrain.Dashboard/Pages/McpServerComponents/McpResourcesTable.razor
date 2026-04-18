@@ -1,0 +1,92 @@
+@* Table displaying MCP resources with delete functionality *@
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject KnowledgeApiClient KnowledgeApi
+
+<MudText Typo="Typo.h5" Class="mb-2">Resources (@Resources.Count)</MudText>
+<MudTable Items="Resources" Hover="true" Dense="true" Class="mb-4">
+    <HeaderContent>
+        <MudTh>Name</MudTh>
+        <MudTh>Title</MudTh>
+        <MudTh>URI</MudTh>
+        <MudTh>Description</MudTh>
+        <MudTh>Type</MudTh>
+        <MudTh>Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Name">@context.Name</MudTd>
+        <MudTd DataLabel="Title">@context.Title</MudTd>
+        <MudTd DataLabel="URI">
+            <MudText Typo="Typo.body2" Style="font-family: monospace; font-size: 0.8rem;">@context.Uri</MudText>
+        </MudTd>
+        <MudTd DataLabel="Description">
+            <MudText Typo="Typo.body2" Style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">
+                @context.Description
+            </MudText>
+        </MudTd>
+        <MudTd DataLabel="Type">
+            @if (context.MimeType is not null)
+            {
+                <MudChip T="string" Size="Size.Small">@context.MimeType</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Actions">
+            <MudTooltip Text="Delete">
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                               OnClick="@(() => DeleteResourceAsync(context))"
+                               Disabled="_deleting" />
+            </MudTooltip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No MCP resources registered.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private bool _deleting;
+
+    [Parameter, EditorRequired]
+    public List<McpResourceInfo> Resources { get; set; } = [];
+
+    [Parameter]
+    public EventCallback OnResourceDeleted { get; set; }
+
+    private async Task DeleteResourceAsync(McpResourceInfo resource)
+    {
+        var fileName = resource.Name?.Replace("resources/", "");
+        if (string.IsNullOrWhiteSpace(fileName)) return;
+
+        var confirmed = await DialogService.ShowMessageBox(
+            "Delete Resource",
+            $"Are you sure you want to delete '{fileName}'? This cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+
+        if (confirmed != true) return;
+
+        _deleting = true;
+        StateHasChanged();
+
+        try
+        {
+            var success = await KnowledgeApi.DeleteResourceAsync(fileName);
+            if (success)
+            {
+                Snackbar.Add($"Deleted '{fileName}'", Severity.Success);
+                await OnResourceDeleted.InvokeAsync();
+            }
+            else
+            {
+                Snackbar.Add($"Failed to delete '{fileName}'", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _deleting = false;
+        }
+    }
+}

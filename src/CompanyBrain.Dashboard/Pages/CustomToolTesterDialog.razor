@@ -1,0 +1,178 @@
+@inject CustomToolService ToolService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+            @Tool.Description
+        </MudText>
+        
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Test Arguments (JSON)</MudText>
+        <MudTextField @bind-Value="_testArgsJson"
+                      Label="Arguments"
+                      Lines="6"
+                      Placeholder='{"input": "test value"}'
+                      Style="font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 13px;"
+                      HelperText="Enter test arguments as a JSON object" />
+        
+        @if (_result is not null)
+        {
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Execution Result</MudText>
+            
+            <MudAlert Severity="@(_result.Success ? Severity.Success : Severity.Error)" Class="mb-2" Dense="true">
+                <div class="d-flex justify-space-between align-center">
+                    <span>@(_result.Success ? "Execution successful" : "Execution failed")</span>
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default">
+                        @_result.ExecutionTime.TotalMilliseconds.ToString("F2")ms
+                    </MudChip>
+                </div>
+            </MudAlert>
+            
+            <MudPaper Class="pa-3" Style="background-color: var(--mud-palette-background-gray); max-height: 300px; overflow-y: auto;">
+                <pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0; font-family: monospace; font-size: 13px;">@_result.GetOutputString()</pre>
+            </MudPaper>
+            
+            @if (!_result.Success && !string.IsNullOrEmpty(_result.ExceptionDetails))
+            {
+                <MudExpansionPanels Class="mt-2">
+                    <MudExpansionPanel Text="Exception Details" Dense="true" MaxHeight="200">
+                        <pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0; font-family: monospace; font-size: 11px; color: var(--mud-palette-error);">@_result.ExceptionDetails</pre>
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+            }
+        }
+        
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Close())">Close</MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.PlayArrow"
+                   OnClick="RunTest"
+                   Disabled="_running">
+            @if (_running)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Execute
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+    
+    [Parameter]
+    public CustomTool Tool { get; set; } = null!;
+    
+    private string _testArgsJson = "{}";
+    private ScriptExecutionResult? _result;
+    private string? _error;
+    private bool _running;
+    
+    protected override void OnInitialized()
+    {
+        // Pre-populate test args from schema
+        _testArgsJson = GenerateSampleArgsJson();
+    }
+    
+    private string GenerateSampleArgsJson()
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(Tool.JsonSchema);
+            var root = doc.RootElement;
+            
+            if (!root.TryGetProperty("properties", out var props))
+                return "{}";
+            
+            var args = new Dictionary<string, object>();
+            
+            foreach (var prop in props.EnumerateObject())
+            {
+                var propType = prop.Value.TryGetProperty("type", out var typeEl) 
+                    ? typeEl.GetString() 
+                    : "string";
+                
+                args[prop.Name] = propType switch
+                {
+                    "string" => "test_value",
+                    "number" or "integer" => 42,
+                    "boolean" => true,
+                    "array" => new[] { "item1", "item2" },
+                    _ => "test"
+                };
+            }
+            
+            return System.Text.Json.JsonSerializer.Serialize(args, new System.Text.Json.JsonSerializerOptions 
+            { 
+                WriteIndented = true 
+            });
+        }
+        catch
+        {
+            return "{}";
+        }
+    }
+    
+    private async Task RunTest()
+    {
+        _running = true;
+        _result = null;
+        _error = null;
+        StateHasChanged();
+        
+        try
+        {
+            // Parse test arguments
+            Dictionary<string, object?> args;
+            try
+            {
+                args = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(_testArgsJson) 
+                    ?? new Dictionary<string, object?>();
+            }
+            catch (System.Text.Json.JsonException ex)
+            {
+                _error = $"Invalid JSON in arguments: {ex.Message}";
+                return;
+            }
+            
+            // Get root path for the tenant
+            var rootPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "CompanyBrain",
+                "TenantData",
+                Tool.TenantId.ToString("N"));
+            
+            Directory.CreateDirectory(rootPath);
+            
+            // Execute the tool
+            _result = await ToolService.ExecuteToolAsync(Tool, args.ToDictionary(x => x.Key, x => x.Value), rootPath);
+            
+            if (_result.Success)
+            {
+                Snackbar.Add("Tool executed successfully!", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Tool execution failed", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Execution error: {ex.Message}";
+            Snackbar.Add("Tool execution error", Severity.Error);
+        }
+        finally
+        {
+            _running = false;
+            StateHasChanged();
+        }
+    }
+}

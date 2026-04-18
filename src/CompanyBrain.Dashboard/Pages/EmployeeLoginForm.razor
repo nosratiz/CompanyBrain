@@ -1,0 +1,195 @@
+@using CompanyBrain.Dashboard.Features.Auth.Interfaces
+@using CompanyBrain.Dashboard.Features.Auth.Services
+@inject IAuthApiClient AuthClient
+@inject AuthTokenStore TokenStore
+@inject TokenAuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<MudStack Spacing="3">
+    <MudButton Variant="Variant.Text"
+               StartIcon="@Icons.Material.Filled.ArrowBack"
+               OnClick="HandleBackAsync"
+               Class="align-self-start"
+               Style="color: #94a3b8; text-transform: none;">
+        Back
+    </MudButton>
+
+    <MudText Typo="Typo.h6" Align="Align.Center" Style="color: #e2e8f0; font-weight: 600;">Employee Sign In</MudText>
+
+    @if (!_codeSent)
+    {
+        <MudText Typo="Typo.body2" Align="Align.Center" Style="color: #64748b;" Class="mb-2">
+            Enter your company email to receive a login code
+        </MudText>
+
+        <MudTextField @bind-Value="_email"
+                      Label="Email"
+                      Variant="Variant.Outlined"
+                      InputType="InputType.Email"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Email"
+                      Required="true"
+                      RequiredError="Email is required"
+                      Disabled="_loading"
+                      Class="login-field" />
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Secondary"
+                   FullWidth="true"
+                   Size="Size.Large"
+                   Disabled="_loading"
+                   Class="py-3 rounded-lg mt-2"
+                   Style="text-transform: none; font-weight: 600; font-size: 0.95rem; letter-spacing: 0;"
+                   OnClick="SendCodeAsync">
+            @if (_loading)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" Color="Color.Surface" />
+                <span>Sending…</span>
+            }
+            else
+            {
+                <span>Send Login Code</span>
+            }
+        </MudButton>
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-2 rounded-lg">
+            A code has been sent to <strong>@_email</strong>
+        </MudAlert>
+
+        <MudTextField @bind-Value="_code"
+                      Label="Verification Code"
+                      Variant="Variant.Outlined"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Lock"
+                      Required="true"
+                      RequiredError="Code is required"
+                      Disabled="_loading"
+                      Class="login-field" />
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Secondary"
+                   FullWidth="true"
+                   Size="Size.Large"
+                   Disabled="_loading"
+                   Class="py-3 rounded-lg mt-2"
+                   Style="text-transform: none; font-weight: 600; font-size: 0.95rem; letter-spacing: 0;"
+                   OnClick="VerifyCodeAsync">
+            @if (_loading)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" Color="Color.Surface" />
+                <span>Verifying…</span>
+            }
+            else
+            {
+                <span>Verify &amp; Sign In</span>
+            }
+        </MudButton>
+
+        <MudButton Variant="Variant.Text"
+                   FullWidth="true"
+                   Disabled="_loading"
+                   Style="color: #64748b; text-transform: none;"
+                   OnClick="ResendCodeAsync">
+            Didn't receive a code? Resend
+        </MudButton>
+    }
+</MudStack>
+
+@code {
+    [Parameter] public EventCallback OnBack { get; set; }
+
+    private string _email = string.Empty;
+    private string _code = string.Empty;
+    private bool _codeSent;
+    private bool _loading;
+
+    private async Task SendCodeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_email))
+        {
+            Snackbar.Add("Please enter your email.", Severity.Warning);
+            return;
+        }
+
+        _loading = true;
+
+        try
+        {
+            await AuthClient.SendEmployeeLoginCodeAsync(_email);
+            _codeSent = true;
+            Snackbar.Add("If the email exists, a login code has been sent.", Severity.Info);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ResendCodeAsync()
+    {
+        _loading = true;
+
+        try
+        {
+            await AuthClient.SendEmployeeLoginCodeAsync(_email);
+            Snackbar.Add("A new code has been sent.", Severity.Info);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task VerifyCodeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_code))
+        {
+            Snackbar.Add("Please enter the verification code.", Severity.Warning);
+            return;
+        }
+
+        _loading = true;
+
+        try
+        {
+            var result = await AuthClient.VerifyEmployeeLoginCodeAsync(_email, _code);
+
+            if (result.IsSuccess)
+            {
+                var auth = result.Value;
+                TokenStore.SetEmployeeSession(
+                    auth.Token,
+                    auth.Employee.FirstName,
+                    auth.Employee.LastName,
+                    auth.Employee.Email);
+                AuthStateProvider.NotifyAuthStateChanged();
+                Snackbar.Add("Login successful!", Severity.Success);
+                Navigation.NavigateTo("/");
+            }
+            else
+            {
+                Snackbar.Add(result.Errors.FirstOrDefault()?.Message ?? "Verification failed.", Severity.Error);
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task HandleBackAsync()
+    {
+        if (_codeSent)
+        {
+            _codeSent = false;
+            _code = string.Empty;
+        }
+        else
+        {
+            await OnBack.InvokeAsync();
+        }
+    }
+}

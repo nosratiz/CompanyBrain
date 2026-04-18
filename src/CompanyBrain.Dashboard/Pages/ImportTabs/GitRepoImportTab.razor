@@ -1,0 +1,108 @@
+@inject KnowledgeApiClient Api
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h6" Class="mb-4">Clone Git Repository</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Clone a git repository as a resource template. The repository will be available as an MCP resource for code generation and reference.
+</MudText>
+
+<MudTextField @bind-Value="_repositoryUrl"
+              Label="Repository URL"
+              Placeholder="https://github.com/user/repo.git"
+              Variant="Variant.Outlined"
+              FullWidth="true"
+              HelperText="HTTPS, SSH, or git:// URL"
+              Class="mb-4" />
+
+<MudTextField @bind-Value="_templateName"
+              Label="Template Name"
+              Placeholder="my-template"
+              Variant="Variant.Outlined"
+              FullWidth="true"
+              HelperText="Unique name for this template (letters, numbers, hyphens, underscores)"
+              Class="mb-4" />
+
+<MudTextField @bind-Value="_branch"
+              Label="Branch (optional)"
+              Placeholder="main"
+              Variant="Variant.Outlined"
+              FullWidth="true"
+              HelperText="Leave empty for default branch"
+              Class="mb-4" />
+
+<MudButton Variant="Variant.Filled"
+           Color="Color.Primary"
+           StartIcon="@Icons.Material.Filled.CloudDownload"
+           OnClick="CloneRepositoryAsync"
+           Disabled="@(string.IsNullOrWhiteSpace(_repositoryUrl) || string.IsNullOrWhiteSpace(_templateName) || Importing)">
+    @if (Importing)
+    {
+        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+        <span>Cloning...</span>
+    }
+    else
+    {
+        <span>Clone Repository</span>
+    }
+</MudButton>
+
+@if (_lastResult is not null)
+{
+    <MudAlert Severity="Severity.Success" Class="mt-4">
+        <MudText>
+            Successfully cloned <strong>@_lastResult.TemplateName</strong>
+            @if (_lastResult.AlreadyExisted)
+            {
+                <span> (updated existing)</span>
+            }
+        </MudText>
+        <MudText Typo="Typo.body2">
+            Branch: @_lastResult.Branch | Files: @_lastResult.FileCount
+        </MudText>
+    </MudAlert>
+}
+
+@code {
+    [Parameter] public bool Importing { get; set; }
+    [Parameter] public EventCallback<bool> ImportingChanged { get; set; }
+    [Parameter] public EventCallback<CloneGitRepositoryResponse?> OnCloneSuccess { get; set; }
+    [Parameter] public EventCallback<string> OnCloneError { get; set; }
+
+    private string _repositoryUrl = "";
+    private string _templateName = "";
+    private string? _branch;
+    private CloneGitRepositoryResponse? _lastResult;
+
+    private async Task CloneRepositoryAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_repositoryUrl) || string.IsNullOrWhiteSpace(_templateName)) return;
+
+        await ImportingChanged.InvokeAsync(true);
+        _lastResult = null;
+
+        try
+        {
+            var result = await Api.CloneGitRepositoryAsync(_repositoryUrl, _templateName, _branch);
+            _lastResult = result;
+
+            if (result is not null)
+            {
+                var message = result.AlreadyExisted
+                    ? $"Updated template '{result.TemplateName}' with {result.FileCount} files"
+                    : $"Cloned '{result.TemplateName}' with {result.FileCount} files";
+                Snackbar.Add(message, Severity.Success);
+            }
+
+            await OnCloneSuccess.InvokeAsync(result);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Clone failed: {ex.Message}", Severity.Error);
+            await OnCloneError.InvokeAsync(ex.Message);
+        }
+        finally
+        {
+            await ImportingChanged.InvokeAsync(false);
+        }
+    }
+}

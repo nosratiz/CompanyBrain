@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CompanyBrain.Application.Results;
 using FluentResults;
 using CompanyBrain.Models;
@@ -11,15 +12,18 @@ internal sealed class KnowledgeApplicationService
 {
     private readonly KnowledgeStore knowledgeStore;
     private readonly WikiIngester wikiIngester;
+    private readonly DatabaseSchemaReader databaseSchemaReader;
     private readonly ILogger<KnowledgeApplicationService> logger;
 
     public KnowledgeApplicationService(
         KnowledgeStore knowledgeStore,
         WikiIngester wikiIngester,
+        DatabaseSchemaReader databaseSchemaReader,
         ILogger<KnowledgeApplicationService>? logger = null)
     {
         this.knowledgeStore = knowledgeStore;
         this.wikiIngester = wikiIngester;
+        this.databaseSchemaReader = databaseSchemaReader;
         this.logger = logger ?? NullLogger<KnowledgeApplicationService>.Instance;
     }
 
@@ -192,5 +196,44 @@ internal sealed class KnowledgeApplicationService
     {
         logger.LogInformation("Deleting knowledge resource '{FileName}'.", fileName);
         return knowledgeStore.DeleteResource(fileName, cancellationToken);
+    }
+
+    public async Task<Result<SavedKnowledgeDocument>> IngestDatabaseSchemaAsync(
+        string connectionString, string name, DatabaseProvider provider, CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Reading {Provider} database schema for '{Name}'.", provider, name);
+
+        try
+        {
+            var schema = await databaseSchemaReader.ReadSchemaAsync(connectionString, provider, cancellationToken);
+
+            var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+            var json = JsonSerializer.Serialize(schema, jsonOptions);
+
+            var markdown = $"""
+                # Database Schema: {schema.DatabaseName}
+
+                **Server:** {schema.ServerName}
+                **Exported:** {schema.ExportedAtUtc:u}
+                **Tables:** {schema.Tables.Count} | **Views:** {schema.Views.Count} | **Stored Procedures:** {schema.StoredProcedures.Count} | **Functions:** {schema.Functions.Count} | **Triggers:** {schema.Triggers.Count} | **Foreign Keys:** {schema.ForeignKeys.Count}
+
+                ```json
+                {json}
+                ```
+                """;
+
+            var document = await knowledgeStore.SaveMarkdownAsync(name, markdown, cancellationToken);
+            return Result.Ok(document);
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or Npgsql.NpgsqlException or MySqlConnector.MySqlException)
+        {
+            logger.LogWarning(ex, "Failed to connect to database for '{Name}'.", name);
+            return Result.Fail<SavedKnowledgeDocument>(new UpstreamAppError($"Database connection failed: {ex.Message}"));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            logger.LogWarning(ex, "Invalid connection string for '{Name}'.", name);
+            return Result.Fail<SavedKnowledgeDocument>(new ValidationAppError($"Invalid connection string: {ex.Message}"));
+        }
     }
 }

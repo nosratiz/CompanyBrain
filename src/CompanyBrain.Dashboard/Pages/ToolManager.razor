@@ -1,0 +1,269 @@
+@page "/tools"
+@inject CustomToolService ToolService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Tool Manager - Company Brain</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Build" Class="mr-2" />
+    Dynamic MCP Tool Builder
+</MudText>
+
+<MudPaper Class="pa-4">
+    <div class="d-flex justify-space-between align-center mb-4">
+        <MudText Typo="Typo.body1" Color="Color.Secondary">
+            Create custom tools that AI agents can invoke via MCP. Tools are executed using Roslyn scripting.
+        </MudText>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@OpenCreateDialog">
+            Create Tool
+        </MudButton>
+    </div>
+
+    <MudTable Items="@_tools"
+              Hover="true"
+              Striped="true"
+              Loading="_loading"
+              LoadingProgressColor="Color.Primary"
+              Filter="FilterTools">
+        <ToolBarContent>
+            <MudTextField @bind-Value="_searchQuery"
+                          Placeholder="Search tools..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="Size.Medium"
+                          Immediate="true"
+                          Class="mt-0" />
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Description</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Write Access</MudTh>
+            <MudTh>Created</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate Context="tool">
+            <MudTd DataLabel="Name">
+                <MudText Typo="Typo.body1">
+                    <strong>@tool.Name</strong>
+                </MudText>
+            </MudTd>
+            <MudTd DataLabel="Description">
+                <MudText Typo="Typo.body2" Class="text-truncate" Style="max-width: 300px;">
+                    @tool.Description
+                </MudText>
+            </MudTd>
+            <MudTd DataLabel="Status">
+                <MudChip T="string" 
+                         Size="Size.Small" 
+                         Color="@(tool.IsEnabled ? Color.Success : Color.Default)"
+                         Icon="@(tool.IsEnabled ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)">
+                    @(tool.IsEnabled ? "Enabled" : "Disabled")
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Write Access">
+                <MudChip T="string" 
+                         Size="Size.Small" 
+                         Color="@(tool.IsWriteEnabled ? Color.Warning : Color.Info)"
+                         Icon="@(tool.IsWriteEnabled ? Icons.Material.Filled.Edit : Icons.Material.Filled.Visibility)">
+                    @(tool.IsWriteEnabled ? "Read/Write" : "Read-Only")
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Created">
+                <MudText Typo="Typo.caption">
+                    @tool.CreatedAtUtc.ToLocalTime().ToString("MMM dd, yyyy HH:mm")
+                </MudText>
+            </MudTd>
+            <MudTd DataLabel="Actions">
+                <MudButtonGroup Size="Size.Small" Variant="Variant.Text">
+                    <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
+                                   Color="Color.Primary"
+                                   OnClick="@(() => OpenTestDialog(tool))"
+                                   Title="Test Tool" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                   Color="Color.Info"
+                                   OnClick="@(() => OpenEditDialog(tool))"
+                                   Title="Edit Tool" />
+                    <MudIconButton Icon="@(tool.IsEnabled ? Icons.Material.Filled.ToggleOn : Icons.Material.Filled.ToggleOff)"
+                                   Color="@(tool.IsEnabled ? Color.Success : Color.Default)"
+                                   OnClick="@(() => ToggleEnabled(tool))"
+                                   Title="@(tool.IsEnabled ? "Disable Tool" : "Enable Tool")" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                   Color="Color.Error"
+                                   OnClick="@(() => DeleteTool(tool))"
+                                   Title="Delete Tool" />
+                </MudButtonGroup>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText Align="Align.Center" Class="pa-4">
+                <MudIcon Icon="@Icons.Material.Filled.SearchOff" Class="mr-2" />
+                No custom tools found. Create one to get started!
+            </MudText>
+        </NoRecordsContent>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private List<CustomTool> _tools = [];
+    private bool _loading = true;
+    private string _searchQuery = string.Empty;
+    
+    // Default tenant ID (in production, get from auth context)
+    private static readonly Guid CurrentTenantId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+    
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadToolsAsync();
+    }
+    
+    private async Task LoadToolsAsync()
+    {
+        _loading = true;
+        try
+        {
+            _tools = (await ToolService.GetAllToolsAsync(CurrentTenantId)).ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load tools: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+    
+    private bool FilterTools(CustomTool tool)
+    {
+        if (string.IsNullOrWhiteSpace(_searchQuery))
+            return true;
+            
+        return tool.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+               tool.Description.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase);
+    }
+    
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters<ToolEditorDialog>
+        {
+            { x => x.TenantId, CurrentTenantId },
+            { x => x.IsEditMode, false }
+        };
+        
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Large,
+            FullWidth = true,
+            CloseOnEscapeKey = true
+        };
+        
+        var dialog = await DialogService.ShowAsync<ToolEditorDialog>("Create Custom Tool", parameters, options);
+        var result = await dialog.Result;
+        
+        if (result is { Canceled: false })
+        {
+            await LoadToolsAsync();
+            Snackbar.Add("Tool created successfully!", Severity.Success);
+        }
+    }
+    
+    private async Task OpenEditDialog(CustomTool tool)
+    {
+        var parameters = new DialogParameters<ToolEditorDialog>
+        {
+            { x => x.TenantId, CurrentTenantId },
+            { x => x.IsEditMode, true },
+            { x => x.ToolId, tool.Id },
+            { x => x.InitialName, tool.Name },
+            { x => x.InitialDescription, tool.Description },
+            { x => x.InitialJsonSchema, tool.JsonSchema },
+            { x => x.InitialCSharpCode, tool.CSharpCode },
+            { x => x.InitialIsWriteEnabled, tool.IsWriteEnabled }
+        };
+        
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Large,
+            FullWidth = true,
+            CloseOnEscapeKey = true
+        };
+        
+        var dialog = await DialogService.ShowAsync<ToolEditorDialog>("Edit Custom Tool", parameters, options);
+        var result = await dialog.Result;
+        
+        if (result is { Canceled: false })
+        {
+            await LoadToolsAsync();
+            Snackbar.Add("Tool updated successfully!", Severity.Success);
+        }
+    }
+    
+    private async Task OpenTestDialog(CustomTool tool)
+    {
+        var parameters = new DialogParameters<CustomToolTesterDialog>
+        {
+            { x => x.Tool, tool }
+        };
+        
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true,
+            CloseOnEscapeKey = true
+        };
+        
+        await DialogService.ShowAsync<CustomToolTesterDialog>("Test Tool: " + tool.Name, parameters, options);
+    }
+    
+    private async Task ToggleEnabled(CustomTool tool)
+    {
+        try
+        {
+            var updated = await ToolService.ToggleToolEnabledAsync(tool.Id);
+            if (updated is not null)
+            {
+                tool.IsEnabled = updated.IsEnabled;
+                Snackbar.Add($"Tool {(updated.IsEnabled ? "enabled" : "disabled")}", Severity.Success);
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to toggle tool: {ex.Message}", Severity.Error);
+        }
+    }
+    
+    private async Task DeleteTool(CustomTool tool)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Delete Tool",
+            $"Are you sure you want to delete '{tool.Name}'? This action cannot be undone.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+        
+        if (confirmed == true)
+        {
+            try
+            {
+                if (await ToolService.DeleteToolAsync(tool.Id))
+                {
+                    _tools.Remove(tool);
+                    Snackbar.Add("Tool deleted successfully", Severity.Success);
+                    StateHasChanged();
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to delete tool: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+}

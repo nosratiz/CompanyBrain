@@ -1,0 +1,137 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="_theme" IsDarkMode="true" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<div class="login-page">
+    @* Floating Orbs *@
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    
+    @* Animated Grid Background *@
+    <div class="grid-bg"></div>
+    
+    @Body
+</div>
+
+<style>
+    .login-page {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #0a0a0f;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    /* Animated Grid Background */
+    .grid-bg {
+        position: absolute;
+        inset: 0;
+        background-image: 
+            linear-gradient(rgba(102, 126, 234, 0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(102, 126, 234, 0.03) 1px, transparent 1px);
+        background-size: 60px 60px;
+        mask-image: radial-gradient(ellipse 60% 50% at 50% 50%, black 40%, transparent 100%);
+        animation: grid-fade 10s ease-in-out infinite;
+    }
+    
+    @@keyframes grid-fade {
+        0%, 100% { opacity: 0.5; }
+        50% { opacity: 1; }
+    }
+
+    /* Floating Orbs */
+    .orb {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(80px);
+        pointer-events: none;
+        animation: float 20s ease-in-out infinite;
+    }
+    
+    .orb-1 {
+        width: 600px;
+        height: 600px;
+        background: radial-gradient(circle, rgba(102, 126, 234, 0.2) 0%, transparent 70%);
+        top: -200px;
+        right: -150px;
+        animation-duration: 15s;
+    }
+    
+    .orb-2 {
+        width: 500px;
+        height: 500px;
+        background: radial-gradient(circle, rgba(118, 75, 162, 0.18) 0%, transparent 70%);
+        bottom: -150px;
+        left: -100px;
+        animation-delay: -7s;
+        animation-duration: 18s;
+    }
+    
+    .orb-3 {
+        width: 300px;
+        height: 300px;
+        background: radial-gradient(circle, rgba(240, 147, 251, 0.12) 0%, transparent 70%);
+        top: 40%;
+        left: 50%;
+        transform: translateX(-50%);
+        animation-delay: -3s;
+        animation-duration: 22s;
+    }
+
+    @@keyframes float {
+        0%, 100% { 
+            transform: translate(0, 0) scale(1); 
+            opacity: 0.8;
+        }
+        25% { 
+            transform: translate(30px, -40px) scale(1.05); 
+            opacity: 1;
+        }
+        50% { 
+            transform: translate(-20px, 20px) scale(0.95); 
+            opacity: 0.7;
+        }
+        75% { 
+            transform: translate(15px, 30px) scale(1.02); 
+            opacity: 0.9;
+        }
+    }
+    
+    /* Ensure content is above background */
+    .login-page > :not(.orb):not(.grid-bg) {
+        position: relative;
+        z-index: 1;
+    }
+</style>
+
+@code {
+    private readonly MudTheme _theme = new()
+    {
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#667eea",
+            Secondary = "#764ba2",
+            Tertiary = "#f093fb",
+            Surface = "#12121a",
+            Background = "#0a0a0f",
+            AppbarBackground = "#0a0a0fD9",
+            DrawerBackground = "#12121a",
+            TextPrimary = "#EBEBEBEA",
+            TextSecondary = "#FFFFFF8C"
+        },
+        LayoutProperties = new LayoutProperties
+        {
+            DefaultBorderRadius = "16px"
+        },
+        Typography = new Typography
+        {
+            Default = new DefaultTypography { FontFamily = ["Inter", "system-ui", "sans-serif"] }
+        }
+    };
+}

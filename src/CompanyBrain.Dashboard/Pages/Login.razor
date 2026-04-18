@@ -1,0 +1,78 @@
+@page "/login"
+@layout Shared.LoginLayout
+
+<PageTitle>Login - Company Brain</PageTitle>
+
+<div style="width: 100%; max-width: 440px; padding: 16px; position: relative; z-index: 1;">
+
+    @* Logo / Brand *@
+    <div class="d-flex flex-column align-center mb-6">
+        <MudAvatar Size="Size.Large" Color="Color.Primary" Class="mb-3"
+                   Style="width: 64px; height: 64px; font-size: 28px;">
+            <MudIcon Icon="@Icons.Material.Filled.Psychology" Style="font-size: 36px;" />
+        </MudAvatar>
+        <MudText Typo="Typo.h4" Style="color: #f1f5f9; font-weight: 700; letter-spacing: -0.5px;">
+            Company Brain
+        </MudText>
+        <MudText Typo="Typo.body2" Style="color: #64748b;" Class="mt-1">
+            Internal Knowledge Platform
+        </MudText>
+    </div>
+
+    @* Card *@
+    <MudPaper Elevation="0" Class="pa-8 rounded-lg"
+              Style="background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(148, 163, 184, 0.1);">
+
+        @if (string.IsNullOrEmpty(_selectedRole))
+        {
+            <MudText Typo="Typo.h6" Align="Align.Center" Style="color: #e2e8f0; font-weight: 600;" Class="mb-2">
+                Welcome back
+            </MudText>
+            <MudText Typo="Typo.body2" Align="Align.Center" Style="color: #64748b;" Class="mb-6">
+                Choose how you'd like to sign in
+            </MudText>
+
+            <MudStack Spacing="3">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           FullWidth="true"
+                           Size="Size.Large"
+                           Class="py-3 rounded-lg"
+                           Style="text-transform: none; font-weight: 600; font-size: 0.95rem; letter-spacing: 0;"
+                           StartIcon="@Icons.Material.Filled.AdminPanelSettings"
+                           OnClick='() => _selectedRole = "owner"'>
+                    Sign in as Owner
+                </MudButton>
+
+                <MudButton Variant="Variant.Outlined"
+                           FullWidth="true"
+                           Size="Size.Large"
+                           Class="py-3 rounded-lg"
+                           Style="text-transform: none; font-weight: 600; font-size: 0.95rem; letter-spacing: 0; border-color: rgba(148, 163, 184, 0.3); color: #cbd5e1;"
+                           StartIcon="@Icons.Material.Filled.Badge"
+                           OnClick='() => _selectedRole = "employee"'>
+                    Sign in as Employee
+                </MudButton>
+            </MudStack>
+        }
+        else if (_selectedRole == "owner")
+        {
+            <OwnerLoginForm OnBack="ResetRole" />
+        }
+        else
+        {
+            <EmployeeLoginForm OnBack="ResetRole" />
+        }
+    </MudPaper>
+
+    @* Footer *@
+    <MudText Typo="Typo.caption" Align="Align.Center" Style="color: #475569;" Class="mt-6">
+        &copy; @DateTime.Now.Year Company Brain &mdash; Secure Internal Access
+    </MudText>
+</div>
+
+@code {
+    private string _selectedRole = string.Empty;
+
+    private void ResetRole() => _selectedRole = string.Empty;
+}

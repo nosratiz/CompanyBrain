@@ -1,0 +1,39 @@
+@* Reusable dashboard stat card component *@
+
+<MudCard>
+    <MudCardHeader>
+        <CardHeaderAvatar>
+            <MudAvatar Color="@AvatarColor">
+                <MudIcon Icon="@Icon" />
+            </MudAvatar>
+        </CardHeaderAvatar>
+        <CardHeaderContent>
+            <MudText Typo="Typo.h6">@Title</MudText>
+            @if (UseBodyText)
+            {
+                <MudText Typo="Typo.body1">@Value</MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.h4">@Value</MudText>
+            }
+        </CardHeaderContent>
+    </MudCardHeader>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public string Value { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public string Icon { get; set; } = Icons.Material.Filled.Info;
+
+    [Parameter]
+    public Color AvatarColor { get; set; } = Color.Primary;
+
+    [Parameter]
+    public bool UseBodyText { get; set; }
+}

@@ -1,267 +1,45 @@
 @page "/import"
-@inject KnowledgeApiClient Api
-@inject ISnackbar Snackbar
-@inject NavigationManager Navigation
 
 <PageTitle>Import - Company Brain</PageTitle>
 
 <MudText Typo="Typo.h4" Class="mb-4">Import Documents</MudText>
 
+<TenantSelectionPanel @ref="_tenantPanel" @bind-SelectedTenantIds="_selectedTenantIds" />
+
 <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6">
     <MudTabPanel Text="Wiki URL" Icon="@Icons.Material.Filled.Link">
-        <MudText Typo="Typo.h6" Class="mb-4">Import from Wiki URL</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
-            Import a single wiki page by providing its URL. The page will be converted to Markdown and stored in the knowledge base.
-        </MudText>
-        
-        <MudTextField @bind-Value="_wikiUrl"
-                      Label="Wiki URL"
-                      Placeholder="https://wiki.example.com/page"
-                      Variant="Variant.Outlined"
-                      FullWidth="true"
-                      Class="mb-4" />
-        
-        <MudTextField @bind-Value="_wikiName"
-                      Label="Document Name (optional)"
-                      Placeholder="My Wiki Page"
-                      Variant="Variant.Outlined"
-                      FullWidth="true"
-                      HelperText="Leave empty to auto-generate from page title"
-                      Class="mb-4" />
-        
-        <MudButton Variant="Variant.Filled"
-                   Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.CloudDownload"
-                   OnClick="ImportWikiUrl"
-                   Disabled="@(string.IsNullOrWhiteSpace(_wikiUrl) || _importing)">
-            @if (_importing && _activeTab == "wiki")
-            {
-                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-                <span>Importing...</span>
-            }
-            else
-            {
-                <span>Import Wiki Page</span>
-            }
-        </MudButton>
+        <WikiUrlImportTab @bind-Importing="_importing"
+                          GetTenantAssignments="GetTenantAssignments"
+                          OnImportSuccess="OnImportSuccess"
+                          OnImportError="OnImportError" />
     </MudTabPanel>
-    
+
     <MudTabPanel Text="Batch Import" Icon="@Icons.Material.Filled.PlaylistAdd">
-        <MudText Typo="Typo.h6" Class="mb-4">Batch Import Wiki URLs</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
-            Import multiple wiki pages at once. Enter one URL per line.
-        </MudText>
-        
-        <MudTextField @bind-Value="_batchUrls"
-                      Label="Wiki URLs (one per line)"
-                      Placeholder="https://wiki.example.com/page1&#10;https://wiki.example.com/page2&#10;https://wiki.example.com/page3"
-                      Variant="Variant.Outlined"
-                      Lines="8"
-                      FullWidth="true"
-                      Class="mb-4" />
-        
-        <MudButton Variant="Variant.Filled"
-                   Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.CloudDownload"
-                   OnClick="ImportBatchWiki"
-                   Disabled="@(string.IsNullOrWhiteSpace(_batchUrls) || _importing)">
-            @if (_importing && _activeTab == "batch")
-            {
-                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-                <span>Importing...</span>
-            }
-            else
-            {
-                <span>Import All</span>
-            }
-        </MudButton>
-        
-        @if (_batchResults is not null)
-        {
-            <MudDivider Class="my-4" />
-            <MudText Typo="Typo.subtitle1" Class="mb-2">Import Results</MudText>
-            <MudSimpleTable Dense="true" Bordered="true">
-                <thead>
-                    <tr>
-                        <th>URL</th>
-                        <th>Status</th>
-                        <th>File</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var result in _batchResults.Results)
-                    {
-                        <tr>
-                            <td><code style="font-size: 0.85em;">@TruncateUrl(result.Url, 50)</code></td>
-                            <td>
-                                @if (result.Success)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Success">Success</MudChip>
-                                }
-                                else
-                                {
-                                    <MudTooltip Text="@result.Error">
-                                        <MudChip T="string" Size="Size.Small" Color="Color.Error">Failed</MudChip>
-                                    </MudTooltip>
-                                }
-                            </td>
-                            <td>
-                                @if (!string.IsNullOrEmpty(result.FileName))
-                                {
-                                    <MudLink Href="@($"/documents/{Uri.EscapeDataString(result.FileName)}")">@result.FileName</MudLink>
-                                }
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </MudSimpleTable>
-            <MudText Typo="Typo.caption" Class="mt-2">
-                Total: @_batchResults.TotalDiscovered | 
-                Success: @_batchResults.SuccessfullyIngested | 
-                Failed: @_batchResults.Failed
-            </MudText>
-        }
+        <BatchImportTab @bind-Importing="_importing"
+                        GetTenantAssignments="GetTenantAssignments" />
     </MudTabPanel>
-    
+
     <MudTabPanel Text="File Path" Icon="@Icons.Material.Filled.FolderOpen">
-        <MudText Typo="Typo.h6" Class="mb-4">Import from File Path</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
-            Import documents from a local file path. Supports various document formats including Office documents, PDFs, and plain text files.
-        </MudText>
-        
-        <MudTextField @bind-Value="_filePath"
-                      Label="File Path"
-                      Placeholder="/path/to/document.docx or /path/to/folder"
-                      Variant="Variant.Outlined"
-                      FullWidth="true"
-                      Class="mb-4" />
-        
-        <MudTextField @bind-Value="_filePathName"
-                      Label="Document Name (optional)"
-                      Placeholder="My Document"
-                      Variant="Variant.Outlined"
-                      FullWidth="true"
-                      HelperText="Leave empty to use the file name"
-                      Class="mb-4" />
-        
-        <MudAlert Severity="Severity.Info" Class="mb-4">
-            <MudText Typo="Typo.body2">
-                Supported formats: .docx, .doc, .pdf, .txt, .md, .html, .rtf
-            </MudText>
-        </MudAlert>
-        
-        <MudButton Variant="Variant.Filled"
-                   Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.Upload"
-                   OnClick="ImportFilePath"
-                   Disabled="@(string.IsNullOrWhiteSpace(_filePath) || _importing)">
-            @if (_importing && _activeTab == "path")
-            {
-                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-                <span>Importing...</span>
-            }
-            else
-            {
-                <span>Import from Path</span>
-            }
-        </MudButton>
+        <FilePathImportTab @bind-Importing="_importing"
+                           GetTenantAssignments="GetTenantAssignments"
+                           OnImportSuccess="OnImportSuccess"
+                           OnImportError="OnImportError" />
     </MudTabPanel>
-    
+
     <MudTabPanel Text="Upload Files" Icon="@Icons.Material.Filled.UploadFile">
-        <MudText Typo="Typo.h6" Class="mb-4">Upload Documents</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
-            Upload one or more files directly. Each file is converted to Markdown and added to the knowledge base as an MCP resource.
-        </MudText>
+        <FileUploadTab @bind-Importing="_importing"
+                       GetTenantAssignments="GetTenantAssignments" />
+    </MudTabPanel>
 
-        <MudFileUpload T="IReadOnlyList<IBrowserFile>"
-                       Accept=".md,.txt,.html,.htm,.docx,.doc,.pdf,.rtf"
-                       MaximumFileCount="50"
-                       FilesChanged="OnFilesSelected">
-            <ActivatorContent>
-                <MudButton Variant="Variant.Outlined"
-                           Color="Color.Primary"
-                           StartIcon="@Icons.Material.Filled.AttachFile">
-                    Select Files
-                </MudButton>
-            </ActivatorContent>
-        </MudFileUpload>
+    <MudTabPanel Text="Database" Icon="@Icons.Material.Filled.Storage">
+        <DatabaseImportTab @bind-Importing="_importing"
+                           GetTenantAssignments="GetTenantAssignments"
+                           OnImportSuccess="OnImportSuccess"
+                           OnImportError="OnImportError" />
+    </MudTabPanel>
 
-        @if (_selectedFiles.Count > 0)
-        {
-            <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Selected Files (@_selectedFiles.Count)</MudText>
-            <MudSimpleTable Dense="true" Bordered="true" Class="mb-4">
-                <thead>
-                    <tr>
-                        <th>File</th>
-                        <th>Size</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var file in _uploadItems)
-                    {
-                        <tr>
-                            <td>@file.FileName</td>
-                            <td>@FormatBytes(file.Size)</td>
-                            <td>
-                                @if (file.Status == UploadStatus.Pending)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Default">Pending</MudChip>
-                                }
-                                else if (file.Status == UploadStatus.Uploading)
-                                {
-                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
-                                }
-                                else if (file.Status == UploadStatus.Success)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Success">
-                                        Success@(file.ReplacedExisting ? " (replaced)" : "")
-                                    </MudChip>
-                                }
-                                else
-                                {
-                                    <MudTooltip Text="@file.Error">
-                                        <MudChip T="string" Size="Size.Small" Color="Color.Error">Failed</MudChip>
-                                    </MudTooltip>
-                                }
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </MudSimpleTable>
-
-            @if (_uploadItems.Any(i => i.Status == UploadStatus.Pending))
-            {
-                <MudButton Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           StartIcon="@Icons.Material.Filled.CloudUpload"
-                           OnClick="UploadAllFiles"
-                           Disabled="_importing">
-                    @if (_importing && _activeTab == "upload")
-                    {
-                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-                        <span>Uploading @_uploadProgress of @_uploadItems.Count...</span>
-                    }
-                    else
-                    {
-                        <span>Upload All (@_selectedFiles.Count files)</span>
-                    }
-                </MudButton>
-            }
-
-            @if (_uploadComplete)
-            {
-                var successCount = _uploadItems.Count(i => i.Status == UploadStatus.Success);
-                var failCount = _uploadItems.Count(i => i.Status == UploadStatus.Failed);
-                <MudAlert Severity="@(failCount == 0 ? Severity.Success : Severity.Warning)" Class="mt-4">
-                    Uploaded @successCount of @_uploadItems.Count files successfully.
-                    @if (failCount > 0)
-                    {
-                        <span> @failCount failed.</span>
-                    }
-                </MudAlert>
-            }
-        }
+    <MudTabPanel Text="Git Repository" Icon="@Icons.Material.Filled.Code">
+        <GitRepoImportTab @bind-Importing="_importing" />
     </MudTabPanel>
 </MudTabs>
 
@@ -274,8 +52,8 @@
             {
                 <span> (replaced existing)</span>
             }
-            <MudButton Variant="Variant.Text" 
-                       Size="Size.Small" 
+            <MudButton Variant="Variant.Text"
+                       Size="Size.Small"
                        Class="ml-2"
                        Href="@($"/documents/{Uri.EscapeDataString(_lastResult.FileName)}")">
                 View Document
@@ -293,209 +71,26 @@
 }
 
 @code {
-    private string _wikiUrl = "";
-    private string _wikiName = "";
-    private string _batchUrls = "";
-    private string _filePath = "";
-    private string _filePathName = "";
-    private bool _importing = false;
-    private string _activeTab = "";
-    
+    private TenantSelectionPanel? _tenantPanel;
+    private HashSet<Guid> _selectedTenantIds = [];
+    private bool _importing;
     private IngestResultResponse? _lastResult;
     private string? _lastError;
-    private IngestWikiBatchResponse? _batchResults;
 
-    private async Task ImportWikiUrl()
+    private List<TenantAssignment> GetTenantAssignments()
     {
-        if (string.IsNullOrWhiteSpace(_wikiUrl)) return;
+        return _tenantPanel?.GetTenantAssignments() ?? new List<TenantAssignment>();
+    }
 
-        _importing = true;
-        _activeTab = "wiki";
-        _lastResult = null;
+    private void OnImportSuccess(IngestResultResponse? result)
+    {
+        _lastResult = result;
         _lastError = null;
-        
-        try
-        {
-            var name = string.IsNullOrWhiteSpace(_wikiName) ? null : _wikiName;
-            _lastResult = await Api.IngestWikiAsync(_wikiUrl, name);
-            Snackbar.Add($"Successfully imported {_lastResult?.FileName}", Severity.Success);
-            _wikiUrl = "";
-            _wikiName = "";
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
-            _lastError = ex.Message;
-        }
-        finally
-        {
-            _importing = false;
-        }
     }
 
-    private async Task ImportBatchWiki()
+    private void OnImportError(string error)
     {
-        if (string.IsNullOrWhiteSpace(_batchUrls)) return;
-
-        _importing = true;
-        _activeTab = "batch";
-        _batchResults = null;
+        _lastError = error;
         _lastResult = null;
-        _lastError = null;
-        
-        try
-        {
-            var urls = _batchUrls
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Select(u => u.Trim())
-                .Where(u => !string.IsNullOrWhiteSpace(u))
-                .ToList();
-
-            if (!urls.Any())
-            {
-                Snackbar.Add("Please enter at least one URL", Severity.Warning);
-                return;
-            }
-
-            // Batch import uses first URL as the base for discovering links
-            _batchResults = await Api.IngestWikiBatchAsync(urls.First());
-            
-            if (_batchResults?.SuccessfullyIngested > 0)
-            {
-                Snackbar.Add($"Successfully imported {_batchResults.SuccessfullyIngested} of {_batchResults.TotalDiscovered} documents", 
-                    _batchResults.Failed > 0 ? Severity.Warning : Severity.Success);
-            }
-            else
-            {
-                Snackbar.Add("All imports failed", Severity.Error);
-            }
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Batch import failed: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _importing = false;
-        }
-    }
-
-    private async Task ImportFilePath()
-    {
-        if (string.IsNullOrWhiteSpace(_filePath)) return;
-
-        _importing = true;
-        _activeTab = "path";
-        _lastResult = null;
-        _lastError = null;
-        
-        try
-        {
-            var name = string.IsNullOrWhiteSpace(_filePathName) ? null : _filePathName;
-            _lastResult = await Api.IngestDocumentPathAsync(_filePath, name);
-            Snackbar.Add($"Successfully imported {_lastResult?.FileName}", Severity.Success);
-            _filePath = "";
-            _filePathName = "";
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
-            _lastError = ex.Message;
-        }
-        finally
-        {
-            _importing = false;
-        }
-    }
-
-    private static string TruncateUrl(string url, int maxLength)
-    {
-        if (url.Length <= maxLength) return url;
-        return url[..(maxLength - 3)] + "...";
-    }
-
-    // ── File upload ──────────────────────────────────────────────────
-
-    private IReadOnlyList<IBrowserFile> _selectedFiles = [];
-    private List<UploadItem> _uploadItems = [];
-    private int _uploadProgress;
-    private bool _uploadComplete;
-
-    private void OnFilesSelected(IReadOnlyList<IBrowserFile>? files)
-    {
-        _selectedFiles = files ?? [];
-        _uploadComplete = false;
-        _uploadItems = _selectedFiles.Select(f => new UploadItem
-        {
-            FileName = f.Name,
-            Size = f.Size,
-        }).ToList();
-    }
-
-    private async Task UploadAllFiles()
-    {
-        _importing = true;
-        _activeTab = "upload";
-        _uploadProgress = 0;
-        _uploadComplete = false;
-        _lastResult = null;
-        _lastError = null;
-
-        try
-        {
-            for (var i = 0; i < _selectedFiles.Count; i++)
-            {
-                var file = _selectedFiles[i];
-                var item = _uploadItems[i];
-
-                item.Status = UploadStatus.Uploading;
-                _uploadProgress = i + 1;
-                StateHasChanged();
-
-                try
-                {
-                    await using var stream = file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024);
-                    var result = await Api.UploadDocumentAsync(stream, file.Name);
-                    item.Status = UploadStatus.Success;
-                    item.ReplacedExisting = result?.ReplacedExisting ?? false;
-                }
-                catch (Exception ex)
-                {
-                    item.Status = UploadStatus.Failed;
-                    item.Error = ex.Message;
-                }
-            }
-
-            var successCount = _uploadItems.Count(i => i.Status == UploadStatus.Success);
-            if (successCount > 0)
-            {
-                Snackbar.Add($"Successfully uploaded {successCount} of {_uploadItems.Count} files", Severity.Success);
-            }
-        }
-        finally
-        {
-            _importing = false;
-            _uploadComplete = true;
-        }
-    }
-
-    private static string FormatBytes(long bytes)
-    {
-        if (bytes is >= 0 and <= 1023)
-            return $"{bytes} B";
-        if (bytes is >= 1024 and <= 1048575)
-            return $"{bytes / 1024.0:F1} KB";
-        return $"{bytes / (1024.0 * 1024.0):F1} MB";
-    }
-
-    private enum UploadStatus { Pending, Uploading, Success, Failed }
-
-    private sealed class UploadItem
-    {
-        public string FileName { get; set; } = "";
-        public long Size { get; set; }
-        public UploadStatus Status { get; set; } = UploadStatus.Pending;
-        public bool ReplacedExisting { get; set; }
-        public string? Error { get; set; }
     }
 }

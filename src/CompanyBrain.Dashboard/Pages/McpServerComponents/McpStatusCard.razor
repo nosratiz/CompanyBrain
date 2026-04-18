@@ -1,0 +1,40 @@
+@* MCP Server status card showing running state and server info *@
+
+<MudCard>
+    <MudCardHeader>
+        <CardHeaderAvatar>
+            <MudAvatar Color="@(Status.IsRunning ? Color.Success : Color.Error)">
+                <MudIcon Icon="@(Status.IsRunning ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
+            </MudAvatar>
+        </CardHeaderAvatar>
+        <CardHeaderContent>
+            <MudText Typo="Typo.h6">@(Status.IsRunning ? "MCP Server Running" : "MCP Server Offline")</MudText>
+            @if (Status.IsRunning)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    @Status.ServerName @Status.ServerVersion &middot; Protocol @Status.ProtocolVersion
+                </MudText>
+            }
+            else if (Status.Error is not null)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Error">@Status.Error</MudText>
+            }
+        </CardHeaderContent>
+        <CardHeaderActions>
+            <MudTooltip Text="Refresh">
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="OnRefresh" Disabled="Loading" />
+            </MudTooltip>
+        </CardHeaderActions>
+    </MudCardHeader>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired]
+    public McpServerStatus Status { get; set; } = new();
+
+    [Parameter]
+    public bool Loading { get; set; }
+
+    [Parameter]
+    public EventCallback OnRefresh { get; set; }
+}

@@ -1,0 +1,340 @@
+@inject CustomToolService ToolService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_isFormValid">
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_name"
+                                  Label="Tool Name"
+                                  Placeholder="my_custom_tool"
+                                  Required="true"
+                                  RequiredError="Name is required"
+                                  HelperText="Use lowercase letters, numbers, and underscores"
+                                  Validation="@(new Func<string, string?>(ValidateToolName))"
+                                  Immediate="true"
+                                  Disabled="IsEditMode" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSwitch @bind-Value="_isWriteEnabled"
+                               Label="Write Access"
+                               Color="Color.Warning" />
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        @(_isWriteEnabled ? "Tool can modify files" : "Tool is read-only")
+                    </MudText>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_description"
+                                  Label="Description"
+                                  Placeholder="Describe what this tool does for the AI..."
+                                  Required="true"
+                                  RequiredError="Description is required"
+                                  Lines="2"
+                                  HelperText="This description helps the AI understand when to use this tool" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">JSON Schema (Input Parameters)</MudText>
+                    <MudTextField @bind-Value="_jsonSchema"
+                                  Label="JSON Schema"
+                                  Placeholder='{"type": "object", "properties": {...}}'
+                                  Lines="8"
+                                  Required="true"
+                                  RequiredError="JSON Schema is required"
+                                  Validation="@(new Func<string, string?>(ValidateJsonSchema))"
+                                  Style="font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 13px;"
+                                  Class="code-editor" />
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Define input parameters using JSON Schema format. The AI uses this to understand what arguments to pass.
+                    </MudText>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">C# Script Code</MudText>
+                    <MudTextField @bind-Value="_csharpCode"
+                                  Label="C# Script"
+                                  Placeholder="// Access arguments via Args dictionary&#10;var name = GetRequiredString(&quot;name&quot;);&#10;return $&quot;Hello, {name}!&quot;;"
+                                  Lines="12"
+                                  Required="true"
+                                  RequiredError="C# code is required"
+                                  Style="font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 13px;"
+                                  Class="code-editor" />
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Write C# script code. Available globals: <code>Args</code>, <code>RootPath</code>, <code>IsWriteEnabled</code>, 
+                        <code>TenantId</code>, <code>CancellationToken</code>. Helper methods: <code>GetArg&lt;T&gt;(name)</code>, 
+                        <code>GetRequiredString(name)</code>, <code>ResolvePath(path)</code>.
+                    </MudText>
+                </MudItem>
+            </MudGrid>
+            
+            @if (!string.IsNullOrEmpty(_validationError))
+            {
+                <MudAlert Severity="Severity.Error" Class="mt-4">@_validationError</MudAlert>
+            }
+            
+            @if (_testResult is not null)
+            {
+                <MudDivider Class="my-4" />
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Test Result</MudText>
+                <MudAlert Severity="@(_testResult.Success ? Severity.Success : Severity.Error)" Class="mb-2">
+                    @(_testResult.Success ? "Test passed!" : "Test failed")
+                    <MudText Typo="Typo.caption">Execution time: @_testResult.ExecutionTime.TotalMilliseconds.ToString("F2")ms</MudText>
+                </MudAlert>
+                <MudPaper Class="pa-3" Style="background-color: var(--mud-palette-background-gray); font-family: monospace; font-size: 13px; white-space: pre-wrap; max-height: 200px; overflow-y: auto;">
+                    @_testResult.GetOutputString()
+                </MudPaper>
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())">Cancel</MudButton>
+        <MudButton Color="Color.Secondary"
+                   Variant="Variant.Outlined"
+                   StartIcon="@Icons.Material.Filled.PlayArrow"
+                   OnClick="TestScript"
+                   Disabled="_testing">
+            @if (_testing)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Test Script
+        </MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="SaveTool"
+                   Disabled="!_isFormValid || _saving">
+            @if (_saving)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            @(IsEditMode ? "Update" : "Create")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+    
+    [Parameter] public Guid TenantId { get; set; }
+    [Parameter] public bool IsEditMode { get; set; }
+    [Parameter] public int? ToolId { get; set; }
+    [Parameter] public string InitialName { get; set; } = string.Empty;
+    [Parameter] public string InitialDescription { get; set; } = string.Empty;
+    [Parameter] public string InitialJsonSchema { get; set; } = DefaultJsonSchema;
+    [Parameter] public string InitialCSharpCode { get; set; } = DefaultCSharpCode;
+    [Parameter] public bool InitialIsWriteEnabled { get; set; }
+    
+    private MudForm? _form;
+    private bool _isFormValid;
+    private bool _saving;
+    private bool _testing;
+    private string? _validationError;
+    private ScriptExecutionResult? _testResult;
+    
+    private string _name = string.Empty;
+    private string _description = string.Empty;
+    private string _jsonSchema = string.Empty;
+    private string _csharpCode = string.Empty;
+    private bool _isWriteEnabled;
+    
+    private const string DefaultJsonSchema = """
+        {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string",
+                    "description": "The input to process"
+                }
+            },
+            "required": ["input"]
+        }
+        """;
+    
+    private const string DefaultCSharpCode = """
+        // Access arguments passed by the AI
+        var input = GetRequiredString("input");
+        
+        // Perform your logic here
+        var result = $"Processed: {input}";
+        
+        // Return the result (will be sent back to the AI)
+        return result;
+        """;
+    
+    protected override void OnInitialized()
+    {
+        _name = InitialName;
+        _description = InitialDescription;
+        _jsonSchema = InitialJsonSchema;
+        _csharpCode = InitialCSharpCode;
+        _isWriteEnabled = InitialIsWriteEnabled;
+    }
+    
+    private string? ValidateToolName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return "Name is required";
+            
+        if (!System.Text.RegularExpressions.Regex.IsMatch(name, @"^[a-z][a-z0-9_]*$"))
+            return "Name must start with a letter and contain only lowercase letters, numbers, and underscores";
+            
+        if (name.Length < 3)
+            return "Name must be at least 3 characters";
+            
+        if (name.Length > 50)
+            return "Name must be at most 50 characters";
+            
+        return null;
+    }
+    
+    private string? ValidateJsonSchema(string schema)
+    {
+        if (string.IsNullOrWhiteSpace(schema))
+            return "JSON Schema is required";
+            
+        if (!ToolService.ValidateJsonSchema(schema, out var error))
+            return error;
+            
+        return null;
+    }
+    
+    private async Task TestScript()
+    {
+        _testing = true;
+        _testResult = null;
+        _validationError = null;
+        StateHasChanged();
+        
+        try
+        {
+            // Parse the JSON schema to extract test arguments
+            var testArgs = ExtractTestArgsFromSchema(_jsonSchema);
+            
+            // Get a test root path
+            var rootPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "CompanyBrain",
+                "TenantData",
+                TenantId.ToString("N"));
+            
+            Directory.CreateDirectory(rootPath);
+            
+            _testResult = await ToolService.TestToolAsync(
+                _csharpCode,
+                _isWriteEnabled,
+                testArgs,
+                TenantId,
+                rootPath);
+            
+            if (_testResult.Success)
+            {
+                Snackbar.Add("Test passed!", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Test failed - see details below", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            _validationError = $"Test error: {ex.Message}";
+            Snackbar.Add("Test failed with exception", Severity.Error);
+        }
+        finally
+        {
+            _testing = false;
+            StateHasChanged();
+        }
+    }
+    
+    private Dictionary<string, object?> ExtractTestArgsFromSchema(string jsonSchema)
+    {
+        var args = new Dictionary<string, object?>();
+        
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(jsonSchema);
+            var root = doc.RootElement;
+            
+            if (root.TryGetProperty("properties", out var props))
+            {
+                foreach (var prop in props.EnumerateObject())
+                {
+                    var propType = prop.Value.TryGetProperty("type", out var typeEl) 
+                        ? typeEl.GetString() 
+                        : "string";
+                    
+                    // Generate sample values based on type
+                    args[prop.Name] = propType switch
+                    {
+                        "string" => "test_value",
+                        "number" or "integer" => 42,
+                        "boolean" => true,
+                        "array" => new[] { "item1", "item2" },
+                        _ => "test"
+                    };
+                }
+            }
+        }
+        catch
+        {
+            // If schema parsing fails, use empty args
+        }
+        
+        return args;
+    }
+    
+    private async Task SaveTool()
+    {
+        if (_form is null || !_isFormValid)
+            return;
+        
+        await _form.Validate();
+        if (!_isFormValid)
+            return;
+        
+        _saving = true;
+        _validationError = null;
+        StateHasChanged();
+        
+        try
+        {
+            if (IsEditMode && ToolId.HasValue)
+            {
+                await ToolService.UpdateToolAsync(ToolId.Value, tool =>
+                {
+                    tool.Description = _description;
+                    tool.JsonSchema = _jsonSchema;
+                    tool.CSharpCode = _csharpCode;
+                    tool.IsWriteEnabled = _isWriteEnabled;
+                });
+            }
+            else
+            {
+                var tool = new CustomTool
+                {
+                    TenantId = TenantId,
+                    Name = _name,
+                    Description = _description,
+                    JsonSchema = _jsonSchema,
+                    CSharpCode = _csharpCode,
+                    IsWriteEnabled = _isWriteEnabled
+                };
+                
+                await ToolService.CreateToolAsync(tool);
+            }
+            
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            _validationError = $"Save failed: {ex.Message}";
+            Snackbar.Add("Failed to save tool", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+}
