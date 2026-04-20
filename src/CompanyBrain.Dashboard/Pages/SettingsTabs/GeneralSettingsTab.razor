@@ -1,0 +1,127 @@
+<MudGrid>
+    <MudItem xs="12" md="8">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-primary">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Storage & Limits</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudNumericField T="int"
+                                 Label="Maximum Storage (GB)"
+                                 @bind-Value="Settings.MaxStorageGb"
+                                 Min="1"
+                                 Max="1000"
+                                 Variant="Variant.Outlined"
+                                 HelperText="Maximum storage allowed for the knowledge base"
+                                 Class="mb-4" />
+
+                <MudTextField Label="Excluded Patterns"
+                              @bind-Value="Settings.ExcludedPatterns"
+                              Variant="Variant.Outlined"
+                              Lines="3"
+                              HelperText="Semicolon-separated glob patterns to exclude (e.g., *.secret;.env;**/credentials/**)"
+                              Class="mb-4" />
+
+                <MudTextField Label="Tenant ID"
+                              Value="@(Settings.TenantId?.ToString() ?? "Not set")"
+                              ReadOnly="true"
+                              Variant="Variant.Outlined"
+                              HelperText="Your unique tenant identifier for multi-tenant isolation" />
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-secondary">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Claude Config Generator</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText Typo="Typo.body2" Class="mb-4">
+                    Generate a configuration snippet for claude_desktop_config.json.
+                </MudText>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Code"
+                           OnClick="GenerateClaudeConfig"
+                           FullWidth="true">
+                    Generate Config
+                </MudButton>
+
+                @if (!string.IsNullOrEmpty(_generatedConfig))
+                {
+                    <MudTextField @bind-Value="_generatedConfig"
+                                  Variant="Variant.Outlined"
+                                  Lines="10"
+                                  ReadOnly="true"
+                                  Class="mt-4"
+                                  Style="font-family: monospace; font-size: 0.85rem;" />
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Secondary"
+                               StartIcon="@Icons.Material.Filled.ContentCopy"
+                               OnClick="CopyConfigToClipboard"
+                               Class="mt-2">
+                        Copy to Clipboard
+                    </MudButton>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   OnClick="OnSave"
+                   StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="Saving">
+            @if (Saving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            Save Settings
+        </MudButton>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter, EditorRequired] public AppSettings Settings { get; set; } = null!;
+    [Parameter] public bool Saving { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+
+    [Inject] private ISnackbar Snackbar { get; set; } = null!;
+
+    private string? _generatedConfig;
+
+    private void GenerateClaudeConfig()
+    {
+        var tenantId = Settings.TenantId?.ToString() ?? "your-tenant-id";
+        var exePath = GetExecutablePath();
+
+        _generatedConfig = $$"""
+{
+  "mcpServers": {
+    "company-brain": {
+      "command": "{{exePath}}",
+      "args": [],
+      "env": {
+        "TENANT_ID": "{{tenantId}}"
+      }
+    }
+  }
+}
+""";
+    }
+
+    private static string GetExecutablePath()
+    {
+        var baseDir = AppContext.BaseDirectory;
+        var exeName = OperatingSystem.IsWindows() ? "CompanyBrain.Dashboard.exe" : "CompanyBrain.Dashboard";
+        return Path.Combine(baseDir, exeName).Replace("\\", "\\\\");
+    }
+
+    private void CopyConfigToClipboard()
+    {
+        if (_generatedConfig is null) return;
+        Snackbar.Add("Config ready to copy. Use Ctrl+C on the text field.", Severity.Info);
+    }
+}

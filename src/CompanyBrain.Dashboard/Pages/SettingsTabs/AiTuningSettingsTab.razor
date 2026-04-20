@@ -1,0 +1,111 @@
+@using CompanyBrain.Dashboard.Data.Models
+
+<MudGrid>
+    <MudItem xs="12">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-tertiary">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">System Prompt Prefix</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                    This prefix will be prepended to every AI resource request. Use it for governance instructions.
+                </MudText>
+
+                <MudTextField @bind-Value="Settings.SystemPromptPrefix"
+                              Variant="Variant.Outlined"
+                              Lines="6"
+                              Placeholder="Example: You are operating in a secure corporate environment..."
+                              Class="mb-4" />
+
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    @(Settings.SystemPromptPrefix.Length) / 4000 characters
+                </MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-default">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Prompt Templates</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText Typo="Typo.body2" Class="mb-2">Quick templates:</MudText>
+                <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
+                    <MudButton OnClick="@(() => ApplyTemplate("security"))">Security Focus</MudButton>
+                    <MudButton OnClick="@(() => ApplyTemplate("governance"))">Governance</MudButton>
+                    <MudButton OnClick="@(() => ApplyTemplate("minimal"))">Minimal</MudButton>
+                </MudButtonGroup>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-default">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Preview</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText Typo="Typo.body2" Class="mb-2">How your prefix will appear:</MudText>
+                <MudPaper Elevation="0" Class="pa-3 mud-background-gray" Style="font-family: monospace; font-size: 0.85rem; white-space: pre-wrap;">
+                    @if (!string.IsNullOrWhiteSpace(Settings.SystemPromptPrefix))
+                    {
+                        @Settings.SystemPromptPrefix
+                        <br /><br />
+                        @("[Resource Content Here]")
+                    }
+                    else
+                    {
+                        <span style="color: gray;">[No prefix configured]</span>
+                        <br /><br />
+                        @("[Resource Content Here]")
+                    }
+                </MudPaper>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OnSave" StartIcon="@Icons.Material.Filled.Save" Disabled="Saving">
+            @if (Saving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            Save Settings
+        </MudButton>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter, EditorRequired] public AppSettings Settings { get; set; } = null!;
+    [Parameter] public bool Saving { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+
+    private void ApplyTemplate(string templateName)
+    {
+        Settings.SystemPromptPrefix = templateName switch
+        {
+            "security" => """
+                SECURITY CONTEXT: You are operating within a secure, sandboxed environment.
+                - Always validate file paths before access
+                - Never expose API keys, tokens, or credentials
+                - Report any suspicious patterns to the administrator
+                - Prefer read-only operations unless explicitly authorized
+                """,
+            "governance" => """
+                GOVERNANCE POLICY: Follow corporate data handling guidelines.
+                - Classify all data before processing
+                - Do not store PII without explicit consent
+                - Log all significant operations for audit
+                - Escalate policy violations immediately
+                """,
+            "minimal" => "",
+            _ => Settings.SystemPromptPrefix
+        };
+
+        StateHasChanged();
+    }
+}

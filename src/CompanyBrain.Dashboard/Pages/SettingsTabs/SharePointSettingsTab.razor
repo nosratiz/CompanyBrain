@@ -1,0 +1,213 @@
+@using CompanyBrain.Dashboard.Data.Models
+
+<MudGrid>
+    <MudItem xs="12">
+        <MudAlert Severity="Severity.Info" Class="mb-4">
+            Configure Azure AD credentials to enable SharePoint document synchronization.
+            Documents from SharePoint will be automatically synced to your local knowledge base.
+        </MudAlert>
+    </MudItem>
+
+    <MudItem xs="12" md="8">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-primary">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">
+                        <MudIcon Icon="@Icons.Material.Filled.Key" Class="mr-2" />
+                        Azure AD Configuration
+                    </MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudSwitch T="bool"
+                           @bind-Value="Settings.SharePointSyncEnabled"
+                           Color="Color.Primary"
+                           Label="Enable SharePoint Sync"
+                           Class="mb-4" />
+
+                <MudTextField Label="Client ID (Application ID)"
+                              @bind-Value="Settings.SharePointClientId"
+                              Variant="Variant.Outlined"
+                              Placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                              HelperText="The Application (client) ID from your Azure AD app registration"
+                              Disabled="@(!Settings.SharePointSyncEnabled)"
+                              Class="mb-4" />
+
+                <MudTextField Label="Tenant ID"
+                              @bind-Value="Settings.SharePointTenantId"
+                              Variant="Variant.Outlined"
+                              Placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                              HelperText="The Directory (tenant) ID from Azure AD"
+                              Disabled="@(!Settings.SharePointSyncEnabled)"
+                              Class="mb-4" />
+
+                <MudTextField Label="Client Secret"
+                              @bind-Value="Settings.SharePointClientSecret"
+                              Variant="Variant.Outlined"
+                              InputType="@(_showSharePointSecret ? InputType.Text : InputType.Password)"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@(_showSharePointSecret ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                              OnAdornmentClick="@(() => _showSharePointSecret = !_showSharePointSecret)"
+                              HelperText="The client secret from your Azure AD app registration"
+                              Disabled="@(!Settings.SharePointSyncEnabled)"
+                              Class="mb-4" />
+
+                @if (Settings.SharePointSyncEnabled && string.IsNullOrWhiteSpace(Settings.SharePointClientSecret))
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4">
+                        Client secret is required for SharePoint sync to work.
+                    </MudAlert>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-secondary">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Required Permissions</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    Your Azure AD app needs these Microsoft Graph API permissions:
+                </MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                        Sites.Read.All
+                    </MudListItem>
+                    <MudListItem Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                        Files.Read.All
+                    </MudListItem>
+                    <MudListItem Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                        offline_access
+                    </MudListItem>
+                </MudList>
+                <MudDivider Class="my-2" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    Grant admin consent after adding these permissions.
+                </MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-default">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">
+                        <MudIcon Icon="@Icons.Material.Filled.Sync" Class="mr-2" />
+                        Sync Settings
+                    </MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudNumericField T="int"
+                                         Label="Sync Interval (minutes)"
+                                         @bind-Value="Settings.SharePointSyncIntervalMinutes"
+                                         Min="5"
+                                         Max="1440"
+                                         Variant="Variant.Outlined"
+                                         HelperText="How often to check for new or updated documents (5-1440 min)"
+                                         Disabled="@(!Settings.SharePointSyncEnabled)" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField Label="Local Sync Folder"
+                                      @bind-Value="Settings.SharePointLocalBasePath"
+                                      Variant="Variant.Outlined"
+                                      Placeholder="@GetDefaultSharePointPath()"
+                                      HelperText="Local folder to store synced SharePoint documents"
+                                      Disabled="@(!Settings.SharePointSyncEnabled)" />
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   OnClick="OnSave"
+                   StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="Saving"
+                   Class="mr-2">
+            @if (Saving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            Save Settings
+        </MudButton>
+
+        @if (Settings.SharePointSyncEnabled && !string.IsNullOrWhiteSpace(Settings.SharePointClientId))
+        {
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Secondary"
+                       OnClick="TestSharePointConnection"
+                       StartIcon="@Icons.Material.Filled.NetworkCheck"
+                       Disabled="_testingConnection">
+                @if (_testingConnection) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                Test Connection
+            </MudButton>
+        }
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter, EditorRequired] public AppSettings Settings { get; set; } = null!;
+    [Parameter] public bool Saving { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+
+    [Inject] private ISnackbar Snackbar { get; set; } = null!;
+    [Inject] private ILogger<SharePointSettingsTab> Logger { get; set; } = null!;
+
+    private bool _showSharePointSecret;
+    private bool _testingConnection;
+
+    private static string GetDefaultSharePointPath()
+    {
+        return OperatingSystem.IsWindows()
+            ? @"C:\NexusData\SharePoint"
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "NexusData", "SharePoint");
+    }
+
+    private async Task TestSharePointConnection()
+    {
+        _testingConnection = true;
+        StateHasChanged();
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(Settings.SharePointClientId) ||
+                string.IsNullOrWhiteSpace(Settings.SharePointTenantId) ||
+                string.IsNullOrWhiteSpace(Settings.SharePointClientSecret))
+            {
+                Snackbar.Add("Please fill in all Azure AD credentials", Severity.Warning);
+                return;
+            }
+
+            if (!Guid.TryParse(Settings.SharePointClientId, out _))
+            {
+                Snackbar.Add("Client ID must be a valid GUID", Severity.Error);
+                return;
+            }
+
+            if (!Guid.TryParse(Settings.SharePointTenantId, out _))
+            {
+                Snackbar.Add("Tenant ID must be a valid GUID", Severity.Error);
+                return;
+            }
+
+            Snackbar.Add("Configuration format is valid. Save settings to apply changes.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "SharePoint connection test failed");
+            Snackbar.Add($"Connection test failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _testingConnection = false;
+            StateHasChanged();
+        }
+    }
+}
