@@ -27,27 +27,11 @@ public static class SharePointAuthApi
             HttpRequest request,
             CancellationToken ct) =>
         {
-            // --- Admin consent callback ---
-            // Microsoft redirects here with ?admin_consent=True&tenant=<id>
             if (request.Query.ContainsKey("admin_consent"))
-            {
-                var consented = string.Equals(request.Query["admin_consent"], "True", StringComparison.OrdinalIgnoreCase);
-                if (consented)
-                {
-                    // Admin consent was granted — redirect to SharePoint page with success message.
-                    // Now the user needs to reconnect via the normal OAuth flow so we get an access token.
-                    return Results.Redirect("/sharepoint?admin_consent=granted");
-                }
+                return HandleAdminConsentCallback(request);
 
-                // Admin declined
-                return Results.Redirect("/sharepoint?admin_consent=declined");
-            }
-
-            // --- Auth code callback ---
             if (!request.Query.ContainsKey("code"))
-            {
                 return Results.Redirect("/sharepoint?error=missing_code");
-            }
 
             var code = request.Query["code"].ToString();
             var redirectUri = $"{request.Scheme}://{request.Host}/api/sharepoint/callback";
@@ -75,5 +59,15 @@ public static class SharePointAuthApi
         });
 
         return app;
+    }
+
+    private static IResult HandleAdminConsentCallback(HttpRequest request)
+    {
+        var consented = string.Equals(
+            request.Query["admin_consent"], "True", StringComparison.OrdinalIgnoreCase);
+
+        return consented
+            ? Results.Redirect("/sharepoint?admin_consent=granted")
+            : Results.Redirect("/sharepoint?admin_consent=declined");
     }
 }

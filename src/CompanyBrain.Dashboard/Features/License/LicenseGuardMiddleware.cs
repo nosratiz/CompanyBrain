@@ -8,11 +8,9 @@ namespace CompanyBrain.Dashboard.Features.License;
 /// </summary>
 public sealed class LicenseGuardMiddleware(RequestDelegate next)
 {
-    // Tier 1+ required (Starter)
     private static readonly string[] Tier1Prefixes =
         ["/sharepoint", "/confluence", "/settings", "/api/sharepoint"];
 
-    // Tier 2+ required (Professional)
     private static readonly string[] Tier2Prefixes =
         ["/tools", "/auto-setup", "/api/setup"];
 
@@ -20,60 +18,83 @@ public sealed class LicenseGuardMiddleware(RequestDelegate next)
     {
         var path = context.Request.Path.Value;
 
-        // Only guard authenticated, non-static paths
-        if (path is not null)
+        if (path is null || !RequiresLicenseCheck(path, context, out var requiredTier, out var licenseState))
         {
-            var requiredTier = GetRequiredTier(path);
-
-            if (requiredTier > LicenseTier.Free)
-            {
-                var licenseState = context.RequestServices.GetService<LicenseStateService>();
-                var tokenStore = context.RequestServices.GetService<AuthTokenStore>();
-
-                if (tokenStore is { IsAuthenticated: true } && licenseState is not null)
-                {
-                    await licenseState.LoadAsync(context.RequestAborted);
-
-                    if (licenseState.Tier < requiredTier)
-                    {
-                        // For API calls, return 403
-                        if (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
-                        {
-                            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                            await context.Response.WriteAsJsonAsync(new
-                            {
-                                error = "License upgrade required",
-                                requiredTier = requiredTier.ToString(),
-                                currentTier = licenseState.Tier.ToString()
-                            }, context.RequestAborted);
-                            return;
-                        }
-
-                        // For page navigations, redirect to dashboard
-                        context.Response.Redirect("/");
-                        return;
-                    }
-                }
-            }
+            await next(context);
+            return;
         }
 
-        await next(context);
+        await licenseState!.LoadAsync(context.RequestAborted);
+
+        if (licenseState.Tier >= requiredTier)
+        {
+            await next(context);
+            return;
+        }
+
+        await WriteForbiddenResponseAsync(context, path, requiredTier, licenseState.Tier);
+    }
+
+    private static bool RequiresLicenseCheck(
+        string path,
+        HttpContext context,
+        out LicenseTier requiredTier,
+        out LicenseStateService? licenseState)
+    {
+        licenseState = null;
+        requiredTier = GetRequiredTier(path);
+
+        if (requiredTier <= LicenseTier.Free)
+            return false;
+
+        var tokenStore = context.RequestServices.GetService<AuthTokenStore>();
+        if (tokenStore is not { IsAuthenticated: true })
+            return false;
+
+        licenseState = context.RequestServices.GetService<LicenseStateService>();
+        return licenseState is not null;
+    }
+
+    private static async Task WriteForbiddenResponseAsync(
+        HttpContext context,
+        string path,
+        LicenseTier requiredTier,
+        LicenseTier currentTier)
+    {
+        if (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "License upgrade required",
+                requiredTier = requiredTier.ToString(),
+                currentTier = currentTier.ToString()
+            }, context.RequestAborted);
+            return;
+        }
+
+        context.Response.Redirect("/");
     }
 
     private static LicenseTier GetRequiredTier(string path)
     {
-        foreach (var prefix in Tier2Prefixes)
-        {
-            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                return LicenseTier.Professional;
-        }
+        if (MatchesAnyPrefix(path, Tier2Prefixes))
+            return LicenseTier.Professional;
 
-        foreach (var prefix in Tier1Prefixes)
-        {
-            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                return LicenseTier.Starter;
-        }
+        if (MatchesAnyPrefix(path, Tier1Prefixes))
+            return LicenseTier.Starter;
 
         return LicenseTier.Free;
+    }
+
+    private static bool MatchesAnyPrefix(string path, string[] prefixes)
+    {
+        foreach (var prefix in prefixes)
+        {
+            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 }

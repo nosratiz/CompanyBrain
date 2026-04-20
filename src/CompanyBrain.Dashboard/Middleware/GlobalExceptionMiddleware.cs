@@ -9,22 +9,13 @@ namespace CompanyBrain.Dashboard.Middleware;
 /// Global exception middleware for catching unhandled errors and logging them via Serilog.
 /// Returns a consistent ProblemDetails response.
 /// </summary>
-public sealed class GlobalExceptionMiddleware
+public sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExceptionMiddleware> logger)
 {
-    private readonly RequestDelegate _next;
-    private readonly ILogger<GlobalExceptionMiddleware> _logger;
-
-    public GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExceptionMiddleware> logger)
-    {
-        _next = next ?? throw new ArgumentNullException(nameof(next));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
-
     public async Task InvokeAsync(HttpContext context)
     {
         try
         {
-            await _next(context);
+            await next(context);
         }
         catch (Exception ex)
         {
@@ -34,7 +25,7 @@ public sealed class GlobalExceptionMiddleware
 
     private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
-        _logger.LogError(
+        logger.LogError(
             exception,
             "Unhandled exception occurred. TraceId: {TraceId}, Path: {Path}, Method: {Method}",
             context.TraceIdentifier,
@@ -52,25 +43,27 @@ public sealed class GlobalExceptionMiddleware
 
     private static ProblemDetails CreateProblemDetails(HttpContext context, Exception exception)
     {
-        var statusCode = exception switch
-        {
-            ArgumentNullException => (int)HttpStatusCode.BadRequest,
-            ArgumentException => (int)HttpStatusCode.BadRequest,
-            UnauthorizedAccessException => (int)HttpStatusCode.Forbidden,
-            KeyNotFoundException => (int)HttpStatusCode.NotFound,
-            OperationCanceledException => 499, // Client Closed Request
-            _ => (int)HttpStatusCode.InternalServerError
-        };
+        var statusCode = MapExceptionToStatusCode(exception);
 
         return new ProblemDetails
         {
             Status = statusCode,
             Title = GetTitle(statusCode),
-            Detail = GetDetailMessage(exception, statusCode),
+            Detail = GetDetailMessage(statusCode),
             Instance = context.Request.Path,
             Extensions = { ["traceId"] = context.TraceIdentifier }
         };
     }
+
+    private static int MapExceptionToStatusCode(Exception exception) => exception switch
+    {
+        ArgumentNullException => (int)HttpStatusCode.BadRequest,
+        ArgumentException => (int)HttpStatusCode.BadRequest,
+        UnauthorizedAccessException => (int)HttpStatusCode.Forbidden,
+        KeyNotFoundException => (int)HttpStatusCode.NotFound,
+        OperationCanceledException => 499,
+        _ => (int)HttpStatusCode.InternalServerError
+    };
 
     private static string GetTitle(int statusCode) => statusCode switch
     {
@@ -81,14 +74,12 @@ public sealed class GlobalExceptionMiddleware
         _ => "Internal Server Error"
     };
 
-    private static string GetDetailMessage(Exception exception, int statusCode)
+    private static string GetDetailMessage(int statusCode)
     {
-        // Only expose exception details in non-production for 500 errors
         if (statusCode >= 500)
-        {
             return "An unexpected error occurred. Please try again later.";
-        }
-        return exception.Message;
+
+        return "The request could not be processed.";
     }
 
     private static readonly JsonSerializerOptions JsonSerializerOptions = new()
@@ -96,16 +87,4 @@ public sealed class GlobalExceptionMiddleware
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false
     };
-}
-
-/// <summary>
-/// Extension methods for <see cref="GlobalExceptionMiddleware"/>.
-/// </summary>
-public static class GlobalExceptionMiddlewareExtensions
-{
-    public static IApplicationBuilder UseGlobalExceptionHandler(this IApplicationBuilder app)
-    {
-        ArgumentNullException.ThrowIfNull(app);
-        return app.UseMiddleware<GlobalExceptionMiddleware>();
-    }
 }

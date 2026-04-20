@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using CompanyBrain.Dashboard.Middleware;
+using CompanyBrain.Dashboard.Services.Dtos;
 
 namespace CompanyBrain.Dashboard.Services;
 
@@ -140,67 +141,3 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
         return response.IsSuccessStatusCode;
     }
 }
-
-// === DTO Records ===
-
-public sealed record KnowledgeResourceDescriptor(
-    string Name,
-    string? Title,
-    string Uri,
-    string? Description,
-    string? MimeType,
-    long? Size);
-
-public sealed record KnowledgeResourceContent(
-    string FileName,
-    string Uri,
-    string? MimeType,
-    string Content);
-
-public sealed record SearchResponse(
-    string Query,
-    int MaxResults,
-    string Result);
-
-public sealed record SearchMatch(
-    string FileName,
-    int Score,
-    string Snippet);
-
-public sealed record IngestResultResponse(
-    string FileName,
-    string ResourceUri,
-    bool ReplacedExisting);
-
-public sealed record IngestWikiBatchResponse(
-    int TotalDiscovered,
-    int SuccessfullyIngested,
-    int Failed,
-    IReadOnlyList<IngestWikiBatchItemResult> Results);
-
-public sealed record IngestWikiBatchItemResult(
-    string Url,
-    string Name,
-    string? FileName,
-    string? ResourceUri,
-    bool Success,
-    string? Error);
-
-// === Resource Template DTOs ===
-
-public sealed record CloneGitRepositoryResponse(
-    string TemplateName,
-    string RepositoryUrl,
-    string LocalPath,
-    string Branch,
-    int FileCount,
-    bool AlreadyExisted);
-
-public sealed record ResourceTemplateInfo(
-    string Name,
-    string RepositoryUrl,
-    string LocalPath,
-    string Branch,
-    DateTimeOffset ClonedAt,
-    int FileCount,
-    IReadOnlyList<string> Files);

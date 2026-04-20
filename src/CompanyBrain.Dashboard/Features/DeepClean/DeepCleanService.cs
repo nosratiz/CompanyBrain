@@ -28,65 +28,77 @@ internal sealed class DeepCleanService(
             "DeepClean service started — quota {QuotaMb} MB, cycle every {Hours}h",
             _options.QuotaMb, _options.CycleInterval.TotalHours);
 
-        // Initial delay to let the app finish booting
-        try
-        {
-            await Task.Delay(_options.InitialDelay, stoppingToken);
-        }
-        catch (OperationCanceledException)
-        {
+        if (!await WaitForInitialDelayAsync(stoppingToken))
             return;
-        }
 
         using var timer = new PeriodicTimer(_options.CycleInterval);
 
-        // Run the first cycle immediately, then wait for the timer
         var firstRun = true;
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (!firstRun)
-            {
-                try
-                {
-                    if (!await timer.WaitForNextTickAsync(stoppingToken))
-                        break;
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-            }
-            firstRun = false;
-
-            try
-            {
-                logger.LogInformation("DeepClean cycle starting");
-                var summary = new CycleSummary();
-
-                await Phase1_OrphanCleanupAsync(summary, stoppingToken);
-                await Phase2_SqliteMaintenanceAsync(stoppingToken);
-                await Phase3_TempFragmentScrubAsync(summary, stoppingToken);
-                await Phase4_StorageGuardrailAsync(summary, stoppingToken);
-
-                logger.LogInformation(
-                    "DeepClean cycle complete — orphans removed: {Orphans}, " +
-                    "fragments scrubbed: {Fragments}, LRU evicted: {Evicted} ({EvictedMb:F1} MB)",
-                    summary.OrphansRemoved,
-                    summary.FragmentsScrubbed,
-                    summary.LruEvicted,
-                    summary.LruEvictedBytes / (1024.0 * 1024.0));
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
+            if (!firstRun && !await WaitForNextTickAsync(timer, stoppingToken))
                 break;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "DeepClean cycle failed");
-            }
+
+            firstRun = false;
+            await RunCycleAsync(stoppingToken);
         }
 
         logger.LogInformation("DeepClean service stopped");
+    }
+
+    private static async Task<bool> WaitForInitialDelayAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30), ct);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task<bool> WaitForNextTickAsync(PeriodicTimer timer, CancellationToken ct)
+    {
+        try
+        {
+            return await timer.WaitForNextTickAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    private async Task RunCycleAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            logger.LogInformation("DeepClean cycle starting");
+            var summary = new CycleSummary();
+
+            await Phase1_OrphanCleanupAsync(summary, stoppingToken);
+            await Phase2_SqliteMaintenanceAsync(stoppingToken);
+            await Phase3_TempFragmentScrubAsync(summary, stoppingToken);
+            await Phase4_StorageGuardrailAsync(summary, stoppingToken);
+
+            logger.LogInformation(
+                "DeepClean cycle complete — orphans removed: {Orphans}, " +
+                "fragments scrubbed: {Fragments}, LRU evicted: {Evicted} ({EvictedMb:F1} MB)",
+                summary.OrphansRemoved,
+                summary.FragmentsScrubbed,
+                summary.LruEvicted,
+                summary.LruEvictedBytes / (1024.0 * 1024.0));
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Graceful shutdown — no log needed
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "DeepClean cycle failed");
+        }
     }
 
     // ──────────────────────────── Phase 1: Orphan Cleanup ────────────────────────────
@@ -201,7 +213,6 @@ internal sealed class DeepCleanService(
         {
             var quotaBytes = _options.QuotaMb * 1024L * 1024L;
             var targetBytes = (long)(quotaBytes * _options.PurgeTargetRatio);
-
             var currentBytes = CalculateTotalIndexSize();
 
             if (currentBytes <= quotaBytes)
@@ -217,53 +228,56 @@ internal sealed class DeepCleanService(
                 currentBytes / (1024.0 * 1024.0), _options.QuotaMb, targetBytes / (1024.0 * 1024.0));
 
             var bytesToFree = currentBytes - targetBytes;
-            var freedBytes = 0L;
-            var evictedIds = new List<int>();
-            const int batchSize = 100;
-
-            while (freedBytes < bytesToFree)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                var candidates = await repository.GetLruCandidatesAsync(batchSize, ct);
-                if (candidates.Count == 0)
-                    break;
-
-                foreach (var candidate in candidates)
-                {
-                    if (freedBytes >= bytesToFree)
-                        break;
-
-                    // Securely erase the local file if it exists
-                    if (File.Exists(candidate.LocalPath))
-                    {
-                        await SecureEraser.SecureDeleteAsync(
-                            candidate.LocalPath,
-                            _options.SecureDeletePasses,
-                            _options.FileRetryCount,
-                            _options.FileRetryDelay,
-                            logger,
-                            ct);
-                    }
-
-                    evictedIds.Add(candidate.Id);
-                    freedBytes += candidate.SizeBytes;
-                }
-
-                // Remove the DB records for evicted files
-                await repository.DeleteSharePointRecordsByIdAsync(evictedIds, ct);
-                summary.LruEvicted += evictedIds.Count;
-                summary.LruEvictedBytes += freedBytes;
-                evictedIds.Clear();
-            }
+            await EvictLruRecordsAsync(summary, bytesToFree, ct);
 
             logger.LogInformation(
                 "LRU eviction complete: freed {FreedMb:F1} MB, evicted {Count} records",
-                freedBytes / (1024.0 * 1024.0), summary.LruEvicted);
+                summary.LruEvictedBytes / (1024.0 * 1024.0), summary.LruEvicted);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Storage guardrail phase failed");
+        }
+    }
+
+    private async Task EvictLruRecordsAsync(CycleSummary summary, long bytesToFree, CancellationToken ct)
+    {
+        var freedBytes = 0L;
+        var evictedIds = new List<int>();
+        const int batchSize = 100;
+
+        while (freedBytes < bytesToFree)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var candidates = await repository.GetLruCandidatesAsync(batchSize, ct);
+            if (candidates.Count == 0)
+                break;
+
+            foreach (var candidate in candidates)
+            {
+                if (freedBytes >= bytesToFree)
+                    break;
+
+                if (File.Exists(candidate.LocalPath))
+                {
+                    await SecureEraser.SecureDeleteAsync(
+                        candidate.LocalPath,
+                        _options.SecureDeletePasses,
+                        _options.FileRetryCount,
+                        _options.FileRetryDelay,
+                        logger,
+                        ct);
+                }
+
+                evictedIds.Add(candidate.Id);
+                freedBytes += candidate.SizeBytes;
+            }
+
+            await repository.DeleteSharePointRecordsByIdAsync(evictedIds, ct);
+            summary.LruEvicted += evictedIds.Count;
+            summary.LruEvictedBytes += freedBytes;
+            evictedIds.Clear();
         }
     }
 
@@ -278,30 +292,31 @@ internal sealed class DeepCleanService(
     /// </summary>
     private long CalculateTotalIndexSize()
     {
+        var dbSize = CalculateDirectorySize(
+            Path.Combine(Directory.GetCurrentDirectory(), "Db"),
+            ["*.db", "*.db-wal", "*.db-shm"],
+            SearchOption.TopDirectoryOnly);
+
+        var knowledgeSize = CalculateDirectorySize(
+            GetKnowledgeDirectory(),
+            ["*"],
+            SearchOption.AllDirectories);
+
+        return dbSize + knowledgeSize;
+    }
+
+    private static long CalculateDirectorySize(string directory, string[] patterns, SearchOption searchOption)
+    {
+        if (!Directory.Exists(directory))
+            return 0;
+
         long total = 0;
-
-        // 1. SQLite database files in the db/ folder (including WAL and SHM journals)
-        var dbDir = Path.Combine(Directory.GetCurrentDirectory(), "Db");
-        if (Directory.Exists(dbDir))
+        foreach (var pattern in patterns)
         {
-            foreach (var pattern in new[] { "*.db", "*.db-wal", "*.db-shm" })
-            {
-                foreach (var file in Directory.EnumerateFiles(dbDir, pattern, SearchOption.TopDirectoryOnly))
-                {
-                    try { total += new FileInfo(file).Length; }
-                    catch (IOException) { /* file may be in use */ }
-                }
-            }
-        }
-
-        // 2. Knowledge folder markdown files
-        var knowledgeDir = GetKnowledgeDirectory();
-        if (Directory.Exists(knowledgeDir))
-        {
-            foreach (var file in Directory.EnumerateFiles(knowledgeDir, "*", SearchOption.AllDirectories))
+            foreach (var file in Directory.EnumerateFiles(directory, pattern, searchOption))
             {
                 try { total += new FileInfo(file).Length; }
-                catch (IOException) { }
+                catch (IOException) { /* file may be in use */ }
             }
         }
 

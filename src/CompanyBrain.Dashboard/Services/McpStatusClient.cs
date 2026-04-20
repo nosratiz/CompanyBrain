@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CompanyBrain.Dashboard.Middleware;
+using CompanyBrain.Dashboard.Services.Dtos;
 
 namespace CompanyBrain.Dashboard.Services;
 
@@ -15,38 +16,20 @@ public sealed class McpStatusClient(HttpClient httpClient)
 
         try
         {
-            // Step 1 – Initialize
-            var init = await SendRpcAsync<McpInitializeResult>(
-                "initialize",
-                new
-                {
-                    protocolVersion = "2025-03-26",
-                    capabilities = new { },
-                    clientInfo = new { name = "company-brain-dashboard", version = "1.0.0" },
-                },
-                id: 1, sessionId: null, ct);
-
+            var (sessionId, init) = await InitializeSessionAsync(ct);
             if (init?.Result is null)
             {
                 status.Error = init?.Error?.Message ?? "No response from MCP server";
                 return status;
             }
 
-            status.IsRunning = true;
-            status.ServerName = init.Result.ServerInfo?.Name;
-            status.ServerVersion = init.Result.ServerInfo?.Version;
-            status.ProtocolVersion = init.Result.ProtocolVersion;
+            PopulateServerInfo(status, init);
 
-            var sessionId = init.SessionId;
-
-            // Step 2 – Acknowledge initialisation
             await SendNotificationAsync("notifications/initialized", sessionId, ct);
 
-            // Step 3 – List tools
             var tools = await SendRpcAsync<McpToolsListResult>("tools/list", null, id: 2, sessionId, ct);
             status.Tools = tools?.Result?.Tools ?? [];
 
-            // Step 4 – List resources
             var resources = await SendRpcAsync<McpResourcesListResult>("resources/list", null, id: 3, sessionId, ct);
             status.Resources = resources?.Result?.Resources ?? [];
         }
@@ -63,17 +46,7 @@ public sealed class McpStatusClient(HttpClient httpClient)
     {
         try
         {
-            var init = await SendRpcAsync<McpInitializeResult>(
-                "initialize",
-                new
-                {
-                    protocolVersion = "2025-03-26",
-                    capabilities = new { },
-                    clientInfo = new { name = "company-brain-dashboard", version = "1.0.0" },
-                },
-                id: 1, sessionId: null, ct);
-
-            var sessionId = init?.SessionId;
+            var (sessionId, _) = await InitializeSessionAsync(ct);
             await SendNotificationAsync("notifications/initialized", sessionId, ct);
 
             var result = await SendRpcAsync<McpToolCallResult>(
@@ -81,23 +54,51 @@ public sealed class McpStatusClient(HttpClient httpClient)
                 new { name = toolName, arguments = arguments ?? new Dictionary<string, object>() },
                 id: 2, sessionId, ct);
 
-            if (result?.Error is not null)
-                return $"Error: {result.Error.Message}";
-
-            if (result?.Result?.Content is { Count: > 0 })
-            {
-                return string.Join("\n", result.Result.Content
-                    .Where(c => c.Type == "text")
-                    .Select(c => c.Text ?? ""));
-            }
-
-            return "No result returned.";
+            return FormatToolResult(result);
         }
         catch (UnauthorizedApiException) { throw; }
         catch (Exception ex)
         {
             return $"Error: {ex.Message}";
         }
+    }
+
+    // ── Private helpers ─────────────────────────────────────────────────
+
+    private async Task<(string? SessionId, JsonRpcResponse<McpInitializeResult>? Init)> InitializeSessionAsync(CancellationToken ct)
+    {
+        var init = await SendRpcAsync<McpInitializeResult>(
+            "initialize",
+            new
+            {
+                protocolVersion = "2025-03-26",
+                capabilities = new { },
+                clientInfo = new { name = "company-brain-dashboard", version = "1.0.0" },
+            },
+            id: 1, sessionId: null, ct);
+
+        return (init?.SessionId, init);
+    }
+
+    private static void PopulateServerInfo(McpServerStatus status, JsonRpcResponse<McpInitializeResult> init)
+    {
+        status.IsRunning = true;
+        status.ServerName = init.Result!.ServerInfo?.Name;
+        status.ServerVersion = init.Result.ServerInfo?.Version;
+        status.ProtocolVersion = init.Result.ProtocolVersion;
+    }
+
+    private static string FormatToolResult(JsonRpcResponse<McpToolCallResult>? result)
+    {
+        if (result?.Error is not null)
+            return $"Error: {result.Error.Message}";
+
+        if (result?.Result?.Content is not { Count: > 0 })
+            return "No result returned.";
+
+        return string.Join("\n", result.Result.Content
+            .Where(c => c.Type == "text")
+            .Select(c => c.Text ?? ""));
     }
 
     // ── JSON-RPC helpers ────────────────────────────────────────────────
@@ -173,79 +174,4 @@ public sealed class McpStatusClient(HttpClient httpClient)
 
         return null;
     }
-}
-
-// ── MCP JSON-RPC DTOs ───────────────────────────────────────────────────
-
-public sealed class JsonRpcResponse<T>
-{
-    [JsonPropertyName("jsonrpc")] public string? Jsonrpc { get; set; }
-    [JsonPropertyName("id")]      public int? Id { get; set; }
-    [JsonPropertyName("result")]  public T? Result { get; set; }
-    [JsonPropertyName("error")]   public JsonRpcError? Error { get; set; }
-    [JsonIgnore]                  public string? SessionId { get; set; }
-}
-
-public sealed record JsonRpcError(
-    [property: JsonPropertyName("code")]    int Code,
-    [property: JsonPropertyName("message")] string Message);
-
-public sealed class McpInitializeResult
-{
-    [JsonPropertyName("protocolVersion")] public string? ProtocolVersion { get; set; }
-    [JsonPropertyName("serverInfo")]      public McpServerInfo? ServerInfo { get; set; }
-    [JsonPropertyName("capabilities")]    public JsonElement? Capabilities { get; set; }
-}
-
-public sealed record McpServerInfo(
-    [property: JsonPropertyName("name")]    string? Name,
-    [property: JsonPropertyName("version")] string? Version);
-
-public sealed class McpToolsListResult
-{
-    [JsonPropertyName("tools")] public List<McpToolInfo> Tools { get; set; } = [];
-}
-
-public sealed class McpToolInfo
-{
-    [JsonPropertyName("name")]        public string Name { get; set; } = "";
-    [JsonPropertyName("description")] public string? Description { get; set; }
-    [JsonPropertyName("inputSchema")] public JsonElement? InputSchema { get; set; }
-}
-
-public sealed class McpResourcesListResult
-{
-    [JsonPropertyName("resources")] public List<McpResourceInfo> Resources { get; set; } = [];
-}
-
-public sealed class McpResourceInfo
-{
-    [JsonPropertyName("name")]        public string Name { get; set; } = "";
-    [JsonPropertyName("title")]       public string? Title { get; set; }
-    [JsonPropertyName("uri")]         public string Uri { get; set; } = "";
-    [JsonPropertyName("description")] public string? Description { get; set; }
-    [JsonPropertyName("mimeType")]    public string? MimeType { get; set; }
-    [JsonPropertyName("size")]        public long? Size { get; set; }
-}
-
-public sealed class McpToolCallResult
-{
-    [JsonPropertyName("content")] public List<McpToolContent> Content { get; set; } = [];
-}
-
-public sealed class McpToolContent
-{
-    [JsonPropertyName("type")] public string Type { get; set; } = "";
-    [JsonPropertyName("text")] public string? Text { get; set; }
-}
-
-public sealed class McpServerStatus
-{
-    public bool IsRunning { get; set; }
-    public string? Error { get; set; }
-    public string? ServerName { get; set; }
-    public string? ServerVersion { get; set; }
-    public string? ProtocolVersion { get; set; }
-    public List<McpToolInfo> Tools { get; set; } = [];
-    public List<McpResourceInfo> Resources { get; set; } = [];
 }

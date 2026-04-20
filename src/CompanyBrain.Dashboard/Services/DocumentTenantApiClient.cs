@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Requests;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Responses;
 using CompanyBrain.Dashboard.Middleware;
+using CompanyBrain.Dashboard.Services.Dtos;
 
 namespace CompanyBrain.Dashboard.Services;
 

@@ -4,6 +4,7 @@ using CompanyBrain.Dashboard.Data.Models;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Requests;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Responses;
 using CompanyBrain.Dashboard.Services;
+using CompanyBrain.Dashboard.Services.Dtos;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;

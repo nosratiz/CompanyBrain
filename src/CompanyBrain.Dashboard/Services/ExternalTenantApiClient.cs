@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using CompanyBrain.Dashboard.Features.Auth.Services;
 using CompanyBrain.Dashboard.Middleware;
+using CompanyBrain.Dashboard.Services.Dtos;
 using Microsoft.Extensions.Logging;
 
 namespace CompanyBrain.Dashboard.Services;
@@ -76,46 +77,10 @@ internal sealed class ExternalTenantApiClient
 
     private void SetAuthorizationHeader()
     {
-        if (!string.IsNullOrEmpty(_tokenStore.Token))
-        {
-            _httpClient.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", _tokenStore.Token);
-        }
+        if (string.IsNullOrEmpty(_tokenStore.Token))
+            return;
+
+        _httpClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", _tokenStore.Token);
     }
-}
-
-// Response DTOs matching the external CompanyBrainUserPanel API
-public sealed record TenantListResponseDto(IReadOnlyList<TenantSummaryDto> Tenants);
-
-public sealed record TenantSummaryDto(
-    Guid Id,
-    string Name,
-    string Slug,
-    int Status,
-    int Plan,
-    DateTime CreatedAt)
-{
-    /// <summary>
-    /// Gets the status as a display string.
-    /// </summary>
-    public string StatusName => Status switch
-    {
-        0 => "Pending",
-        1 => "Active",
-        2 => "Suspended",
-        3 => "Deleted",
-        _ => "Unknown"
-    };
-
-    /// <summary>
-    /// Gets the plan as a display string.
-    /// </summary>
-    public string PlanName => Plan switch
-    {
-        0 => "Free",
-        1 => "Basic",
-        2 => "Professional",
-        3 => "Enterprise",
-        _ => "Unknown"
-    };
 }

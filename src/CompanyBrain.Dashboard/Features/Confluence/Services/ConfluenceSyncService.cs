@@ -75,7 +75,6 @@ public sealed partial class ConfluenceSyncService(
         }
 
         logger.LogInformation("Starting sync for space {Key} ({SpaceId})", space.SpaceKey, space.SpaceId);
-
         space.LastSyncError = null;
 
         try
@@ -83,48 +82,17 @@ public sealed partial class ConfluenceSyncService(
             var remotePages = await apiService.GetAllPagesAsync(space.SpaceId, cancellationToken);
             logger.LogDebug("Space {Key}: fetched {Count} remote pages", space.SpaceKey, remotePages.Count);
 
-            var existingByPageId = space.SyncedPages.ToDictionary(p => p.PageId);
-            var processed = 0;
-            var skipped = 0;
-            long totalBytes = 0;
+            var (processed, skipped, totalBytes) = await SyncPagesAsync(
+                remotePages, space, db, cancellationToken);
 
-            foreach (var remotePage in remotePages)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
+            var staleCount = RemoveStalePages(space, remotePages, db);
 
-                if (existingByPageId.TryGetValue(remotePage.Id, out var existing)
-                    && existing.RemoteVersion >= remotePage.Version)
-                {
-                    skipped++;
-                    continue;
-                }
-
-                var bytes = await ProcessPageAsync(remotePage, space, existing, db, cancellationToken);
-                totalBytes += bytes;
-                processed++;
-            }
-
-            // Remove pages that no longer exist remotely
-            var remoteIds = remotePages.Select(p => p.Id).ToHashSet();
-            var stale = space.SyncedPages.Where(p => !remoteIds.Contains(p.PageId)).ToList();
-            foreach (var stalePage in stale)
-            {
-                if (File.Exists(stalePage.LocalPath))
-                    File.Delete(stalePage.LocalPath);
-                db.SyncedPages.Remove(stalePage);
-            }
-
-            space.SyncedPageCount = remotePages.Count - stale.Count;
-            space.SyncedSizeBytes = totalBytes + space.SyncedPages
-                .Where(p => !stale.Contains(p) && !existingByPageId.ContainsKey(p.PageId))
-                .Sum(p => File.Exists(p.LocalPath) ? new FileInfo(p.LocalPath).Length : 0);
-            space.LastSyncedAtUtc = DateTimeOffset.UtcNow;
-
+            UpdateSpaceStats(space, remotePages.Count, staleCount, totalBytes);
             await db.SaveChangesAsync(cancellationToken);
 
             logger.LogInformation(
                 "Space {Key}: synced {Processed} pages, skipped {Skipped} unchanged, removed {Stale} stale",
-                space.SpaceKey, processed, skipped, stale.Count);
+                space.SpaceKey, processed, skipped, staleCount);
         }
         catch (Exception ex)
         {
@@ -133,6 +101,64 @@ public sealed partial class ConfluenceSyncService(
             logger.LogError(ex, "Sync failed for space {Key}", space.SpaceKey);
             throw;
         }
+    }
+
+    private async Task<(int Processed, int Skipped, long TotalBytes)> SyncPagesAsync(
+        IReadOnlyList<ConfluencePage> remotePages,
+        ConfluenceSyncedSpace space,
+        ConfluenceDbContext db,
+        CancellationToken ct)
+    {
+        var existingByPageId = space.SyncedPages.ToDictionary(p => p.PageId);
+        var processed = 0;
+        var skipped = 0;
+        long totalBytes = 0;
+
+        foreach (var remotePage in remotePages)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (existingByPageId.TryGetValue(remotePage.Id, out var existing)
+                && existing.RemoteVersion >= remotePage.Version)
+            {
+                skipped++;
+                continue;
+            }
+
+            totalBytes += await ProcessPageAsync(remotePage, space, existing, db, ct);
+            processed++;
+        }
+
+        return (processed, skipped, totalBytes);
+    }
+
+    private static int RemoveStalePages(
+        ConfluenceSyncedSpace space,
+        IReadOnlyList<ConfluencePage> remotePages,
+        ConfluenceDbContext db)
+    {
+        var remoteIds = remotePages.Select(p => p.Id).ToHashSet();
+        var stale = space.SyncedPages.Where(p => !remoteIds.Contains(p.PageId)).ToList();
+
+        foreach (var stalePage in stale)
+        {
+            if (File.Exists(stalePage.LocalPath))
+                File.Delete(stalePage.LocalPath);
+            db.SyncedPages.Remove(stalePage);
+        }
+
+        return stale.Count;
+    }
+
+    private static void UpdateSpaceStats(
+        ConfluenceSyncedSpace space,
+        int remoteCount,
+        int staleCount,
+        long syncedBytes)
+    {
+        space.SyncedPageCount = remoteCount - staleCount;
+        space.SyncedSizeBytes = syncedBytes;
+        space.LastSyncedAtUtc = DateTimeOffset.UtcNow;
     }
 
     private async Task<long> ProcessPageAsync(
@@ -203,16 +229,34 @@ public sealed partial class ConfluenceSyncService(
 
     private static string StorageToMarkdown(string html)
     {
-        // Confluence macro blocks — render as code fences
         html = MacroCodeRegex().Replace(html, m =>
             $"\n```{m.Groups["lang"].Value.ToLowerInvariant()}\n{m.Groups["code"].Value.Trim()}\n```\n");
 
-        // Headings
+        html = ConvertBlockElements(html);
+        html = ConvertInlineElements(html);
+        html = ConvertTableElements(html);
+        html = StripRemainingHtml(html);
+
+        return html.Trim();
+    }
+
+    private static string ConvertBlockElements(string html)
+    {
         for (var i = 6; i >= 1; i--)
             html = Regex.Replace(html, $@"<h{i}[^>]*>(.*?)</h{i}>",
                 new string('#', i) + " $1\n", RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
-        // Bold / italic
+        html = Regex.Replace(html, @"<p[^>]*>(.*?)</p>", "$1\n\n",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        html = Regex.Replace(html, @"<li[^>]*>(.*?)</li>", "- $1\n",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        html = Regex.Replace(html, @"<br\s*/?>", "  \n", RegexOptions.IgnoreCase);
+
+        return html;
+    }
+
+    private static string ConvertInlineElements(string html)
+    {
         html = Regex.Replace(html, @"<strong[^>]*>(.*?)</strong>", "**$1**",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
         html = Regex.Replace(html, @"<b[^>]*>(.*?)</b>", "**$1**",
@@ -221,37 +265,29 @@ public sealed partial class ConfluenceSyncService(
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
         html = Regex.Replace(html, @"<i[^>]*>(.*?)</i>", "*$1*",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
-        // Inline code
         html = Regex.Replace(html, @"<code[^>]*>(.*?)</code>", "`$1`",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
-        // Links
         html = Regex.Replace(html, @"<a[^>]+href=""([^""]+)""[^>]*>(.*?)</a>", "[$2]($1)",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
-        // Paragraphs
-        html = Regex.Replace(html, @"<p[^>]*>(.*?)</p>", "$1\n\n",
-            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        return html;
+    }
 
-        // List items
-        html = Regex.Replace(html, @"<li[^>]*>(.*?)</li>", "- $1\n",
-            RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
-        // Line breaks
-        html = Regex.Replace(html, @"<br\s*/?>", "  \n", RegexOptions.IgnoreCase);
-
-        // Table rows / cells (very basic)
+    private static string ConvertTableElements(string html)
+    {
         html = Regex.Replace(html, @"<th[^>]*>(.*?)</th>", "| **$1** ",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
         html = Regex.Replace(html, @"<td[^>]*>(.*?)</td>", "| $1 ",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
         html = Regex.Replace(html, @"</tr>", "|\n", RegexOptions.IgnoreCase);
 
-        // Strip remaining tags
+        return html;
+    }
+
+    private static string StripRemainingHtml(string html)
+    {
         html = Regex.Replace(html, @"<[^>]+>", string.Empty);
 
-        // Decode common HTML entities
         html = html
             .Replace("&amp;", "&")
             .Replace("&lt;", "<")
@@ -260,10 +296,7 @@ public sealed partial class ConfluenceSyncService(
             .Replace("&#39;", "'")
             .Replace("&nbsp;", " ");
 
-        // Collapse excessive blank lines
-        html = Regex.Replace(html, @"\n{3,}", "\n\n");
-
-        return html.Trim();
+        return Regex.Replace(html, @"\n{3,}", "\n\n");
     }
 
     private static string SanitizePath(string input)
