@@ -44,11 +44,18 @@
                         {
                             <MudAlert Severity="Severity.Info" Class="mb-3">
                                 Connect your Microsoft account to access SharePoint sites.
+                                A tenant admin must grant consent before connecting.
                             </MudAlert>
-                            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Link"
-                                       OnClick="ConnectSharePoint">
-                                Connect to SharePoint
-                            </MudButton>
+                            <MudStack Row="true" Spacing="2">
+                                <MudButton Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Filled.AdminPanelSettings"
+                                           OnClick="RequestAdminConsent">
+                                    Grant Admin Consent
+                                </MudButton>
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Link"
+                                           OnClick="ConnectSharePoint">
+                                    Connect to SharePoint
+                                </MudButton>
+                            </MudStack>
                         }
                     </MudPaper>
                 </MudItem>
@@ -204,7 +211,7 @@
                         var mostRecent = _syncedFolders.Where(f => f.LastSyncedAtUtc.HasValue).Max(f => f.LastSyncedAtUtc!.Value);
                         <MudText Typo="Typo.caption" Color="Color.Secondary">
                             <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
-                            Last synced: @mostRecent.LocalDateTime.ToString("g")
+                            Last synced: @mostRecent.ToLocalTime().ToString("g")
                         </MudText>
                     }
                 </div>

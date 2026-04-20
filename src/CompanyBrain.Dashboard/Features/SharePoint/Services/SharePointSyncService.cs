@@ -360,9 +360,16 @@ public sealed class SharePointSyncService(
         {
             var code = ex.Error?.Code ?? "unknown";
             var message = ex.Error?.Message ?? ex.Message;
-            logger.LogError(ex, "Sync failed for folder {FolderId} — Graph error {Code}: {Message}",
-                syncedFolderId, code, message);
-            folder.LastSyncError = $"[{code}] {message}";
+            var innerCode = ex.Error?.InnerError?.AdditionalData?.TryGetValue("code", out var ic) == true ? ic?.ToString() : null;
+            var details = innerCode is not null ? $" (inner: {innerCode})" : "";
+
+            logger.LogError(ex, "Sync failed for folder {FolderId} — Graph error {Code}: {Message}{Details}. " +
+                "ResponseStatusCode={StatusCode}. " +
+                "Ensure the authenticated user has Sites.Read.All and Files.Read.All permissions, " +
+                "and that admin consent has been granted for the tenant.",
+                syncedFolderId, code, message, details, ex.ResponseStatusCode);
+
+            folder.LastSyncError = $"[{code}] {message}{details}";
             await db.SaveChangesAsync(cancellationToken);
             throw;
         }
@@ -418,9 +425,23 @@ public sealed class SharePointSyncService(
 
         logger.LogInformation("Delta query: driveId={DriveId}", folder.DriveId);
 
-        var response = await client.Drives[folder.DriveId].Items["root"]
-            .Delta
-            .GetAsDeltaGetResponseAsync(cancellationToken: cancellationToken);
+        Microsoft.Graph.Drives.Item.Items.Item.Delta.DeltaGetResponse? response;
+        try
+        {
+            response = await client.Drives[folder.DriveId].Items["root"]
+                .Delta
+                .GetAsDeltaGetResponseAsync(cancellationToken: cancellationToken);
+        }
+        catch (ODataError ex) when (ex.Error?.Code is "generalException" or "accessDenied" or "unauthenticated"
+                                     || ex.ResponseStatusCode is 403 or 401)
+        {
+            logger.LogWarning(ex,
+                "Delta API returned {Code}/{StatusCode} for drive {DriveId}. " +
+                "This usually means the authenticated account lacks permission to enumerate the drive. " +
+                "Ensure the user has access to the SharePoint site and that Sites.Read.All has admin consent.",
+                ex.Error?.Code, ex.ResponseStatusCode, folder.DriveId);
+            throw;
+        }
 
         var allItems = new List<DriveItem>();
         var deltaLink = string.Empty;

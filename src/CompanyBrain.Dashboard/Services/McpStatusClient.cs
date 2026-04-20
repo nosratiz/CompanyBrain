@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CompanyBrain.Dashboard.Middleware;
 
 namespace CompanyBrain.Dashboard.Services;
 
@@ -49,6 +50,7 @@ public sealed class McpStatusClient(HttpClient httpClient)
             var resources = await SendRpcAsync<McpResourcesListResult>("resources/list", null, id: 3, sessionId, ct);
             status.Resources = resources?.Result?.Resources ?? [];
         }
+        catch (UnauthorizedApiException) { throw; }
         catch (Exception ex)
         {
             status.Error = ex.Message;
@@ -91,6 +93,7 @@ public sealed class McpStatusClient(HttpClient httpClient)
 
             return "No result returned.";
         }
+        catch (UnauthorizedApiException) { throw; }
         catch (Exception ex)
         {
             return $"Error: {ex.Message}";

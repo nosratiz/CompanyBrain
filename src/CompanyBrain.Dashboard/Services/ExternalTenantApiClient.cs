@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using CompanyBrain.Dashboard.Features.Auth.Services;
+using CompanyBrain.Dashboard.Middleware;
 using Microsoft.Extensions.Logging;
 
 namespace CompanyBrain.Dashboard.Services;
@@ -36,6 +37,7 @@ internal sealed class ExternalTenantApiClient
             _logger.LogInformation("Fetched {TenantCount} tenants from external API", response?.Tenants.Count ?? 0);
             return response?.Tenants ?? [];
         }
+        catch (UnauthorizedApiException) { throw; }
         catch (HttpRequestException ex)
         {
             _logger.LogError(ex, "Failed to fetch tenants from external API");
@@ -59,6 +61,7 @@ internal sealed class ExternalTenantApiClient
             var response = await _httpClient.GetFromJsonAsync<TenantSummaryDto>($"/api/tenants/{tenantId}", ct);
             return response;
         }
+        catch (UnauthorizedApiException) { throw; }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             _logger.LogWarning("Tenant {TenantId} not found", tenantId);

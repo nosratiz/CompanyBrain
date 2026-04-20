@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using CompanyBrain.Dashboard.Middleware;
 
 namespace CompanyBrain.Dashboard.Services;
 
@@ -12,6 +13,7 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
         {
             return await httpClient.GetFromJsonAsync<IReadOnlyList<KnowledgeResourceDescriptor>>("/api/knowledge/resources");
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return [];
@@ -24,6 +26,7 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
         {
             return await httpClient.GetFromJsonAsync<KnowledgeResourceContent>($"/api/knowledge/resources/{Uri.EscapeDataString(fileName)}");
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return null;
@@ -39,6 +42,7 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
         {
             return await httpClient.GetFromJsonAsync<SearchResponse>(url);
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return null;
@@ -110,6 +114,7 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
         {
             return await httpClient.GetFromJsonAsync<IReadOnlyList<ResourceTemplateInfo>>("/api/templates");
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return [];
@@ -122,6 +127,7 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
         {
             return await httpClient.GetStringAsync($"/api/templates/{Uri.EscapeDataString(templateName)}/files/{relativePath}");
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return null;

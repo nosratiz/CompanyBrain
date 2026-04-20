@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Requests;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Responses;
+using CompanyBrain.Dashboard.Middleware;
 
 namespace CompanyBrain.Dashboard.Services;
 
@@ -19,6 +20,7 @@ public sealed class DocumentTenantApiClient(HttpClient httpClient)
             return await httpClient.GetFromJsonAsync<DocumentAssignmentsResponse>(
                 $"/api/document-tenants/by-document/{Uri.EscapeDataString(fileName)}", ct);
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return null;
@@ -43,6 +45,7 @@ public sealed class DocumentTenantApiClient(HttpClient httpClient)
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadFromJsonAsync<DocumentAssignmentsResponse>(cancellationToken: ct);
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return null;
@@ -65,6 +68,7 @@ public sealed class DocumentTenantApiClient(HttpClient httpClient)
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadFromJsonAsync<DocumentTenantAssignmentResponse>(cancellationToken: ct);
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return null;
@@ -83,6 +87,7 @@ public sealed class DocumentTenantApiClient(HttpClient httpClient)
                 ct);
             return response.IsSuccessStatusCode;
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return false;
@@ -99,6 +104,7 @@ public sealed class DocumentTenantApiClient(HttpClient httpClient)
             return await httpClient.GetFromJsonAsync<IReadOnlyList<TenantSummaryDto>>(
                 "/api/document-tenants/available-tenants", ct);
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return [];

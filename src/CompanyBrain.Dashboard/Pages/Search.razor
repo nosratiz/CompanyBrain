@@ -2,6 +2,7 @@
 @inject KnowledgeApiClient Api
 @inject ISnackbar Snackbar
 @inject NavigationManager Navigation
+@inject UnauthorizedRedirectService AuthRedirect
 
 <PageTitle>Search - Company Brain</PageTitle>
 
@@ -95,6 +96,7 @@
         }
         catch (Exception ex)
         {
+            if (await AuthRedirect.HandleIfUnauthorized(ex)) return;
             Snackbar.Add($"Search failed: {ex.Message}", Severity.Error);
         }
         finally

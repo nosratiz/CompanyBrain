@@ -2,6 +2,7 @@
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject KnowledgeApiClient KnowledgeApi
+@inject UnauthorizedRedirectService AuthRedirect
 
 <MudText Typo="Typo.h5" Class="mb-2">Resources (@Resources.Count)</MudText>
 <MudTable Items="Resources" Hover="true" Dense="true" Class="mb-4">
@@ -82,6 +83,7 @@
         }
         catch (Exception ex)
         {
+            if (await AuthRedirect.HandleIfUnauthorized(ex)) return;
             Snackbar.Add($"Error: {ex.Message}", Severity.Error);
         }
         finally

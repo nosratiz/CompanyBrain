@@ -1,4 +1,5 @@
 using CompanyBrain.Dashboard.Data;
+using CompanyBrain.Dashboard.Features.License;
 using CompanyBrain.Dashboard.Middleware;
 
 namespace CompanyBrain.Dashboard.DependencyInjection;
@@ -35,6 +36,7 @@ public static class DashboardApplicationBuilderExtensions
         app.UseStaticFiles();
         app.UseAuthentication();
         app.UseAuthorization();
+        app.UseMiddleware<LicenseGuardMiddleware>();
         app.UseAntiforgery();
 
         return app;

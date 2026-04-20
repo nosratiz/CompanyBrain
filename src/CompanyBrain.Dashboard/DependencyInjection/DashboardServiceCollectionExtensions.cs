@@ -3,7 +3,9 @@ using CompanyBrain.Dashboard.Data;
 using CompanyBrain.Dashboard.Features.Auth.Interfaces;
 using CompanyBrain.Dashboard.Features.Auth.Services;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Validators;
+using CompanyBrain.Dashboard.Features.AutoSetup.DependencyInjection;
 using CompanyBrain.Dashboard.Features.Confluence.DependencyInjection;
+using CompanyBrain.Dashboard.Features.License;
 using CompanyBrain.Dashboard.Features.SharePoint.DependencyInjection;
 using CompanyBrain.Dashboard.Mcp;
 using CompanyBrain.Dashboard.Mcp.Resources;
@@ -47,7 +49,8 @@ public static class DashboardServiceCollectionExtensions
             .AddDashboardDatabase(configuration)
             .AddDashboardValidation()
             .AddSharePointMirror(configuration)
-            .AddConfluenceMirror(configuration);
+            .AddConfluenceMirror(configuration)
+            .AddAutoSetup();
 
         return services;
     }
@@ -87,7 +90,7 @@ public static class DashboardServiceCollectionExtensions
         services.AddAuthentication();
         services.AddAuthorization();
         services.AddAuthorizationCore();
-
+  
         return services;
     }
 
@@ -190,8 +193,9 @@ public static class DashboardServiceCollectionExtensions
         var externalApiOptions = configuration.GetSection(ExternalApiOptions.SectionName).Get<ExternalApiOptions>()
             ?? new ExternalApiOptions();
 
-        // Register the 401 redirect handler
+        // Register the 401 redirect handler and circuit-scoped redirect service
         services.AddTransient<UnauthorizedRedirectHandler>();
+        services.AddScoped<UnauthorizedRedirectService>();
 
         // Knowledge API client for Blazor pages
         services.AddHttpClient<KnowledgeApiClient>((sp, client) =>
@@ -236,6 +240,14 @@ public static class DashboardServiceCollectionExtensions
             client.BaseAddress = new Uri(externalApiOptions.TenantApiBaseUrl);
         })
         .AddHttpMessageHandler<UnauthorizedRedirectHandler>();
+
+        // License API client (same backend as Auth/Tenant)
+        services.AddHttpClient<LicenseApiClient>((_, client) =>
+        {
+            client.BaseAddress = new Uri(externalApiOptions.AuthApiBaseUrl);
+        })
+        .AddHttpMessageHandler<UnauthorizedRedirectHandler>();
+        services.AddScoped<LicenseStateService>();
 
         return services;
     }

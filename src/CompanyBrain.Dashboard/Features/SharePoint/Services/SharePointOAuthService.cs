@@ -439,7 +439,7 @@ public sealed class SharePointOAuthService(
     /// <summary>
     /// Encrypts a token using AES-GCM.
     /// </summary>
-    private (byte[] EncryptedData, byte[] Nonce, byte[] Tag) EncryptToken(string plainText)
+    internal (byte[] EncryptedData, byte[] Nonce, byte[] Tag) EncryptToken(string plainText)
     {
         var plainBytes = Encoding.UTF8.GetBytes(plainText);
         var nonce = new byte[AesGcm.NonceByteSizes.MaxSize];

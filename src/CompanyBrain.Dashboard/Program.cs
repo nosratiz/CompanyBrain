@@ -2,6 +2,7 @@ using CompanyBrain.Dashboard;
 using CompanyBrain.Dashboard.Api;
 using CompanyBrain.Dashboard.DependencyInjection;
 using CompanyBrain.Dashboard.Features.DocumentTenant;
+using CompanyBrain.Dashboard.Features.AutoSetup.Api;
 using CompanyBrain.Dashboard.Features.Confluence.DependencyInjection;
 using CompanyBrain.Dashboard.Features.SharePoint.DependencyInjection;
 
@@ -40,6 +41,7 @@ app.MapCompanyBrainApi();
 app.MapResourceTemplateApi();
 app.MapDocumentTenantApi();
 app.MapSharePointAuthApi();
+app.MapAutoSetupApi();
 app.MapMcp(mcpRoutePattern);
 
 app.Run();

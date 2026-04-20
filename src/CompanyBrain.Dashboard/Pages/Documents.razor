@@ -5,6 +5,7 @@
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 @inject NavigationManager Navigation
+@inject UnauthorizedRedirectService AuthRedirect
 
 <PageTitle>Documents - Company Brain</PageTitle>
 
@@ -174,6 +175,7 @@ else
         }
         catch (Exception ex)
         {
+            if (await AuthRedirect.HandleIfUnauthorized(ex)) return;
             Snackbar.Add($"Failed to load documents: {ex.Message}", Severity.Error);
         }
         finally
@@ -212,6 +214,7 @@ else
         }
         catch (Exception ex)
         {
+            if (await AuthRedirect.HandleIfUnauthorized(ex)) return;
             Snackbar.Add($"Failed to load document: {ex.Message}", Severity.Error);
         }
         finally
@@ -254,6 +257,7 @@ else
         }
         catch (Exception ex)
         {
+            if (await AuthRedirect.HandleIfUnauthorized(ex)) return;
             Snackbar.Add($"Error: {ex.Message}", Severity.Error);
         }
         finally
