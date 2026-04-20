@@ -5,6 +5,7 @@ using CompanyBrain.Dashboard.Features.Auth.Services;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Validators;
 using CompanyBrain.Dashboard.Features.AutoSetup.DependencyInjection;
 using CompanyBrain.Dashboard.Features.Confluence.DependencyInjection;
+using CompanyBrain.Dashboard.Features.DeepClean;
 using CompanyBrain.Dashboard.Features.License;
 using CompanyBrain.Dashboard.Features.SharePoint.DependencyInjection;
 using CompanyBrain.Dashboard.Mcp;
@@ -50,7 +51,8 @@ public static class DashboardServiceCollectionExtensions
             .AddDashboardValidation()
             .AddSharePointMirror(configuration)
             .AddConfluenceMirror(configuration)
-            .AddAutoSetup();
+            .AddAutoSetup()
+            .AddDeepClean(configuration);
 
         return services;
     }
@@ -258,7 +260,7 @@ public static class DashboardServiceCollectionExtensions
     public static IServiceCollection AddDashboardDatabase(this IServiceCollection services, IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString("DocumentAssignments")
-            ?? "Data Source=document_assignments.db";
+            ?? DatabasePaths.ConnectionString("document_assignments.db");
 
         // Use AddDbContextFactory with ServiceLifetime.Singleton for IDbContextFactory<T>
         // - Factory is singleton for thread-safe access from singletons (SettingsService, MCP handlers)

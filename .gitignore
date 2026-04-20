@@ -487,14 +487,8 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 
+# SQLite databases (all stored in Db/ folder)
 *.db
-
-src/CompanyBrain.Dashboard/document_assignments.db-shm
-
-src/CompanyBrain.Dashboard/document_assignments.db-wal
-
-src/CompanyBrain.Dashboard/sharepoint_sync.db-wal
-
 *.db-wal
-
 *.db-shm
+Db/

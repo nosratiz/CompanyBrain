@@ -1,3 +1,4 @@
+using CompanyBrain.Dashboard.Data;
 using CompanyBrain.Dashboard.Features.Confluence.Data;
 using CompanyBrain.Dashboard.Features.Confluence.Models;
 using CompanyBrain.Dashboard.Features.Confluence.Services;
@@ -18,7 +19,7 @@ public static class ConfluenceServiceCollectionExtensions
             configuration.GetSection(ConfluenceSyncOptions.SectionName));
 
         var connectionString = configuration.GetConnectionString("ConfluenceSync")
-            ?? "Data Source=confluence_sync.db";
+            ?? DatabasePaths.ConnectionString("confluence_sync.db");
 
         services.AddDbContextFactory<ConfluenceDbContext>(options =>
             options.UseSqlite(connectionString));
