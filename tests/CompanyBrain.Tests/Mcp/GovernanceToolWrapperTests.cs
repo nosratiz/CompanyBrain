@@ -2,6 +2,7 @@ using CompanyBrain.Dashboard.Data;
 using CompanyBrain.Dashboard.Data.Models;
 using CompanyBrain.Dashboard.Mcp;
 using CompanyBrain.Dashboard.Services;
+using CompanyBrain.Pruning;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -26,8 +27,13 @@ public sealed class GovernanceToolWrapperTests : IDisposable
         var settingsLogger = Substitute.For<ILogger<SettingsService>>();
         _settingsService = new SettingsService(contextFactory, settingsLogger);
         
+        var pruningService = new IntelligentPruningService(
+            new TfIdfScoringStrategy(),
+            new PruningConfiguration(),
+            Substitute.For<ILogger<IntelligentPruningService>>());
+        
         var wrapperLogger = Substitute.For<ILogger<GovernanceToolWrapper>>();
-        _sut = new GovernanceToolWrapper(_settingsService, wrapperLogger);
+        _sut = new GovernanceToolWrapper(_settingsService, pruningService, wrapperLogger);
     }
 
     public void Dispose() => _settingsService.Dispose();

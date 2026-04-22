@@ -1,0 +1,138 @@
+@* Pruning Engine control center: aggression slider + enable toggle *@
+
+<MudPaper Class="pa-4 pruning-panel">
+    <MudStack Spacing="4">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudIcon Icon="@Icons.Material.Filled.Tune" Color="Color.Primary" />
+                <MudText Typo="Typo.h6">Pruning Engine</MudText>
+            </MudStack>
+            <MudSwitch T="bool"
+                       Value="_enabled"
+                       ValueChanged="OnEnabledChanged"
+                       Color="Color.Primary"
+                       Label="@(_enabled ? "Active" : "Disabled")" />
+        </MudStack>
+
+        @if (_enabled)
+        {
+            <MudDivider />
+
+            <MudStack Spacing="1">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.subtitle2">Relevance Threshold</MudText>
+                    <MudChip T="string" Size="Size.Small" Color="@AggressionColor" Variant="Variant.Filled">
+                        @AggressionLabel
+                    </MudChip>
+                </MudStack>
+
+                <MudSlider T="double"
+                           Value="_threshold"
+                           ValueChanged="OnThresholdChanged"
+                           Min="0.1" Max="0.9" Step="0.05"
+                           Color="Color.Primary"
+                           Class="mt-2">
+                </MudSlider>
+
+                <MudStack Row="true" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary);">
+                        Broad (0.2+)
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary);">
+                        Balanced (0.5+)
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary);">
+                        Precise (0.8+)
+                    </MudText>
+                </MudStack>
+            </MudStack>
+
+            <MudDivider />
+
+            <MudGrid>
+                <MudItem xs="6">
+                    <MudStack Spacing="1">
+                        <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary);">Max Chunks</MudText>
+                        <MudNumericField T="int"
+                                         Value="_maxChunks"
+                                         ValueChanged="OnMaxChunksChanged"
+                                         Min="1" Max="10"
+                                         Variant="Variant.Outlined"
+                                         Margin="Margin.Dense" />
+                    </MudStack>
+                </MudItem>
+                <MudItem xs="6">
+                    <MudStack Spacing="1">
+                        <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary);">Token Budget</MudText>
+                        <MudNumericField T="int"
+                                         Value="_tokenBudget"
+                                         ValueChanged="OnTokenBudgetChanged"
+                                         Min="500" Max="10000" Step="500"
+                                         Variant="Variant.Outlined"
+                                         Margin="Margin.Dense" />
+                    </MudStack>
+                </MudItem>
+            </MudGrid>
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired]
+    public PruningStateContainer State { get; set; } = null!;
+
+    private bool _enabled;
+    private double _threshold;
+    private int _maxChunks;
+    private int _tokenBudget;
+
+    protected override void OnParametersSet()
+    {
+        _enabled = State.Configuration.Enabled;
+        _threshold = State.Configuration.RelevanceThreshold;
+        _maxChunks = State.Configuration.MaxChunks;
+        _tokenBudget = State.Configuration.TokenBudget;
+    }
+
+    private string AggressionLabel => _threshold switch
+    {
+        >= 0.7 => "Precise",
+        >= 0.4 => "Balanced",
+        _ => "Broad"
+    };
+
+    private Color AggressionColor => _threshold switch
+    {
+        >= 0.7 => Color.Info,
+        >= 0.4 => Color.Success,
+        _ => Color.Warning
+    };
+
+    private void OnEnabledChanged(bool value)
+    {
+        _enabled = value;
+        State.Configuration.Enabled = value;
+        State.NotifyConfigurationChanged();
+    }
+
+    private void OnThresholdChanged(double value)
+    {
+        _threshold = value;
+        State.Configuration.RelevanceThreshold = value;
+        State.NotifyConfigurationChanged();
+    }
+
+    private void OnMaxChunksChanged(int value)
+    {
+        _maxChunks = value;
+        State.Configuration.MaxChunks = value;
+        State.NotifyConfigurationChanged();
+    }
+
+    private void OnTokenBudgetChanged(int value)
+    {
+        _tokenBudget = value;
+        State.Configuration.TokenBudget = value;
+        State.NotifyConfigurationChanged();
+    }
+}

@@ -1,0 +1,126 @@
+@* Context snippet browser showing top-N chosen fragments with scores and PII redaction *@
+
+<MudPaper Class="pa-4 pruning-panel">
+    <MudStack Spacing="3">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudIcon Icon="@Icons.Material.Filled.ContentCut" Color="Color.Tertiary" />
+                <MudText Typo="Typo.h6">Context Snippets</MudText>
+            </MudStack>
+            @if (Events.Count > 1)
+            {
+                <MudSelect T="int"
+                           Value="_selectedEventIndex"
+                           ValueChanged="OnEventSelected"
+                           Label="Tool Call"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Style="max-width: 260px;">
+                    @for (var i = 0; i < Events.Count; i++)
+                    {
+                        var evt = Events[i];
+                        <MudSelectItem T="int" Value="@i">
+                            @evt.ToolName — @evt.Timestamp.ToString("HH:mm:ss")
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+            }
+        </MudStack>
+
+        @if (SelectedEvent is null)
+        {
+            <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-6">
+                <MudIcon Icon="@Icons.Material.Filled.Article" Size="Size.Large"
+                         Style="color: var(--mud-palette-text-disabled);" />
+                <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-secondary);">
+                    No snippets yet. Run a search to see pruning results.
+                </MudText>
+            </MudStack>
+        }
+        else
+        {
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-1">
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info">
+                    @SelectedEvent.ChunksSelected / @SelectedEvent.ChunksEvaluated chunks selected
+                </MudChip>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                         Color="@(SelectedEvent.PiiDetected ? Color.Warning : Color.Success)">
+                    @(SelectedEvent.PiiDetected ? "PII Redacted" : "No PII Found")
+                </MudChip>
+            </MudStack>
+
+            @foreach (var snippet in SelectedEvent.Snippets)
+            {
+                <MudCard Outlined="true" Class="snippet-card">
+                    <MudCardHeader>
+                        <CardHeaderAvatar>
+                            <MudAvatar Size="Size.Small" Color="@ScoreColor(snippet.SimilarityScore)" Variant="Variant.Filled">
+                                <MudText Typo="Typo.caption">@snippet.SimilarityScore.ToString("F2")</MudText>
+                            </MudAvatar>
+                        </CardHeaderAvatar>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.body2" Style="font-weight: 600;">
+                                Fragment #@(snippet.Index + 1)
+                            </MudText>
+                            <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary);">
+                                <MudIcon Icon="@Icons.Material.Filled.Source" Size="Size.Small" Class="mr-1"
+                                         Style="vertical-align: text-bottom;" />
+                                @snippet.Source
+                            </MudText>
+                        </CardHeaderContent>
+                        <CardHeaderActions>
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@ScoreColor(snippet.SimilarityScore)"
+                                     Variant="Variant.Filled">
+                                @ScoreLabel(snippet.SimilarityScore)
+                            </MudChip>
+                        </CardHeaderActions>
+                    </MudCardHeader>
+                    <MudCardContent Class="snippet-content">
+                        @((MarkupString)FormatRedactedText(snippet.RedactedText))
+                    </MudCardContent>
+                </MudCard>
+            }
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<PruningEvent> Events { get; set; } = [];
+
+    private int _selectedEventIndex;
+
+    private PruningEvent? SelectedEvent =>
+        Events.Count > _selectedEventIndex ? Events[_selectedEventIndex] : null;
+
+    private void OnEventSelected(int index)
+    {
+        _selectedEventIndex = index;
+    }
+
+    private static Color ScoreColor(double score) => score switch
+    {
+        >= 0.7 => Color.Success,
+        >= 0.4 => Color.Warning,
+        _ => Color.Error
+    };
+
+    private static string ScoreLabel(double score) => score switch
+    {
+        >= 0.7 => "High",
+        >= 0.4 => "Medium",
+        _ => "Low"
+    };
+
+    /// <summary>
+    /// Formats text so that [REDACTED] placeholders render with the redacted CSS class.
+    /// </summary>
+    private static string FormatRedactedText(string text)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(
+            System.Web.HttpUtility.HtmlEncode(text),
+            @"\[REDACTED(?:[^\]]*)\]",
+            match => $"<span class=\"redacted-text\">{match.Value}</span>");
+    }
+}

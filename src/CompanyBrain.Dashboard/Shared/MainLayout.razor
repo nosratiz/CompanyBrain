@@ -119,6 +119,12 @@ else
                     @* ── Tier 2 (Professional): Advanced ── *@
                     @if (LicenseState.CanAccessAdvanced)
                     {
+                        <MudNavLink Href="/collections" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AccountTree" Class="nav-item">
+                            Sovereign Tree
+                        </MudNavLink>
+                        <MudNavLink Href="/pruning-insights" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ContentCut" Class="nav-item">
+                            Pruning Insights
+                        </MudNavLink>
                         <MudNavLink Href="/tools" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Build" Class="nav-item">
                             Tool Builder
                         </MudNavLink>
@@ -313,6 +319,7 @@ else
 @code {
     private bool _drawerOpen = true;
     private bool _isInitializing = true;
+    private bool _disposed;
 
     private bool IsLoginPage => Navigation.Uri.Contains("/login", StringComparison.OrdinalIgnoreCase);
     private bool IsOfflinePage => Navigation.Uri.Contains("/offline", StringComparison.OrdinalIgnoreCase);
@@ -346,9 +353,18 @@ else
     
     private void HandleNetworkStatusChanged(bool isOnline)
     {
+        if (_disposed) return;
         if (!isOnline && !IsOfflinePage)
         {
-            InvokeAsync(() => RedirectToOffline());
+            try
+            {
+                _ = InvokeAsync(() =>
+                {
+                    if (_disposed) return;
+                    RedirectToOffline();
+                });
+            }
+            catch (ObjectDisposedException) { }
         }
     }
     
@@ -402,6 +418,7 @@ else
     
     public void Dispose()
     {
+        _disposed = true;
         NetworkStatus.OnStatusChanged -= HandleNetworkStatusChanged;
     }
 }

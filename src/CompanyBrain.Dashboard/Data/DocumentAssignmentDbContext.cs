@@ -14,6 +14,8 @@ public sealed class DocumentAssignmentDbContext : DbContext
     }
 
     public DbSet<DocumentTenantAssignment> DocumentTenantAssignments => Set<DocumentTenantAssignment>();
+
+    public DbSet<CollectionPolicy> CollectionPolicies => Set<CollectionPolicy>();
     
     public DbSet<CustomTool> CustomTools => Set<CustomTool>();
     
@@ -24,6 +26,7 @@ public sealed class DocumentAssignmentDbContext : DbContext
         base.OnModelCreating(modelBuilder);
 
         ConfigureDocumentTenantAssignment(modelBuilder);
+        ConfigureCollectionPolicies(modelBuilder);
         ConfigureCustomTool(modelBuilder);
         ConfigureAppSettings(modelBuilder);
     }
@@ -35,6 +38,10 @@ public sealed class DocumentAssignmentDbContext : DbContext
             entity.ToTable("DocumentTenantAssignments");
             
             entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.CollectionId)
+                .IsRequired()
+                .HasMaxLength(120);
             
             entity.Property(e => e.FileName)
                 .IsRequired()
@@ -50,8 +57,8 @@ public sealed class DocumentAssignmentDbContext : DbContext
             entity.Property(e => e.CreatedAtUtc)
                 .IsRequired();
 
-            // Create a unique index on FileName + TenantId to prevent duplicate assignments
-            entity.HasIndex(e => new { e.FileName, e.TenantId })
+            // Create a unique index on Collection + FileName + TenantId to prevent duplicate assignments
+            entity.HasIndex(e => new { e.CollectionId, e.FileName, e.TenantId })
                 .IsUnique();
             
             // Index for querying by tenant
@@ -59,6 +66,41 @@ public sealed class DocumentAssignmentDbContext : DbContext
             
             // Index for querying by file
             entity.HasIndex(e => e.FileName);
+
+            // Index for strict collection scoping during query-time enforcement
+            entity.HasIndex(e => new { e.CollectionId, e.TenantId });
+        });
+    }
+
+    private static void ConfigureCollectionPolicies(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<CollectionPolicy>(entity =>
+        {
+            entity.ToTable("CollectionPolicies");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.CollectionId)
+                .IsRequired()
+                .HasMaxLength(120);
+
+            entity.Property(e => e.Department)
+                .IsRequired()
+                .HasMaxLength(120);
+
+            entity.Property(e => e.PrivacyAggressionPercent)
+                .IsRequired()
+                .HasDefaultValue(50);
+
+            entity.Property(e => e.IsSyncing)
+                .IsRequired()
+                .HasDefaultValue(false);
+
+            entity.Property(e => e.UpdatedAtUtc)
+                .IsRequired();
+
+            entity.HasIndex(e => new { e.CollectionId, e.Department })
+                .IsUnique();
         });
     }
     

@@ -9,6 +9,7 @@ using CompanyBrain.Dashboard.Features.DeepClean;
 using CompanyBrain.Dashboard.Features.License;
 using CompanyBrain.Dashboard.Features.SharePoint.DependencyInjection;
 using CompanyBrain.Dashboard.Mcp;
+using CompanyBrain.Dashboard.Mcp.Collections;
 using CompanyBrain.Dashboard.Mcp.Resources;
 using CompanyBrain.Dashboard.Mcp.Tools;
 using CompanyBrain.Dashboard.Middleware;
@@ -155,9 +156,16 @@ public static class DashboardServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddDashboardMcp(this IServiceCollection services)
     {
+        services.AddHttpContextAccessor();
+        services.AddDataProtection();
         services.AddSingleton<McpSessionTracker>();
         services.AddSingleton<McpGovernanceFilter>();
         services.AddSingleton<GovernanceToolWrapper>();
+        services.AddSingleton<PruningSessionState>();
+        services.AddSingleton<PruningStateContainer>();
+        services.AddSingleton<CollectionEntitlementsStore>();
+        services.AddSingleton<CollectionEntitlementsService>();
+        services.AddSingleton<CollectionAuthorizationHandler>();
         services
             .AddMcpServer()
             .WithHttpTransport()
@@ -249,6 +257,12 @@ public static class DashboardServiceCollectionExtensions
             client.BaseAddress = new Uri(externalApiOptions.AuthApiBaseUrl);
         })
         .AddHttpMessageHandler<UnauthorizedRedirectHandler>();
+
+        services.AddHttpClient("LicenseEntitlementsHttpClient", (_, client) =>
+        {
+            client.BaseAddress = new Uri(externalApiOptions.AuthApiBaseUrl);
+        });
+
         services.AddScoped<LicenseStateService>();
 
         return services;
@@ -271,6 +285,7 @@ public static class DashboardServiceCollectionExtensions
         
         // Register SettingsService as singleton for cross-request caching
         services.AddSingleton<SettingsService>();
+        services.AddSingleton<CollectionPolicyService>();
 
         return services;
     }

@@ -84,7 +84,7 @@ public sealed class DocumentTenantApiClient(HttpClient httpClient)
         try
         {
             var response = await httpClient.DeleteAsync(
-                $"/api/document-tenants/by-document/{Uri.EscapeDataString(fileName)}/tenant/{tenantId}",
+                $"/api/document-tenants/by-document/tenant/{tenantId}/{Uri.EscapeDataString(fileName)}",
                 ct);
             return response.IsSuccessStatusCode;
         }

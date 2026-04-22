@@ -499,7 +499,7 @@ public sealed class SharePointSyncService(
                 .Delta
                 .GetAsDeltaGetResponseAsync(cancellationToken: ct);
         }
-        catch (ODataError ex) when (ex.Error?.Code is "generalException" or "accessDenied" or "unauthenticated"
+        catch (ODataError ex) when (ex.Error?.Code is "accessDenied" or "unauthenticated"
                                      || ex.ResponseStatusCode is 403 or 401)
         {
             logger.LogWarning(ex,
@@ -508,6 +508,15 @@ public sealed class SharePointSyncService(
                 "Ensure the user has access to the SharePoint site and that Sites.Read.All has admin consent.",
                 ex.Error?.Code, ex.ResponseStatusCode, folder.DriveId);
             throw;
+        }
+        catch (ODataError ex) when (ex.Error?.Code == "generalException" || ex.ResponseStatusCode >= 500)
+        {
+            logger.LogWarning(ex,
+                "Delta API returned {Code}/{StatusCode} for drive {DriveId}. " +
+                "Falling back to recursive children enumeration (no delta token will be persisted).",
+                ex.Error?.Code, ex.ResponseStatusCode, folder.DriveId);
+            var fallbackItems = await FetchAllItemsViaChildrenAsync(client, folder.DriveId, ct);
+            return (fallbackItems, string.Empty);
         }
 
         var allItems = new List<DriveItem>();
@@ -527,13 +536,81 @@ public sealed class SharePointSyncService(
             if (response.OdataNextLink is null)
                 break;
 
-            response = await client.Drives[folder.DriveId].Items["root"]
-                .Delta
-                .WithUrl(response.OdataNextLink)
-                .GetAsDeltaGetResponseAsync(cancellationToken: ct);
+            try
+            {
+                response = await client.Drives[folder.DriveId].Items["root"]
+                    .Delta
+                    .WithUrl(response.OdataNextLink)
+                    .GetAsDeltaGetResponseAsync(cancellationToken: ct);
+            }
+            catch (ODataError ex) when (ex.Error?.Code == "generalException" || ex.ResponseStatusCode >= 500)
+            {
+                logger.LogWarning(ex,
+                    "Delta paging failed mid-stream ({Code}/{StatusCode}) for drive {DriveId}. " +
+                    "Switching to recursive children enumeration; delta token will not be persisted.",
+                    ex.Error?.Code, ex.ResponseStatusCode, folder.DriveId);
+                var fallbackItems = await FetchAllItemsViaChildrenAsync(client, folder.DriveId, ct);
+                return (fallbackItems, string.Empty);
+            }
         }
 
         return (allItems, deltaLink);
+    }
+
+    /// <summary>
+    /// Fallback enumeration: recursively walks the drive via /children when Graph delta is unavailable
+    /// (e.g. Communication-site Documents libraries that return generalException on /delta).
+    /// </summary>
+    private async Task<List<DriveItem>> FetchAllItemsViaChildrenAsync(
+        GraphServiceClient client,
+        string driveId,
+        CancellationToken ct)
+    {
+        var results = new List<DriveItem>();
+        var queue = new Queue<string>();
+        queue.Enqueue("root");
+
+        while (queue.Count > 0)
+        {
+            ct.ThrowIfCancellationRequested();
+            var itemId = queue.Dequeue();
+
+            DriveItemCollectionResponse? page;
+            try
+            {
+                page = await client.Drives[driveId].Items[itemId].Children.GetAsync(cancellationToken: ct);
+            }
+            catch (ODataError ex)
+            {
+                logger.LogWarning(ex,
+                    "Children enumeration failed at item {ItemId} in drive {DriveId} ({Code}/{StatusCode}); skipping subtree.",
+                    itemId, driveId, ex.Error?.Code, ex.ResponseStatusCode);
+                continue;
+            }
+
+            while (page is not null)
+            {
+                if (page.Value is not null)
+                {
+                    foreach (var child in page.Value)
+                    {
+                        if (child.Id is null) continue;
+                        results.Add(child);
+                        if (child.Folder is not null)
+                            queue.Enqueue(child.Id);
+                    }
+                }
+
+                if (page.OdataNextLink is null)
+                    break;
+
+                page = await client.Drives[driveId].Items[itemId].Children
+                    .WithUrl(page.OdataNextLink)
+                    .GetAsync(cancellationToken: ct);
+            }
+        }
+
+        return results;
     }
 
     private void LogDeltaItemsDebug(List<DriveItem> items)

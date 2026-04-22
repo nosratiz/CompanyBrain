@@ -34,11 +34,13 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
         }
     }
 
-    public async Task<SearchResponse?> SearchAsync(string query, int? maxResults = null)
+    public async Task<SearchResponse?> SearchAsync(string query, int? maxResults = null, string? collectionId = null)
     {
         var url = $"/api/knowledge/search?query={Uri.EscapeDataString(query)}";
         if (maxResults.HasValue)
             url += $"&maxResults={maxResults.Value}";
+        if (!string.IsNullOrWhiteSpace(collectionId))
+            url += $"&collectionId={Uri.EscapeDataString(collectionId)}";
         try
         {
             return await httpClient.GetFromJsonAsync<SearchResponse>(url);
@@ -73,12 +75,14 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
         return await response.Content.ReadFromJsonAsync<IngestResultResponse>();
     }
 
-    public async Task<IngestResultResponse?> UploadDocumentAsync(Stream fileStream, string fileName, string? name = null)
+    public async Task<IngestResultResponse?> UploadDocumentAsync(Stream fileStream, string fileName, string? name = null, string? collectionId = null)
     {
         using var content = new MultipartFormDataContent();
         content.Add(new StreamContent(fileStream), "file", fileName);
         if (!string.IsNullOrWhiteSpace(name))
             content.Add(new StringContent(name), "name");
+        if (!string.IsNullOrWhiteSpace(collectionId))
+            content.Add(new StringContent(collectionId), "collectionId");
 
         var response = await httpClient.PostAsync("/api/knowledge/documents/upload", content);
         response.EnsureSuccessStatusCode();

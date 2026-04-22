@@ -62,13 +62,13 @@ internal static class CompanyBrainApi
             .WithName("ListKnowledgeResources")
             .Produces<IReadOnlyList<KnowledgeResourceDescriptor>>(StatusCodes.Status200OK);
 
-        group.MapGet("/resources/{fileName}", GetResourceAsync)
+        group.MapGet("/resources/{**fileName}", GetResourceAsync)
             .WithName("GetKnowledgeResource")
             .Produces<KnowledgeResourceContent>(StatusCodes.Status200OK)
             .ProducesValidationProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
-        group.MapDelete("/resources/{fileName}", DeleteResourceAsync)
+        group.MapDelete("/resources/{**fileName}", DeleteResourceAsync)
             .WithName("DeleteKnowledgeResource")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem(StatusCodes.Status400BadRequest)
@@ -169,6 +169,7 @@ internal static class CompanyBrainApi
         var form = await request.ReadFormAsync(cancellationToken);
         var file = form.Files["file"];
         var name = form["name"].FirstOrDefault();
+        var collectionId = form["collectionId"].FirstOrDefault();
         var uploadRequest = new UploadDocumentRequest(file, name);
 
         var validation = await validator.ValidateAsync(uploadRequest, cancellationToken);
@@ -178,7 +179,10 @@ internal static class CompanyBrainApi
         }
 
         await using var stream = file!.OpenReadStream();
-        var result = await service.IngestUploadedDocumentAsync(stream, file.FileName, name, cancellationToken);
+        var result = string.IsNullOrWhiteSpace(collectionId)
+            ? await service.IngestUploadedDocumentAsync(stream, file.FileName, name, cancellationToken)
+            : await service.IngestUploadedDocumentIntoCollectionAsync(collectionId, stream, file.FileName, name, cancellationToken);
+
         if (result.IsFailed)
         {
             return result.ToProblemResult();
@@ -193,11 +197,12 @@ internal static class CompanyBrainApi
     private static async Task<IResult> SearchAsync(
         string query,
         int? maxResults,
+        string? collectionId,
         [FromServices] IValidator<SearchRequest> validator,
         [FromServices] KnowledgeApplicationService service,
         CancellationToken cancellationToken)
     {
-        var request = new SearchRequest(query, maxResults);
+        var request = new SearchRequest(query, maxResults, collectionId);
         var validation = await validator.ValidateAsync(request, cancellationToken);
         if (!validation.IsValid)
         {
@@ -205,7 +210,10 @@ internal static class CompanyBrainApi
         }
 
         var effectiveMaxResults = request.MaxResults ?? 5;
-        var result = await service.SearchAsync(request.Query, effectiveMaxResults, cancellationToken);
+        var result = string.IsNullOrWhiteSpace(request.CollectionId)
+            ? await service.SearchAsync(request.Query, effectiveMaxResults, cancellationToken)
+            : await service.SearchCollectionAsync(request.CollectionId, request.Query, effectiveMaxResults, cancellationToken);
+
         if (result.IsFailed)
         {
             return result.ToProblemResult();
