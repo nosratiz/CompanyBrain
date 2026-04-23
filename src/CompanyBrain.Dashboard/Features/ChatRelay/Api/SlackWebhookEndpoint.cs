@@ -30,7 +30,8 @@ public static class SlackWebhookEndpoint
         group.MapPost("/", HandleEventAsync)
             .WithName("SlackWebhook")
             .WithDescription("Receives Slack Event Subscriptions callbacks.")
-            .Accepts<SlackEventCallback>("application/json");
+            .Accepts<SlackEventCallback>("application/json")
+            .DisableAntiforgery();
 
         group.MapGet("/status", GetStatusAsync)
             .WithName("SlackStatus")
@@ -79,8 +80,17 @@ public static class SlackWebhookEndpoint
             return Results.BadRequest();
         }
 
-        // 3. Verify the Slack request signature (HMAC-SHA256).
-        //    Skip for url_verification challenges that arrive without a signature during initial setup.
+        // 3. Handle URL verification BEFORE signature check.
+        //    Slack sends this during initial setup — before the signing secret is saved —
+        //    so running HMAC here would return 401 and break the setup flow.
+        if (challenge is not null)
+        {
+            logger.LogInformation("Slack: url_verification challenge received — echoing back");
+            var response = new SlackChallengeResponse { Challenge = challenge.Challenge };
+            return Results.Json(response, ChatRelayJsonContext.Default.SlackChallengeResponse);
+        }
+
+        // 4. Verify the Slack request signature (HMAC-SHA256) for all real events.
         var settings = await settingsService.GetSettingsAsync(ct);
         var (_, signingSecret) = await settingsService.GetSlackCredentialsAsync(ct);
 
@@ -95,12 +105,6 @@ public static class SlackWebhookEndpoint
         else
         {
             logger.LogWarning("Slack signing secret is not configured — signature check skipped");
-        }
-
-        // 4. Handle URL verification (initial app setup).
-        if (challenge is not null)
-        {
-            return Results.Ok(new SlackChallengeResponse { Challenge = challenge.Challenge });
         }
 
         // 5. Guard: integration must be enabled.

@@ -26,6 +26,10 @@ public partial class ConfluenceConnector : IDisposable
     private bool _loadingSpaces;
     private List<ConfluenceSpace> _spaces = [];
     private string? _addingSpaceId;
+    private int _spacesBrowsePageIndex;
+    private const int SpacesBrowsePageSize = 12;
+    private IEnumerable<ConfluenceSpace> PagedSpaces =>
+        _spaces.Skip(_spacesBrowsePageIndex * SpacesBrowsePageSize).Take(SpacesBrowsePageSize);
 
     // Synced spaces
     private bool _loadingSyncedSpaces;
@@ -111,6 +115,7 @@ public partial class ConfluenceConnector : IDisposable
         try
         {
             _spaces = await ApiService.GetSpacesAsync(_cts.Token);
+            _spacesBrowsePageIndex = 0;
             if (_spaces.Count == 0)
                 Snackbar.Add("No spaces found in your Confluence instance", Severity.Info);
         }

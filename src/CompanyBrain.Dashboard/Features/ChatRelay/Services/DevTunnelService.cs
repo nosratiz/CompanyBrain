@@ -80,7 +80,7 @@ public sealed partial class DevTunnelService(
 
         logger.LogInformation("Starting tunnel via 'devtunnel'");
 
-        var args = $"host --allow-anonymous --port {port} --port-protocol https";
+        var args = $"host --allow-anonymous -p {port}";
         return await RunTunnelProcessAsync("devtunnel", args, DevTunnelUrlRegex(), ct);
     }
 
@@ -207,7 +207,7 @@ public sealed partial class DevTunnelService(
             }
         }
 
-        return 8080;
+        return 5202;
     }
 
     private static bool IsCommandAvailable(string command)
@@ -230,8 +230,8 @@ public sealed partial class DevTunnelService(
 
     // ── URL extraction regexes ────────────────────────────────────────────────
 
-    /// <summary>Matches devtunnel's output line: "https://xxxxx-8080.devtunnels.ms".</summary>
-    [GeneratedRegex(@"https://[a-z0-9\-]+\.devtunnels\.ms(?:/[^\s]*)?", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 500)]
+    /// <summary>Matches devtunnel's output line: "https://xxxxx-5202.euw.devtunnels.ms" (any region subdomain).</summary>
+    [GeneratedRegex(@"https://[a-z0-9\-]+(?:\.[a-z0-9]+)*\.devtunnels\.ms(?:/[^\s]*)?", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 500)]
     private static partial Regex DevTunnelUrlRegex();
 
     /// <summary>Matches cloudflared's output line: "https://random-words.trycloudflare.com".</summary>

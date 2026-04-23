@@ -4,6 +4,7 @@
 @inject IConversationThreadRepository ThreadRepository
 @inject ISnackbar Snackbar
 @inject ILogger<BotManagementTab> Logger
+@inject IJSRuntime JS
 
 <MudGrid>
 
@@ -34,8 +35,35 @@
                     <CardHeaderContent>
                         <MudText Typo="Typo.h6">Slack Integration</MudText>
                     </CardHeaderContent>
+                    <CardHeaderActions>
+                        @if (_slackTokenConfigured && _slackSecretConfigured)
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small"
+                                     Icon="@Icons.Material.Filled.CheckCircle" Class="mr-1">Configured</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Color="Color.Warning" Size="Size.Small"
+                                     Icon="@Icons.Material.Outlined.HelpOutline" Class="mr-1">Setup required</MudChip>
+                        }
+                    </CardHeaderActions>
                 </MudCardHeader>
                 <MudCardContent>
+                    @if (!string.IsNullOrEmpty(SlackWebhookUrl))
+                    {
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+                            <MudTextField Value="@SlackWebhookUrl"
+                                          Label="Webhook URL"
+                                          HelperText="Paste in Slack → Event Subscriptions → Request URL"
+                                          Variant="Variant.Outlined"
+                                          ReadOnly="true"
+                                          FullWidth="true" />
+                            <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                                           Title="Copy webhook URL"
+                                           OnClick="@(() => CopyToClipboard(SlackWebhookUrl))" />
+                        </MudStack>
+                    }
+
                     <MudSwitch @bind-Value="_slackEnabled"
                                Label="Enable Slack Bot"
                                Color="Color.Primary"
@@ -43,14 +71,14 @@
 
                     <MudTextField @bind-Value="_slackBotToken"
                                   Label="Bot Token (xoxb-…)"
-                                  HelperText="Leave blank to keep existing token."
+                                  HelperText="@(_slackTokenConfigured ? "✓ Token saved — leave blank to keep" : "Paste your xoxb-… token from Slack App → OAuth & Permissions")"
                                   InputType="InputType.Password"
                                   Variant="Variant.Outlined"
                                   Class="mb-3" />
 
                     <MudTextField @bind-Value="_slackSigningSecret"
                                   Label="Signing Secret"
-                                  HelperText="Leave blank to keep existing secret."
+                                  HelperText="@(_slackSecretConfigured ? "✓ Secret saved — leave blank to keep" : "Found in Slack App → Basic Information → App Credentials")"
                                   InputType="InputType.Password"
                                   Variant="Variant.Outlined"
                                   Class="mb-3" />
@@ -65,6 +93,18 @@
                     <CardHeaderContent>
                         <MudText Typo="Typo.h6">Microsoft Teams Integration</MudText>
                     </CardHeaderContent>
+                    <CardHeaderActions>
+                        @if (!string.IsNullOrEmpty(_teamsAppId) && _teamsPasswordConfigured)
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small"
+                                     Icon="@Icons.Material.Filled.CheckCircle" Class="mr-1">Configured</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Color="Color.Warning" Size="Size.Small"
+                                     Icon="@Icons.Material.Outlined.HelpOutline" Class="mr-1">Setup required</MudChip>
+                        }
+                    </CardHeaderActions>
                 </MudCardHeader>
                 <MudCardContent>
                     <MudSwitch @bind-Value="_teamsEnabled"
@@ -79,7 +119,7 @@
 
                     <MudTextField @bind-Value="_teamsAppPassword"
                                   Label="App Password (client secret)"
-                                  HelperText="Leave blank to keep existing password."
+                                  HelperText="@(_teamsPasswordConfigured ? "✓ Password saved — leave blank to keep" : "Azure AD app client secret")"
                                   InputType="InputType.Password"
                                   Variant="Variant.Outlined"
                                   Class="mb-3" />
@@ -217,6 +257,15 @@
     private bool _tunnelEnabled;
     private string? _tunnelUrl;
 
+    // Saved-credential indicators (derived from encrypted field presence — secrets never held in plaintext)
+    private bool _slackTokenConfigured;
+    private bool _slackSecretConfigured;
+    private bool _teamsPasswordConfigured;
+
+    private string SlackWebhookUrl => string.IsNullOrEmpty(_tunnelUrl)
+        ? string.Empty
+        : $"{_tunnelUrl.TrimEnd('/')}/api/chat/slack";
+
     private List<ConversationThread> _threads = [];
 
     protected override async Task OnInitializedAsync()
@@ -229,6 +278,9 @@
             _teamsAppId = settings.TeamsAppId ?? string.Empty;
             _tunnelEnabled = settings.TunnelEnabled;
             _tunnelUrl = settings.TunnelUrl;
+            _slackTokenConfigured = !string.IsNullOrEmpty(settings.EncryptedSlackBotToken);
+            _slackSecretConfigured = !string.IsNullOrEmpty(settings.EncryptedSlackSigningSecret);
+            _teamsPasswordConfigured = !string.IsNullOrEmpty(settings.EncryptedTeamsAppPassword);
 
             _threads = (await ThreadRepository.GetActiveThreadsAsync(CancellationToken.None)).ToList();
         }
@@ -256,6 +308,11 @@
                 slackSigningSecret: string.IsNullOrWhiteSpace(_slackSigningSecret) ? null : _slackSigningSecret,
                 teamsAppId: _teamsAppId,
                 teamsAppPassword: string.IsNullOrWhiteSpace(_teamsAppPassword) ? null : _teamsAppPassword);
+
+            // Update configured indicators immediately so the UI reflects the new state
+            if (!string.IsNullOrWhiteSpace(_slackBotToken)) _slackTokenConfigured = true;
+            if (!string.IsNullOrWhiteSpace(_slackSigningSecret)) _slackSecretConfigured = true;
+            if (!string.IsNullOrWhiteSpace(_teamsAppPassword)) _teamsPasswordConfigured = true;
 
             // Clear plaintext fields after save
             _slackBotToken = null;
@@ -305,13 +362,19 @@
         }
     }
 
-    private async Task CopyTunnelUrl()
+    private Task CopyTunnelUrl() => CopyToClipboard(_tunnelUrl ?? string.Empty);
+
+    private async Task CopyToClipboard(string text)
     {
-        if (!string.IsNullOrEmpty(_tunnelUrl))
+        if (string.IsNullOrEmpty(text)) return;
+        try
         {
-            // Note: clipboard access requires JS interop; simplified snackbar fallback here.
-            Snackbar.Add($"Tunnel URL: {_tunnelUrl}", Severity.Normal);
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+            Snackbar.Add("Copied to clipboard.", Severity.Success);
         }
-        await Task.CompletedTask;
+        catch
+        {
+            Snackbar.Add(text, Severity.Normal);
+        }
     }
 }

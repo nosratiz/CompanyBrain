@@ -43,7 +43,8 @@ public static class TeamsWebhookEndpoint
 
         group.MapPost("/", HandleActivityAsync)
             .WithName("TeamsWebhook")
-            .WithDescription("Receives Microsoft Teams Bot Framework Activity callbacks.");
+            .WithDescription("Receives Microsoft Teams Bot Framework Activity callbacks.")
+            .DisableAntiforgery();
 
         group.MapGet("/status", GetStatusAsync)
             .WithName("TeamsStatus")

@@ -1,7 +1,12 @@
 @using CompanyBrain.Dashboard.Features.Notion.Services
 @using CompanyBrain.Dashboard.Features.Notion.Api
+@using CompanyBrain.Dashboard.Data
+@using CompanyBrain.Dashboard.Features.AutoSync.Models
+@using CompanyBrain.Dashboard.Features.AutoSync.Services
 @inject NotionSettingsProvider SettingsProvider
 @inject NotionApiClient ApiClient
+@inject IDbContextFactory<DocumentAssignmentDbContext> DbFactory
+@inject SovereignSyncWorker SyncWorker
 @inject ISnackbar Snackbar
 @inject ILogger<NotionSettingsTab> Logger
 
@@ -88,6 +93,69 @@
         </MudCard>
     </MudItem>
 
+    <MudItem xs="12">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-tertiary">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">
+                        <MudIcon Icon="@Icons.Material.Filled.Sync" Class="mr-2" />
+                        Sync Status
+                    </MudText>
+                </CardHeaderContent>
+                <CardHeaderActions>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Refresh"
+                               OnClick="SyncNowAsync"
+                               Disabled="@(_syncing || !_hasToken)">
+                        @if (_syncing)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        Sync Now
+                    </MudButton>
+                </CardHeaderActions>
+            </MudCardHeader>
+            <MudCardContent>
+                @if (_schedule is null)
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Text" Dense="true">
+                        No sync schedule yet. Save your API token to create one automatically.
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudGrid>
+                        <MudItem xs="12" sm="4">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Last Sync</MudText>
+                            <MudText Typo="Typo.body2">
+                                @(_schedule.LastSyncUtc.HasValue
+                                    ? _schedule.LastSyncUtc.Value.ToLocalTime().ToString("g")
+                                    : "Never")
+                            </MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Schedule</MudText>
+                            <MudText Typo="Typo.body2">@_schedule.CronExpression</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Collection</MudText>
+                            <MudText Typo="Typo.body2">@(_schedule.CollectionName ?? "notion")</MudText>
+                        </MudItem>
+                        @if (!string.IsNullOrEmpty(_schedule.LastErrorMessage))
+                        {
+                            <MudItem xs="12">
+                                <MudAlert Severity="Severity.Error" Variant="Variant.Text" Dense="true">
+                                    @_schedule.LastErrorMessage
+                                </MudAlert>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
     <MudItem xs="12" md="5">
         <MudCard Elevation="0" Class="border-1 border-solid mud-border-secondary">
             <MudCardHeader>
@@ -126,6 +194,8 @@
     private bool _showToken;
     private bool _saving;
     private bool _testing;
+    private bool _syncing;
+    private SyncSchedule? _schedule;
 
     protected override async Task OnInitializedAsync()
     {
@@ -134,6 +204,7 @@
             var (filter, hasToken) = await SettingsProvider.GetConfigAsync();
             _workspaceFilter = filter;
             _hasToken = hasToken;
+            await LoadScheduleAsync();
         }
         catch (Exception ex)
         {
@@ -142,16 +213,44 @@
         }
     }
 
+    private async Task LoadScheduleAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _schedule = await db.SyncSchedules
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.SourceType == SourceType.Notion);
+    }
+
+    private async Task EnsureScheduleExistsAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var exists = await db.SyncSchedules
+            .AnyAsync(s => s.SourceType == SourceType.Notion);
+
+        if (!exists)
+        {
+            var schedule = new SyncSchedule
+            {
+                SourceType = SourceType.Notion,
+                SourceUrl = string.Empty,
+                CollectionName = "notion",
+                CronExpression = "0 */6 * * *",
+                IsActive = true,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            db.SyncSchedules.Add(schedule);
+            await db.SaveChangesAsync();
+            Logger.LogInformation("Created default Notion SyncSchedule");
+        }
+
+        await LoadScheduleAsync();
+    }
+
     private async Task SaveAsync()
     {
         _saving = true;
         try
         {
-            // If the token field is blank and we already have one stored, pass empty to preserve existing
-            var tokenToSave = string.IsNullOrEmpty(_apiToken) && _hasToken
-                ? null!  // null means "keep existing" — but SaveAsync replaces on non-empty only
-                : _apiToken;
-
             // When blank and a token exists, we don't overwrite — reload config and skip
             if (string.IsNullOrEmpty(_apiToken) && _hasToken)
             {
@@ -169,6 +268,7 @@
             _hasToken = hasToken;
             _apiToken = string.Empty;
 
+            await EnsureScheduleExistsAsync();
             Snackbar.Add("Notion settings saved", Severity.Success);
         }
         catch (Exception ex)
@@ -179,6 +279,27 @@
         finally
         {
             _saving = false;
+        }
+    }
+
+    private async Task SyncNowAsync()
+    {
+        _syncing = true;
+        try
+        {
+            await EnsureScheduleExistsAsync();
+            await SyncWorker.TriggerImmediateAsync();
+            await LoadScheduleAsync();
+            Snackbar.Add("Sync triggered — pages will appear in resources shortly.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Notion Sync Now failed");
+            Snackbar.Add($"Sync error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _syncing = false;
         }
     }
 

@@ -142,11 +142,11 @@ public sealed class ClaudeHandshakeService(
             root["mcpServers"] = mcpServers;
         }
 
-        // Build the CompanyBrain server entry (SSE transport)
+        // Build the CompanyBrain server entry (mcp-remote stdio↔HTTP bridge)
         var serverEntry = new JsonObject
         {
-            ["url"] = $"{serverUrl}/mcp",
-            ["transport"] = "sse"
+            ["command"] = "npx",
+            ["args"] = new JsonArray("-y", "mcp-remote", $"{serverUrl}/mcp")
         };
 
         mcpServers[McpServerName] = serverEntry;
@@ -174,6 +174,11 @@ public sealed class ClaudeHandshakeService(
         if (servers?[McpServerName] is not JsonObject existing)
             return false;
 
+        // Check for mcp-remote args format
+        if (existing["args"] is JsonArray args && args.Count >= 3)
+            return args[2]?.GetValue<string>() == $"{serverUrl}/mcp";
+
+        // Legacy: direct url format
         var existingUrl = existing["url"]?.GetValue<string>();
         return existingUrl == $"{serverUrl}/mcp";
     }

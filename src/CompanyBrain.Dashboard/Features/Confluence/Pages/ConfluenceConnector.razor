@@ -120,7 +120,7 @@
             @if (_spaces.Count > 0)
             {
                 <MudGrid>
-                    @foreach (var space in _spaces)
+                    @foreach (var space in PagedSpaces)
                     {
                         var isAlreadySynced = _syncedSpaceIds.Contains(space.Id);
                         <MudItem xs="12" sm="6" md="4">
@@ -172,6 +172,15 @@
                         </MudItem>
                     }
                 </MudGrid>
+                @if (_spaces.Count > SpacesBrowsePageSize)
+                {
+                    <MudStack AlignItems="AlignItems.Center" Class="mt-3">
+                        <MudPagination Count="@((int)Math.Ceiling((double)_spaces.Count / SpacesBrowsePageSize))"
+                                       Selected="@(_spacesBrowsePageIndex + 1)"
+                                       SelectedChanged="@(p => { _spacesBrowsePageIndex = p - 1; StateHasChanged(); })"
+                                       Color="Color.Primary" />
+                    </MudStack>
+                }
             }
         </MudStack>
     </MudTabPanel>
@@ -309,6 +318,9 @@
                             </MudStack>
                         </MudTd>
                     </RowTemplate>
+                    <PagerContent>
+                        <MudTablePager />
+                    </PagerContent>
                 </MudTable>
             }
         </MudStack>

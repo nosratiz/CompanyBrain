@@ -79,6 +79,9 @@ internal static class CompanyBrainApi
         return endpoints;
     }
 
+    private static string? GetActorEmail(HttpContext ctx)
+        => ctx.Request.Headers["X-Actor-Email"].FirstOrDefault() is { Length: > 0 } email ? email : null;
+
     private static async Task<IResult> IngestWikiAsync(
         IngestWikiRequest request,
         [FromServices] IValidator<IngestWikiRequest> validator,
@@ -104,6 +107,7 @@ internal static class CompanyBrainApi
 
         var document = result.Value;
         _ = audit.LogAsync(AuditEventType.DocumentCreated, new AuditEntry(
+            ActorEmail: GetActorEmail(httpContext),
             ResourceType: "Document",
             ResourceId: document.FileName,
             ResourceName: document.FileName,
@@ -139,6 +143,7 @@ internal static class CompanyBrainApi
         var batchResult = result.Value;
         var ip = httpContext.Connection.RemoteIpAddress?.ToString();
         _ = audit.LogAsync(AuditEventType.DocumentCreated, new AuditEntry(
+            ActorEmail: GetActorEmail(httpContext),
             ResourceType: "Document",
             ResourceName: request.Url,
             Metadata: new { source = "wiki-batch", url = request.Url, ingested = batchResult.SuccessfullyIngested, failed = batchResult.Failed },
@@ -179,6 +184,7 @@ internal static class CompanyBrainApi
 
         var document = result.Value;
         _ = audit.LogAsync(AuditEventType.DocumentCreated, new AuditEntry(
+            ActorEmail: GetActorEmail(httpContext),
             ResourceType: "Document",
             ResourceId: document.FileName,
             ResourceName: document.FileName,
@@ -260,6 +266,7 @@ internal static class CompanyBrainApi
         }
 
         _ = audit.LogAsync(AuditEventType.SearchPerformed, new AuditEntry(
+            ActorEmail: GetActorEmail(httpContext),
             ResourceType: "KnowledgeBase",
             ResourceId: request.CollectionId,
             Metadata: new { query = request.Query, maxResults = effectiveMaxResults, collectionId = request.CollectionId, resultLength = result.Value.Length },
@@ -312,6 +319,7 @@ internal static class CompanyBrainApi
         await sessionTracker.NotifyResourceListChangedAsync(cancellationToken);
 
         _ = audit.LogAsync(AuditEventType.DocumentDeleted, new AuditEntry(
+            ActorEmail: GetActorEmail(httpContext),
             ResourceType: "Document",
             ResourceId: fileName,
             ResourceName: fileName,
@@ -354,6 +362,7 @@ internal static class CompanyBrainApi
 
         var document = result.Value;
         _ = audit.LogAsync(AuditEventType.DocumentCreated, new AuditEntry(
+            ActorEmail: GetActorEmail(httpContext),
             ResourceType: "Document",
             ResourceId: document.FileName,
             ResourceName: document.FileName,
