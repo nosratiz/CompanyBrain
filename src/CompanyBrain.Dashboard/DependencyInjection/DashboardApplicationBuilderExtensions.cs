@@ -1,4 +1,5 @@
 using CompanyBrain.Dashboard.Data;
+using CompanyBrain.Dashboard.Data.Audit;
 using CompanyBrain.Dashboard.Features.License;
 using CompanyBrain.Dashboard.Mcp.Collections;
 using CompanyBrain.Dashboard.Middleware;
@@ -61,6 +62,22 @@ public static class DashboardApplicationBuilderExtensions
         await EnsureCollectionPoliciesTableAsync(db);
         await EnsureDeepRootEmbeddingSettingsTableAsync(db);
         await EnsureSyncSchedulesTableAsync(db);
+        await EnsureChatBotSettingsTableAsync(db);
+        await EnsureConversationThreadsTableAsync(db);
+
+        return app;
+    }
+
+    /// <summary>
+    /// Ensures the audit SQLite database is created on startup.
+    /// </summary>
+    public static async Task<WebApplication> InitializeAuditDatabaseAsync(this WebApplication app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+
+        var factory = app.Services.GetRequiredService<IDbContextFactory<AuditDbContext>>();
+        await using var db = await factory.CreateDbContextAsync();
+        await db.Database.EnsureCreatedAsync();
 
         return app;
     }
@@ -133,5 +150,53 @@ public static class DashboardApplicationBuilderExtensions
         await db.Database.ExecuteSqlRawAsync(createTableSql);
         await db.Database.ExecuteSqlRawAsync(createIndexActiveSql);
         await db.Database.ExecuteSqlRawAsync(createIndexUrlSql);
+    }
+
+    private static async Task EnsureChatBotSettingsTableAsync(DocumentAssignmentDbContext db)
+    {
+        const string createTableSql = """
+            CREATE TABLE IF NOT EXISTS "ChatBotSettings" (
+                "Id"                          TEXT    NOT NULL CONSTRAINT "PK_ChatBotSettings" PRIMARY KEY,
+                "SlackEnabled"                INTEGER NOT NULL DEFAULT 0,
+                "EncryptedSlackBotToken"      TEXT    NOT NULL DEFAULT '',
+                "EncryptedSlackSigningSecret" TEXT    NOT NULL DEFAULT '',
+                "TeamsEnabled"                INTEGER NOT NULL DEFAULT 0,
+                "TeamsAppId"                  TEXT    NOT NULL DEFAULT '',
+                "EncryptedTeamsAppPassword"   TEXT    NOT NULL DEFAULT '',
+                "TunnelEnabled"               INTEGER NOT NULL DEFAULT 0,
+                "TunnelUrl"                   TEXT    NOT NULL DEFAULT '',
+                "UpdatedAtUtc"                TEXT    NOT NULL
+            );
+            """;
+        await db.Database.ExecuteSqlRawAsync(createTableSql);
+    }
+
+    private static async Task EnsureConversationThreadsTableAsync(DocumentAssignmentDbContext db)
+    {
+        const string createTableSql = """
+            CREATE TABLE IF NOT EXISTS "ConversationThreads" (
+                "Id"                INTEGER NOT NULL CONSTRAINT "PK_ConversationThreads" PRIMARY KEY AUTOINCREMENT,
+                "Platform"          TEXT    NOT NULL,
+                "ExternalThreadId"  TEXT    NOT NULL,
+                "ExternalChannelId" TEXT    NOT NULL,
+                "ServiceUrl"        TEXT    NOT NULL DEFAULT '',
+                "SessionId"         TEXT    NOT NULL,
+                "IsActive"          INTEGER NOT NULL DEFAULT 1,
+                "CreatedAtUtc"      TEXT    NOT NULL,
+                "LastActivityUtc"   TEXT    NOT NULL
+            );
+            """;
+        const string createUniqueIndexSql = """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_ConversationThreads_Platform_ExternalThreadId"
+                ON "ConversationThreads" ("Platform", "ExternalThreadId");
+            """;
+        const string createActiveIndexSql = """
+            CREATE INDEX IF NOT EXISTS "IX_ConversationThreads_IsActive"
+                ON "ConversationThreads" ("IsActive");
+            """;
+
+        await db.Database.ExecuteSqlRawAsync(createTableSql);
+        await db.Database.ExecuteSqlRawAsync(createUniqueIndexSql);
+        await db.Database.ExecuteSqlRawAsync(createActiveIndexSql);
     }
 }

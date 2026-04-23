@@ -1,3 +1,5 @@
+using CompanyBrain.Dashboard.Data.Audit;
+using CompanyBrain.Dashboard.Services.Audit;
 using Microsoft.Extensions.Options;
 
 namespace CompanyBrain.Dashboard.Features.DeepClean;
@@ -16,6 +18,7 @@ namespace CompanyBrain.Dashboard.Features.DeepClean;
 internal sealed class DeepCleanService(
     DeepCleanRepository repository,
     IOptions<DeepCleanOptions> options,
+    IServiceScopeFactory scopeFactory,
     ILogger<DeepCleanService> logger) : BackgroundService
 {
     private readonly DeepCleanOptions _options = options.Value;
@@ -233,6 +236,8 @@ internal sealed class DeepCleanService(
             logger.LogInformation(
                 "LRU eviction complete: freed {FreedMb:F1} MB, evicted {Count} records",
                 summary.LruEvictedBytes / (1024.0 * 1024.0), summary.LruEvicted);
+
+            await WriteEvictionAuditAsync(summary.LruEvicted, summary.LruEvictedBytes, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -282,6 +287,24 @@ internal sealed class DeepCleanService(
     }
 
     // ──────────────────────────── Helpers ────────────────────────────
+
+    private async Task WriteEvictionAuditAsync(int count, long bytes, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var audit = scope.ServiceProvider.GetRequiredService<IAuditService>();
+            await audit.LogAsync(AuditEventType.DocumentDeleted, new AuditEntry(
+                ActorId: "system",
+                ResourceType: "Document",
+                ResourceName: "LRU eviction",
+                Metadata: new { evictedCount = count, freedBytes = bytes, triggeredBy = "DeepClean" }));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "DeepCleanService: audit write failed for LRU eviction");
+        }
+    }
 
     /// <summary>
     /// Calculates total index directory size as:

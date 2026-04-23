@@ -1,0 +1,226 @@
+@page "/audit"
+@using CompanyBrain.Dashboard.Data.Audit
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<AuditDbContext> AuditDbFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Audit Log - Company Brain</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Audit Log</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" md="3">
+            <MudSelect T="string" @bind-Value="_filterEventType" Label="Event Type" Clearable="true">
+                @foreach (var name in Enum.GetNames<AuditEventType>())
+                {
+                    <MudSelectItem T="string" Value="@name">@name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudTextField @bind-Value="_filterActor" Label="Actor Email" Immediate="false" />
+        </MudItem>
+        <MudItem xs="12" md="2">
+            <MudDatePicker @bind-Date="_filterFrom" Label="From" />
+        </MudItem>
+        <MudItem xs="12" md="2">
+            <MudDatePicker @bind-Date="_filterTo" Label="To" />
+        </MudItem>
+        <MudItem xs="12" md="2" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ApplyFilters" FullWidth="true">
+                Apply
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-0">
+    <MudDataGrid T="AuditLog"
+                 ServerData="LoadServerData"
+                 @ref="_grid"
+                 Dense="true"
+                 Hover="true"
+                 RowsPerPage="50">
+        <Columns>
+            <PropertyColumn Property="x => x.Timestamp" Title="Timestamp" Format="yyyy-MM-dd HH:mm:ss" />
+            <TemplateColumn Title="Event" SortBy="x => x.EventType.ToString()">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Color="@GetEventColor(context.Item.EventType)">
+                        @context.Item.EventType
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="x => x.ActorEmail" Title="Actor" />
+            <PropertyColumn Property="x => x.TenantId" Title="Tenant" />
+            <PropertyColumn Property="x => x.ResourceType" Title="Resource Type" />
+            <PropertyColumn Property="x => x.ResourceName" Title="Resource" />
+            <TemplateColumn Title="Status" SortBy="x => x.Success">
+                <CellTemplate>
+                    @if (context.Item.Success)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" Size="Size.Small" />
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="x => x.IpAddress" Title="IP" />
+        </Columns>
+        <ChildRowContent>
+            @if (!string.IsNullOrWhiteSpace(context.Item.Metadata) || !string.IsNullOrWhiteSpace(context.Item.ErrorMessage))
+            {
+                <MudTr>
+                    <td colspan="8">
+                        <MudPaper Class="pa-3 mx-4 my-2" Elevation="0" Style="background: rgba(255,255,255,0.04);">
+                            @if (!string.IsNullOrWhiteSpace(context.Item.ErrorMessage))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Error" Class="mb-2">
+                                    <b>Error:</b> @context.Item.ErrorMessage
+                                </MudText>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(context.Item.Metadata))
+                            {
+                                <MudText Typo="Typo.caption" Style="font-family: monospace; white-space: pre-wrap;">@context.Item.Metadata</MudText>
+                            }
+                        </MudPaper>
+                    </td>
+                </MudTr>
+            }
+        </ChildRowContent>
+        <PagerContent>
+            <MudDataGridPager T="AuditLog" />
+        </PagerContent>
+    </MudDataGrid>
+</MudPaper>
+
+<MudButton Variant="Variant.Outlined"
+           Color="Color.Secondary"
+           StartIcon="@Icons.Material.Filled.Download"
+           OnClick="ExportCsvAsync"
+           Class="mt-4">
+    Export CSV
+</MudButton>
+
+@code {
+    private MudDataGrid<AuditLog> _grid = default!;
+    private string? _filterEventType;
+    private string? _filterActor;
+    private DateTime? _filterFrom;
+    private DateTime? _filterTo;
+
+    private async Task<GridData<AuditLog>> LoadServerData(GridState<AuditLog> state)
+    {
+        try
+        {
+            await using var db = await AuditDbFactory.CreateDbContextAsync();
+            var query = db.AuditLogs.AsNoTracking().AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(_filterEventType)
+                && Enum.TryParse<AuditEventType>(_filterEventType, out var eventType))
+            {
+                query = query.Where(x => x.EventType == eventType);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_filterActor))
+                query = query.Where(x => x.ActorEmail != null && x.ActorEmail.Contains(_filterActor));
+
+            if (_filterFrom.HasValue)
+                query = query.Where(x => x.Timestamp >= _filterFrom.Value.ToUniversalTime());
+
+            if (_filterTo.HasValue)
+                query = query.Where(x => x.Timestamp <= _filterTo.Value.ToUniversalTime().AddDays(1));
+
+            var total = await query.CountAsync();
+            var items = await query
+                .OrderByDescending(x => x.Timestamp)
+                .Skip(state.Page * state.PageSize)
+                .Take(state.PageSize)
+                .ToListAsync();
+
+            return new GridData<AuditLog> { Items = items, TotalItems = total };
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load audit logs: {ex.Message}", Severity.Error);
+            return new GridData<AuditLog> { Items = [], TotalItems = 0 };
+        }
+    }
+
+    private async Task ApplyFilters()
+    {
+        await _grid.ReloadServerData();
+    }
+
+    private async Task ExportCsvAsync()
+    {
+        try
+        {
+            await using var db = await AuditDbFactory.CreateDbContextAsync();
+            var query = db.AuditLogs.AsNoTracking().AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(_filterEventType)
+                && Enum.TryParse<AuditEventType>(_filterEventType, out var eventType))
+                query = query.Where(x => x.EventType == eventType);
+
+            if (!string.IsNullOrWhiteSpace(_filterActor))
+                query = query.Where(x => x.ActorEmail != null && x.ActorEmail.Contains(_filterActor));
+
+            if (_filterFrom.HasValue)
+                query = query.Where(x => x.Timestamp >= _filterFrom.Value.ToUniversalTime());
+
+            if (_filterTo.HasValue)
+                query = query.Where(x => x.Timestamp <= _filterTo.Value.ToUniversalTime().AddDays(1));
+
+            var rows = await query.OrderByDescending(x => x.Timestamp).Take(5000).ToListAsync();
+
+            var csv = new System.Text.StringBuilder();
+            csv.AppendLine("Timestamp,EventType,ActorId,ActorEmail,TenantId,ResourceType,ResourceId,ResourceName,Success,IpAddress,ErrorMessage,Metadata");
+            foreach (var row in rows)
+            {
+                csv.AppendLine(string.Join(",",
+                    CsvEscape(row.Timestamp.ToString("o")),
+                    CsvEscape(row.EventType.ToString()),
+                    CsvEscape(row.ActorId),
+                    CsvEscape(row.ActorEmail),
+                    CsvEscape(row.TenantId),
+                    CsvEscape(row.ResourceType),
+                    CsvEscape(row.ResourceId),
+                    CsvEscape(row.ResourceName),
+                    row.Success.ToString(),
+                    CsvEscape(row.IpAddress),
+                    CsvEscape(row.ErrorMessage),
+                    CsvEscape(row.Metadata)));
+            }
+
+            Snackbar.Add($"Export ready: {rows.Count} rows. (Download requires JS interop — integrate with IJSRuntime for browser download.)", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Export failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static string CsvEscape(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+            return $"\"{value.Replace("\"", "\"\"")}\"";
+        return value;
+    }
+
+    private static Color GetEventColor(AuditEventType eventType) => eventType switch
+    {
+        AuditEventType.LoginFailed => Color.Error,
+        AuditEventType.DocumentDeleted => Color.Warning,
+        AuditEventType.SettingsChanged => Color.Warning,
+        AuditEventType.LoginSucceeded => Color.Success,
+        AuditEventType.DocumentCreated => Color.Success,
+        AuditEventType.SearchPerformed => Color.Info,
+        AuditEventType.DocumentAccessed => Color.Info,
+        AuditEventType.CollectionAccessed => Color.Info,
+        _ => Color.Default
+    };
+}

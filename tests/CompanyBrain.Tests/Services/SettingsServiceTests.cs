@@ -1,6 +1,7 @@
 using CompanyBrain.Dashboard.Data;
 using CompanyBrain.Dashboard.Data.Models;
 using CompanyBrain.Dashboard.Services;
+using CompanyBrain.Dashboard.Services.Audit;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -12,6 +13,7 @@ public sealed class SettingsServiceTests : IDisposable
 {
     private readonly IDbContextFactory<DocumentAssignmentDbContext> _contextFactory;
     private readonly ILogger<SettingsService> _logger;
+    private readonly IAuditService _audit;
     private readonly DbContextOptions<DocumentAssignmentDbContext> _options;
     private readonly SettingsService _sut;
 
@@ -20,10 +22,11 @@ public sealed class SettingsServiceTests : IDisposable
         _options = new DbContextOptionsBuilder<DocumentAssignmentDbContext>()
             .UseInMemoryDatabase($"SettingsTests_{Guid.NewGuid():N}")
             .Options;
-        
+
         _contextFactory = new TestDbContextFactory(_options);
         _logger = Substitute.For<ILogger<SettingsService>>();
-        _sut = new SettingsService(_contextFactory, _logger);
+        _audit = Substitute.For<IAuditService>();
+        _sut = new SettingsService(_contextFactory, _audit, _logger);
     }
 
     #region GetSettingsAsync Tests

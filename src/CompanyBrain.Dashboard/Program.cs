@@ -3,6 +3,7 @@ using CompanyBrain.Dashboard.Api;
 using CompanyBrain.Dashboard.DependencyInjection;
 using CompanyBrain.Dashboard.Features.DocumentTenant;
 using CompanyBrain.Dashboard.Features.AutoSetup.Api;
+using CompanyBrain.Dashboard.Features.ChatRelay.Api;
 using CompanyBrain.Dashboard.Features.Confluence.DependencyInjection;
 using CompanyBrain.Dashboard.Features.SharePoint.DependencyInjection;
 
@@ -26,6 +27,7 @@ var app = builder.Build();
 
 // Initialize databases
 await app.InitializeDatabaseAsync();
+await app.InitializeAuditDatabaseAsync();
 await app.Services.InitializeSharePointDatabaseAsync();
 await app.Services.InitializeConfluenceDatabaseAsync();
 
@@ -43,6 +45,9 @@ app.MapDocumentTenantApi();
 app.MapSharePointAuthApi();
 app.MapAutoSetupApi();
 app.MapDeepRootSettingsApi();
+app.MapSlackWebhook();
+app.MapTeamsWebhook();
+app.MapChatRelaySettingsApi();
 app.MapMcp(mcpRoutePattern);
 
 app.Run();

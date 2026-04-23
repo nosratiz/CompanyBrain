@@ -1,10 +1,13 @@
 using CompanyBrain.Dashboard.Api.Serialization;
 using CompanyBrain.Dashboard.Data;
+using CompanyBrain.Dashboard.Data.Audit;
 using CompanyBrain.Dashboard.Features.Auth.Interfaces;
 using CompanyBrain.Dashboard.Features.Auth.Services;
+using CompanyBrain.Dashboard.Services.Audit;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Validators;
 using CompanyBrain.Dashboard.Features.AutoSetup.DependencyInjection;
 using CompanyBrain.Dashboard.Features.AutoSync.DependencyInjection;
+using CompanyBrain.Dashboard.Features.ChatRelay.DependencyInjection;
 using CompanyBrain.Dashboard.Features.Confluence.DependencyInjection;
 using CompanyBrain.Dashboard.Features.DeepClean;
 using CompanyBrain.Dashboard.Features.License;
@@ -51,11 +54,13 @@ public static class DashboardServiceCollectionExtensions
             .AddDashboardScripting()
             .AddDashboardHttpClients(configuration, environment)
             .AddDashboardDatabase(configuration)
+            .AddDashboardAudit(configuration)
             .AddDashboardValidation()
             .AddSharePointMirror(configuration)
             .AddConfluenceMirror(configuration)
             .AddAutoSync()
             .AddAutoSetup()
+            .AddChatRelay()
             .AddDeepClean(configuration);
 
         return services;
@@ -307,6 +312,23 @@ public static class DashboardServiceCollectionExtensions
     public static IServiceCollection AddDashboardValidation(this IServiceCollection services)
     {
         services.AddValidatorsFromAssemblyContaining<AssignDocumentToTenantRequestValidator>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds the audit log SQLite database and audit service.
+    /// </summary>
+    public static IServiceCollection AddDashboardAudit(this IServiceCollection services, IConfiguration configuration)
+    {
+        var connectionString = configuration.GetConnectionString("Audit")
+            ?? DatabasePaths.ConnectionString("audit.db");
+
+        services.AddDbContextFactory<AuditDbContext>(
+            options => options.UseSqlite(connectionString),
+            ServiceLifetime.Singleton);
+
+        services.AddSingleton<IAuditService, AuditService>();
 
         return services;
     }

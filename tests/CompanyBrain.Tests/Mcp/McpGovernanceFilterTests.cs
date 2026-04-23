@@ -2,6 +2,7 @@ using CompanyBrain.Dashboard.Data;
 using CompanyBrain.Dashboard.Data.Models;
 using CompanyBrain.Dashboard.Mcp;
 using CompanyBrain.Dashboard.Services;
+using CompanyBrain.Dashboard.Services.Audit;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -24,7 +25,8 @@ public sealed class McpGovernanceFilterTests : IDisposable
         
         var contextFactory = new TestDbContextFactory(_dbOptions);
         var settingsLogger = Substitute.For<ILogger<SettingsService>>();
-        _settingsService = new SettingsService(contextFactory, settingsLogger);
+        var audit = Substitute.For<IAuditService>();
+        _settingsService = new SettingsService(contextFactory, audit, settingsLogger);
         
         var filterLogger = Substitute.For<ILogger<McpGovernanceFilter>>();
         _sut = new McpGovernanceFilter(_settingsService, filterLogger);

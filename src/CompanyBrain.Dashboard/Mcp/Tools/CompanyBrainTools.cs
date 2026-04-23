@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using CompanyBrain.Application;
+using CompanyBrain.Dashboard.Data.Audit;
+using CompanyBrain.Dashboard.Services.Audit;
 using CompanyBrain.Models;
 using FluentResults;
 using ModelContextProtocol;
@@ -11,7 +13,8 @@ namespace CompanyBrain.Dashboard.Mcp.Tools;
 [McpServerToolType]
 internal sealed class CompanyBrainTools(
     KnowledgeApplicationService service,
-    GovernanceToolWrapper governance)
+    GovernanceToolWrapper governance,
+    IAuditService audit)
 {
     [McpServerTool, Description("Lists the knowledge documents that were already saved by the API and are available for MCP consumption.")]
     public async Task<string> ListResources(CancellationToken cancellationToken)
@@ -41,7 +44,15 @@ internal sealed class CompanyBrainTools(
             : await service.SearchCollectionAsync(collectionId, query, effectiveMaxResults, cancellationToken);
 
         var text = EnsureSuccess(result);
-        return await governance.PruneTextAsync(text, query, cancellationToken);
+        var pruned = await governance.PruneTextAsync(text, query, cancellationToken);
+
+        _ = audit.LogAsync(AuditEventType.SearchPerformed, new AuditEntry(
+            ActorId: "mcp-tool",
+            ResourceType: "KnowledgeBase",
+            ResourceId: collectionId,
+            Metadata: new { query, maxResults = effectiveMaxResults, collectionId }));
+
+        return pruned;
     }
 
     [McpServerTool, Description("Ingests a wiki page from a URL and saves it as a knowledge resource. After ingestion the MCP resource list is updated automatically.")]
@@ -55,6 +66,13 @@ internal sealed class CompanyBrainTools(
         var document = EnsureSuccess(result);
 
         await NotifyResourceListChangedAsync(server, cancellationToken);
+
+        _ = audit.LogAsync(AuditEventType.DocumentCreated, new AuditEntry(
+            ActorId: "mcp-tool",
+            ResourceType: "Document",
+            ResourceId: document.FileName,
+            ResourceName: document.FileName,
+            Metadata: new { source = "wiki", url }));
 
         return $"Ingested '{document.FileName}' (uri: {document.ResourceUri}, existed: {document.Existed}). The resource list has been updated.";
     }
@@ -70,6 +88,13 @@ internal sealed class CompanyBrainTools(
         var document = EnsureSuccess(result);
 
         await NotifyResourceListChangedAsync(server, cancellationToken);
+
+        _ = audit.LogAsync(AuditEventType.DocumentCreated, new AuditEntry(
+            ActorId: "mcp-tool",
+            ResourceType: "Document",
+            ResourceId: document.FileName,
+            ResourceName: document.FileName,
+            Metadata: new { source = "path" }));
 
         return $"Ingested '{document.FileName}' (uri: {document.ResourceUri}, existed: {document.Existed}). The resource list has been updated.";
     }

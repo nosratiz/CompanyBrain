@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using Cronos;
+using CompanyBrain.Dashboard.Data.Audit;
 using CompanyBrain.Dashboard.Features.AutoSync.Models;
 using CompanyBrain.Dashboard.Features.AutoSync.Providers;
+using CompanyBrain.Dashboard.Services.Audit;
 
 namespace CompanyBrain.Dashboard.Features.AutoSync.Services;
 
@@ -25,6 +27,7 @@ namespace CompanyBrain.Dashboard.Features.AutoSync.Services;
 public sealed class SovereignSyncWorker(
     IScheduleRepository scheduleRepository,
     IngestionProviderFactory providerFactory,
+    IServiceScopeFactory scopeFactory,
     ILogger<SovereignSyncWorker> logger) : BackgroundService
 {
     /// <summary>How often the worker wakes up to check for due schedules.</summary>
@@ -200,9 +203,32 @@ public sealed class SovereignSyncWorker(
                 schedule.Id, result.ErrorMessage);
             await SafeUpdateFailureAsync(schedule.Id, result.ErrorMessage ?? "Unknown error", ct);
         }
+
+        await WriteAuditAsync(schedule, result, ct);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private async Task WriteAuditAsync(SyncSchedule schedule, IngestionResult result, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var audit = scope.ServiceProvider.GetRequiredService<IAuditService>();
+            await audit.LogAsync(AuditEventType.SyncScheduleRun, new AuditEntry(
+                ActorId: "system",
+                ResourceType: "SyncSchedule",
+                ResourceId: schedule.Id.ToString(),
+                ResourceName: schedule.SourceUrl,
+                Metadata: new { sourceType = schedule.SourceType.ToString(), contentChanged = result.ContentChanged },
+                Success: result.Success,
+                ErrorMessage: result.ErrorMessage));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "SovereignSyncWorker: audit write failed for schedule {Id}", schedule.Id);
+        }
+    }
 
     private async Task SafeUpdateFailureAsync(int scheduleId, string error, CancellationToken ct)
     {

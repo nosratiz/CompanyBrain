@@ -1,7 +1,9 @@
 using CompanyBrain.Dashboard.Features.AutoSync.Models;
 using CompanyBrain.Dashboard.Features.AutoSync.Providers;
 using CompanyBrain.Dashboard.Features.AutoSync.Services;
+using CompanyBrain.Dashboard.Services.Audit;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -35,6 +37,16 @@ public sealed class SovereignSyncWorkerTests
             IsActive = true,
         };
 
+    private static IServiceScopeFactory BuildNullScopeFactory()
+    {
+        var audit = Substitute.For<IAuditService>();
+        var scope = Substitute.For<IServiceScope>();
+        scope.ServiceProvider.GetService(typeof(IAuditService)).Returns(audit);
+        var factory = Substitute.For<IServiceScopeFactory>();
+        factory.CreateScope().Returns(scope);
+        return factory;
+    }
+
     private static (SovereignSyncWorker Worker, IScheduleRepository Repo, IngestionProviderFactory Factory)
         BuildWorker(
             IReadOnlyList<SyncSchedule> schedules,
@@ -55,6 +67,7 @@ public sealed class SovereignSyncWorkerTests
         var worker = new SovereignSyncWorker(
             repo,
             factory,
+            BuildNullScopeFactory(),
             NullLogger<SovereignSyncWorker>.Instance);
 
         return (worker, repo, factory);
@@ -140,7 +153,7 @@ public sealed class SovereignSyncWorkerTests
         repo.GetActiveSchedulesAsync(Arg.Any<CancellationToken>()).Returns([schedule]);
 
         var emptyFactory = new IngestionProviderFactory([]);
-        var worker = new SovereignSyncWorker(repo, emptyFactory, NullLogger<SovereignSyncWorker>.Instance);
+        var worker = new SovereignSyncWorker(repo, emptyFactory, BuildNullScopeFactory(), NullLogger<SovereignSyncWorker>.Instance);
 
         await worker.TriggerImmediateAsync();
 

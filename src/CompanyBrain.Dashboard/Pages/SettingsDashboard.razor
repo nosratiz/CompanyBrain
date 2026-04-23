@@ -39,6 +39,10 @@ else if (_settings is not null)
         <MudTabPanel Text="SharePoint" Icon="@Icons.Material.Filled.Cloud">
             <SharePointSettingsTab Settings="_settings" Saving="_saving" OnSave="SaveSettings" />
         </MudTabPanel>
+
+        <MudTabPanel Text="Bot Integration" Icon="@Icons.Material.Filled.SmartToy">
+            <BotManagementTab />
+        </MudTabPanel>
     </MudTabs>
 }
 
