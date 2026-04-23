@@ -23,7 +23,7 @@ namespace CompanyBrain.Dashboard.Features.AutoSync.Services;
 /// <see cref="SyncSchedule.LastContentHash"/> so future runs can skip unchanged pages.</para>
 /// </summary>
 public sealed class SovereignSyncWorker(
-    ScheduleRepository scheduleRepository,
+    IScheduleRepository scheduleRepository,
     IngestionProviderFactory providerFactory,
     ILogger<SovereignSyncWorker> logger) : BackgroundService
 {

@@ -32,6 +32,7 @@ public static class AutoSyncServiceCollectionExtensions
 
         // Schedule data-access
         services.AddSingleton<ScheduleRepository>();
+        services.AddSingleton<IScheduleRepository>(sp => sp.GetRequiredService<ScheduleRepository>());
 
         // Ingestion providers — each is registered twice:
         //   1. As the concrete type (for tests / direct injection)

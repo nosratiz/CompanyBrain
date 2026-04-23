@@ -35,14 +35,12 @@ public sealed class SovereignSyncWorkerTests
             IsActive = true,
         };
 
-    private static (SovereignSyncWorker Worker, ScheduleRepository Repo, IngestionProviderFactory Factory)
+    private static (SovereignSyncWorker Worker, IScheduleRepository Repo, IngestionProviderFactory Factory)
         BuildWorker(
             IReadOnlyList<SyncSchedule> schedules,
             IngestionResult providerResult)
     {
-        var repo = Substitute.For<ScheduleRepository>(
-            Substitute.For<Microsoft.EntityFrameworkCore.IDbContextFactory<CompanyBrain.Dashboard.Data.DocumentAssignmentDbContext>>(),
-            NullLogger<ScheduleRepository>.Instance);
+        var repo = Substitute.For<IScheduleRepository>();
 
         repo.GetActiveSchedulesAsync(Arg.Any<CancellationToken>())
             .Returns(schedules);
@@ -138,9 +136,7 @@ public sealed class SovereignSyncWorkerTests
         // Schedule is for Notion, but factory has no Notion provider
         var schedule = MakeDueSchedule(sourceType: SourceType.Notion);
 
-        var repo = Substitute.For<ScheduleRepository>(
-            Substitute.For<Microsoft.EntityFrameworkCore.IDbContextFactory<CompanyBrain.Dashboard.Data.DocumentAssignmentDbContext>>(),
-            NullLogger<ScheduleRepository>.Instance);
+        var repo = Substitute.For<IScheduleRepository>();
         repo.GetActiveSchedulesAsync(Arg.Any<CancellationToken>()).Returns([schedule]);
 
         var emptyFactory = new IngestionProviderFactory([]);

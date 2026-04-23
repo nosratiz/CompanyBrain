@@ -11,7 +11,7 @@ namespace CompanyBrain.Dashboard.Features.AutoSync.Services;
 /// </summary>
 public sealed class ScheduleRepository(
     IDbContextFactory<DocumentAssignmentDbContext> dbContextFactory,
-    ILogger<ScheduleRepository> logger)
+    ILogger<ScheduleRepository> logger) : IScheduleRepository
 {
     // ── Queries ───────────────────────────────────────────────────────────────
 
