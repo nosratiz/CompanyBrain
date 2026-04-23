@@ -14,6 +14,8 @@ public static class CompanyBrainCoreServiceCollectionExtensions
     {
         var knowledgeRoot = ResolveKnowledgeRoot(contentRootPath);
 
+        services.AddDeepRootVectorSearch(knowledgeRoot);
+
         services.AddSingleton(sp => new KnowledgeStore(
             knowledgeRoot,
             sp.GetRequiredService<ILogger<KnowledgeStore>>()));

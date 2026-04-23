@@ -59,6 +59,8 @@ public static class DashboardApplicationBuilderExtensions
         // EnsureCreated does NOT add tables that were introduced after the database was first created.
         // Patch any tables/indexes that the current model expects but a pre-existing DB lacks.
         await EnsureCollectionPoliciesTableAsync(db);
+        await EnsureDeepRootEmbeddingSettingsTableAsync(db);
+        await EnsureSyncSchedulesTableAsync(db);
 
         return app;
     }
@@ -82,5 +84,54 @@ public static class DashboardApplicationBuilderExtensions
 
         await db.Database.ExecuteSqlRawAsync(createTableSql);
         await db.Database.ExecuteSqlRawAsync(createIndexSql);
+    }
+
+    private static async Task EnsureDeepRootEmbeddingSettingsTableAsync(DocumentAssignmentDbContext db)
+    {
+        const string createTableSql = """
+            CREATE TABLE IF NOT EXISTS "DeepRootEmbeddingSettings" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_DeepRootEmbeddingSettings" PRIMARY KEY,
+                "Provider" TEXT NOT NULL DEFAULT 'None',
+                "Model" TEXT NOT NULL DEFAULT '',
+                "Dimensions" INTEGER NOT NULL DEFAULT 0,
+                "EncryptedApiKey" TEXT NOT NULL DEFAULT '',
+                "Endpoint" TEXT NOT NULL DEFAULT '',
+                "DatabasePath" TEXT NOT NULL DEFAULT '',
+                "UpdatedAtUtc" TEXT NOT NULL
+            );
+            """;
+        await db.Database.ExecuteSqlRawAsync(createTableSql);
+    }
+
+    private static async Task EnsureSyncSchedulesTableAsync(DocumentAssignmentDbContext db)
+    {
+        const string createTableSql = """
+            CREATE TABLE IF NOT EXISTS "SyncSchedules" (
+                "Id"                     INTEGER NOT NULL CONSTRAINT "PK_SyncSchedules" PRIMARY KEY AUTOINCREMENT,
+                "SourceUrl"              TEXT    NOT NULL,
+                "SourceType"             TEXT    NOT NULL DEFAULT 'WebWiki',
+                "CollectionName"         TEXT,
+                "CronExpression"         TEXT    NOT NULL,
+                "LastSyncUtc"            TEXT,
+                "LastContentHash"        TEXT,
+                "IsActive"               INTEGER NOT NULL DEFAULT 1,
+                "LastErrorMessage"       TEXT,
+                "ConsecutiveFailureCount" INTEGER NOT NULL DEFAULT 0,
+                "NextRetryUtc"           TEXT,
+                "CreatedAtUtc"           TEXT    NOT NULL
+            );
+            """;
+        const string createIndexActiveSql = """
+            CREATE INDEX IF NOT EXISTS "IX_SyncSchedules_IsActive"
+                ON "SyncSchedules" ("IsActive");
+            """;
+        const string createIndexUrlSql = """
+            CREATE INDEX IF NOT EXISTS "IX_SyncSchedules_SourceUrl"
+                ON "SyncSchedules" ("SourceUrl");
+            """;
+
+        await db.Database.ExecuteSqlRawAsync(createTableSql);
+        await db.Database.ExecuteSqlRawAsync(createIndexActiveSql);
+        await db.Database.ExecuteSqlRawAsync(createIndexUrlSql);
     }
 }

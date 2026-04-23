@@ -42,6 +42,7 @@ app.MapResourceTemplateApi();
 app.MapDocumentTenantApi();
 app.MapSharePointAuthApi();
 app.MapAutoSetupApi();
+app.MapDeepRootSettingsApi();
 app.MapMcp(mcpRoutePattern);
 
 app.Run();

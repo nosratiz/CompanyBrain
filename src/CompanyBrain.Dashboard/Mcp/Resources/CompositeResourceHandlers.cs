@@ -1,3 +1,4 @@
+using CompanyBrain.Dashboard.Features.SharePoint.Mcp;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -5,11 +6,13 @@ using ModelContextProtocol.Server;
 namespace CompanyBrain.Dashboard.Mcp.Resources;
 
 /// <summary>
-/// Composite resource handler that combines knowledge and template resources
+/// Composite resource handler that combines knowledge, SharePoint, and template resources
 /// and applies governance policies (PII masking, system prompting).
 /// </summary>
 internal static class CompositeResourceHandlers
 {
+    private const string SharePointUriPrefix = "nexus://";
+
     public static async ValueTask<ListResourcesResult> ListResourcesAsync(
         RequestContext<ListResourcesRequestParams> request,
         CancellationToken cancellationToken)
@@ -20,9 +23,17 @@ internal static class CompositeResourceHandlers
         // Get template resources
         var templateResult = await ResourceTemplateHandlers.ListTemplatesAsResourcesAsync(request, cancellationToken);
 
-        // Combine both resource lists
-        var combinedResources = new List<Resource>(knowledgeResult.Resources);
+        // Get SharePoint resources
+        var spHandlers = request.Server.Services?.GetService<SharePointResourceHandlers>();
+        var spResult = spHandlers is not null
+            ? await spHandlers.ListResourcesAsync(request, cancellationToken)
+            : new ListResourcesResult { Resources = [] };
+
+        var combinedResources = new List<Resource>(
+            knowledgeResult.Resources.Count + templateResult.Resources.Count + spResult.Resources.Count);
+        combinedResources.AddRange(knowledgeResult.Resources);
         combinedResources.AddRange(templateResult.Resources);
+        combinedResources.AddRange(spResult.Resources);
 
         return new ListResourcesResult { Resources = combinedResources };
     }
@@ -39,6 +50,14 @@ internal static class CompositeResourceHandlers
         {
             result = await ResourceTemplateHandlers.ReadTemplateResourceAsync(request, cancellationToken);
         }
+        else if (uri.StartsWith(SharePointUriPrefix, StringComparison.OrdinalIgnoreCase)
+                 && uri.Contains("/sharepoint/", StringComparison.OrdinalIgnoreCase))
+        {
+            var spHandlers = request.Server.Services?.GetService<SharePointResourceHandlers>();
+            result = spHandlers is not null
+                ? await spHandlers.ReadResourceAsync(request, cancellationToken)
+                : CreateErrorResult($"SharePoint resource handler not available for URI: {uri}");
+        }
         else
         {
             // Default to knowledge resources
@@ -54,4 +73,18 @@ internal static class CompositeResourceHandlers
 
         return result;
     }
+
+    private static ReadResourceResult CreateErrorResult(string message) =>
+        new()
+        {
+            Contents =
+            [
+                new TextResourceContents
+                {
+                    Uri = "error://",
+                    Text = message,
+                    MimeType = "text/plain",
+                }
+            ]
+        };
 }

@@ -32,6 +32,10 @@ else if (_settings is not null)
             <AiTuningSettingsTab Settings="_settings" Saving="_saving" OnSave="SaveSettings" />
         </MudTabPanel>
 
+        <MudTabPanel Text="DeepRoot" Icon="@Icons.Material.Filled.Hub">
+            <DeepRootSettingsTab />
+        </MudTabPanel>
+
         <MudTabPanel Text="SharePoint" Icon="@Icons.Material.Filled.Cloud">
             <SharePointSettingsTab Settings="_settings" Saving="_saving" OnSave="SaveSettings" />
         </MudTabPanel>

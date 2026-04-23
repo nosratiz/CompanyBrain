@@ -4,6 +4,7 @@ using CompanyBrain.Dashboard.Features.Auth.Interfaces;
 using CompanyBrain.Dashboard.Features.Auth.Services;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Validators;
 using CompanyBrain.Dashboard.Features.AutoSetup.DependencyInjection;
+using CompanyBrain.Dashboard.Features.AutoSync.DependencyInjection;
 using CompanyBrain.Dashboard.Features.Confluence.DependencyInjection;
 using CompanyBrain.Dashboard.Features.DeepClean;
 using CompanyBrain.Dashboard.Features.License;
@@ -15,6 +16,7 @@ using CompanyBrain.Dashboard.Mcp.Tools;
 using CompanyBrain.Dashboard.Middleware;
 using CompanyBrain.Dashboard.Scripting;
 using CompanyBrain.Dashboard.Services;
+using CompanyBrain.Search.Vector;
 using FluentValidation;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.EntityFrameworkCore;
@@ -52,6 +54,7 @@ public static class DashboardServiceCollectionExtensions
             .AddDashboardValidation()
             .AddSharePointMirror(configuration)
             .AddConfluenceMirror(configuration)
+            .AddAutoSync()
             .AddAutoSetup()
             .AddDeepClean(configuration);
 
@@ -286,6 +289,14 @@ public static class DashboardServiceCollectionExtensions
         // Register SettingsService as singleton for cross-request caching
         services.AddSingleton<SettingsService>();
         services.AddSingleton<CollectionPolicyService>();
+
+        // DeepRoot vector-search settings: stored in DB, encrypted with Data Protection,
+        // surfaced to the runtime via DatabaseEmbeddingOptionsAccessor (overrides the
+        // default IOptions-bound accessor registered by AddDeepRootVectorSearch).
+        services.AddSingleton<DeepRootSettingsService>();
+        services.AddSingleton<DatabaseEmbeddingOptionsAccessor>();
+        services.AddSingleton<IEmbeddingOptionsAccessor>(sp =>
+            sp.GetRequiredService<DatabaseEmbeddingOptionsAccessor>());
 
         return services;
     }
