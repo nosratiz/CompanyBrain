@@ -41,11 +41,28 @@ public sealed class SearchUtilitiesTests
     [Fact]
     public void Tokenize_WithShortTerms_ShouldFilterOut()
     {
-        // Act - terms less than 2 characters should be filtered
-        var result = SearchUtilities.Tokenize("a b c to be or").ToList();
+        // Act - single-character terms should be filtered out (length < 2)
+        var result = SearchUtilities.Tokenize("a b c foo bar").ToList();
 
         // Assert
-        result.Should().BeEquivalentTo(["to", "be", "or"]);
+        result.Should().BeEquivalentTo(["foo", "bar"]);
+    }
+
+    [Fact]
+    public void Tokenize_WithStopWords_ShouldExcludeThem()
+    {
+        // Regression: common words like "what", "is", "in" used to be included as search
+        // terms, causing them to match almost every document and return irrelevant results.
+        var result = SearchUtilities.Tokenize("what is insurance in ups").ToList();
+
+        // Meaningful terms are retained
+        result.Should().Contain("insurance");
+        result.Should().Contain("ups");
+
+        // Stop words are stripped
+        result.Should().NotContain("what");
+        result.Should().NotContain("is");
+        result.Should().NotContain("in");
     }
 
     [Fact]
@@ -281,6 +298,33 @@ public sealed class SearchUtilitiesTests
 
         // Assert
         score.Should().Be(20); // Only phrase match bonus
+    }
+
+    [Fact]
+    public void ScoreSnippet_ShouldNotMatchTermInsideWord()
+    {
+        // Regression: "is" was matching inside "IsNullable", "IsIdentity", "IsPrimaryKey"
+        // causing database schema files to score falsely high on queries containing "is".
+        var schemaSnippet = "\"IsNullable\": false, \"IsPrimaryKey\": true, \"IsIdentity\": false";
+        // Use the full phrase (realistic query) — the phrase won't be found in the schema JSON,
+        // and the word-boundary fix ensures "is" doesn't count as a term hit either.
+        var terms = new List<string> { "is" };
+
+        var score = SearchUtilities.ScoreSnippet("schema.md", schemaSnippet, "what is insurance in ups", terms);
+
+        score.Should().Be(0);
+    }
+
+    [Fact]
+    public void ScoreSnippet_ShouldMatchTermAsWholeWord()
+    {
+        // "is" should score when it appears as a standalone word
+        var snippet = "This field is optional and nullable by default";
+        var terms = new List<string> { "is" };
+
+        var score = SearchUtilities.ScoreSnippet("doc.md", snippet, "is", terms);
+
+        score.Should().BeGreaterThan(0);
     }
 
     #endregion

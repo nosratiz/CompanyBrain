@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using CompanyBrain.Application;
 using CompanyBrain.Dashboard.Features.ChatRelay.Models;
@@ -27,7 +28,8 @@ internal sealed partial class ChatRelayService(
     TeamsOutboundClient teamsClient,
     ILogger<ChatRelayService> logger)
 {
-    private const int MaxSearchResults = 5;
+    private const int MaxSearchResults = 6;
+    private const string ChatResultHeader = "Here's what I found for";
 
     // Strip Slack-style mention markup: <@U1234567> or <@BOTID>
     [GeneratedRegex(@"<@[A-Z0-9]+>", RegexOptions.None, matchTimeoutMilliseconds: 200)]
@@ -79,47 +81,21 @@ internal sealed partial class ChatRelayService(
         }
 
         // ── Step 2: RAG search ────────────────────────────────────────────────
-        string rawAnswer;
-        try
-        {
-            var result = await knowledgeService.SearchAsync(query, MaxSearchResults, ct);
-
-            if (result.IsFailed)
-            {
-                rawAnswer = "I couldn't find relevant information in the knowledge base for that query.";
-                logger.LogWarning("SearchAsync failed for query '{Query}': {Reasons}", query, result.Reasons);
-            }
-            else
-            {
-                rawAnswer = result.Value;
-            }
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogError(ex, "AskDocs search failed for query '{Query}'", query);
-            rawAnswer = "An internal error occurred while searching the knowledge base. Please try again later.";
-        }
+        var rawAnswer = await RunSearchAsync(query, ct);
 
         // ── Step 3: sovereign post-processing (PII + hostname redaction) ──────
-        string safeAnswer;
-        try
-        {
-            safeAnswer = postProcessor.Process(rawAnswer);
-        }
-        catch (Exception ex)
-        {
-            // Should never happen, but don't block the reply on a filter bug.
-            logger.LogError(ex, "SovereignPostProcessor threw unexpectedly — sending sanitised fallback");
-            safeAnswer = "The response could not be safely filtered. Please contact your administrator.";
-        }
+        var safeAnswer = RunPostProcessor(rawAnswer);
 
-        // ── Step 4: platform-specific reply ──────────────────────────────────
-        var sent = message.Platform switch
-        {
-            ChatPlatform.Slack => await SendSlackReplyAsync(settings, message, safeAnswer, ct),
-            ChatPlatform.Teams => await SendTeamsReplyAsync(settings, message, thread, safeAnswer, ct),
-            _ => false,
-        };
+        // ── Step 3b: reformat raw search-result markup into a readable reply ──
+        var chatAnswer = FormatForChat(safeAnswer);
+
+        // ── Step 3c: split into one message per result and send all at once ───
+        var entries = SplitIntoResultEntries(chatAnswer);
+
+        // ── Step 4: platform-specific reply — burst all entries in order ──────
+        var sent = false;
+        foreach (var entry in entries)
+            sent |= await SendPlatformReplyAsync(settings, message, thread, entry, ct);
 
         // ── Step 5: update thread activity timestamp ──────────────────────────
         if (sent)
@@ -131,6 +107,71 @@ internal sealed partial class ChatRelayService(
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
+    private async Task<string> RunSearchAsync(string query, CancellationToken ct)
+    {
+        try
+        {
+            var result = await knowledgeService.SearchAsync(query, MaxSearchResults, ct);
+            if (result.IsFailed)
+            {
+                logger.LogWarning("SearchAsync failed for query '{Query}': {Reasons}", query, result.Reasons);
+                return "I couldn't find relevant information in the knowledge base for that query.";
+            }
+            return result.Value;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "AskDocs search failed for query '{Query}'", query);
+            return "An internal error occurred while searching the knowledge base. Please try again later.";
+        }
+    }
+
+    private string RunPostProcessor(string rawAnswer)
+    {
+        try { return postProcessor.Process(rawAnswer); }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "SovereignPostProcessor threw unexpectedly — sending sanitised fallback");
+            return "The response could not be safely filtered. Please contact your administrator.";
+        }
+    }
+
+    /// <summary>
+    /// Splits a formatted chat reply into one message per document result.
+    /// Returns a single-element list for non-search replies or single-match results.
+    /// </summary>
+    private static IReadOnlyList<string> SplitIntoResultEntries(string formatted)
+    {
+        if (!formatted.StartsWith(ChatResultHeader, StringComparison.Ordinal))
+            return [formatted];
+
+        // FormatForChat separates each result block with "\n\n"
+        // → parts[0] = header line, parts[1..n] = "*file.md*\n> snippet"
+        var parts = formatted.Split("\n\n");
+        if (parts.Length <= 2)
+            return [formatted]; // only one result
+
+        var results = new List<string>(parts.Length - 1);
+        results.Add($"{parts[0]}\n\n{parts[1]}"); // first message carries the header
+        for (var i = 2; i < parts.Length; i++)
+            results.Add(parts[i]);
+
+        return results;
+    }
+
+    private Task<bool> SendPlatformReplyAsync(
+        Models.ChatBotSettings settings,
+        IncomingChatMessage message,
+        ConversationThread thread,
+        string reply,
+        CancellationToken ct)
+        => message.Platform switch
+        {
+            ChatPlatform.Slack => SendSlackReplyAsync(settings, message, reply, ct),
+            ChatPlatform.Teams => SendTeamsReplyAsync(settings, message, thread, reply, ct),
+            _ => Task.FromResult(false),
+        };
+
     private static string CleanQuery(IncomingChatMessage message)
     {
         var text = message.Text ?? string.Empty;
@@ -140,6 +181,83 @@ internal sealed partial class ChatRelayService(
             text = SlackMentionRegex().Replace(text, string.Empty);
 
         return text.Trim();
+    }
+
+    /// <summary>
+    /// Converts the raw search-result string produced by <see cref="KnowledgeStore"/> (which is
+    /// formatted for LLM / MCP consumption) into a human-readable Slack/Teams message.
+    ///
+    /// <para>
+    /// Raw format:
+    /// <code>
+    /// Search results for 'query':
+    ///
+    /// - @resources/file.md (resources://file.md)
+    ///   > snippet line 1
+    ///   > snippet line 2
+    /// </code>
+    /// </para>
+    /// </summary>
+    private static string FormatForChat(string rawAnswer)
+    {
+        // "No matches found for 'X' in Y." → friendly message
+        const string noMatchPrefix = "No matches found for '";
+        if (rawAnswer.StartsWith(noMatchPrefix, StringComparison.Ordinal))
+        {
+            var queryStart = noMatchPrefix.Length;
+            var queryEnd = rawAnswer.IndexOf('\'', queryStart);
+            var query = queryEnd > queryStart ? rawAnswer[queryStart..queryEnd] : "your query";
+            return $"I couldn't find anything relevant for \"{query}\" in the knowledge base.";
+        }
+
+        // Pass non-search-result strings through unchanged.
+        const string searchPrefix = "Search results for '";
+        if (!rawAnswer.StartsWith(searchPrefix, StringComparison.Ordinal))
+            return rawAnswer;
+
+        var lines = rawAnswer.Split('\n');
+        var sb = new StringBuilder();
+
+        foreach (var rawLine in lines)
+        {
+            // Header: "Search results for 'X':" → "Here's what I found for "X":"
+            if (rawLine.StartsWith(searchPrefix, StringComparison.Ordinal))
+            {
+                var innerStart = searchPrefix.Length;
+                var innerEnd = rawLine.IndexOf("':", innerStart, StringComparison.Ordinal);
+                var query = innerEnd > innerStart
+                    ? rawLine[innerStart..innerEnd]
+                    : rawLine[innerStart..].TrimEnd(':');
+                sb.AppendLine($"Here's what I found for \"{query}\":");
+                continue;
+            }
+
+            // Resource line: "- @resources/file.md (resources://...)" → "*file.md*"
+            const string resourcePrefix = "- @resources/";
+            if (rawLine.StartsWith(resourcePrefix, StringComparison.Ordinal))
+            {
+                var fileStart = resourcePrefix.Length;
+                var fileEnd = rawLine.IndexOfAny([' ', '('], fileStart);
+                var fileName = fileEnd > fileStart ? rawLine[fileStart..fileEnd] : rawLine[fileStart..];
+                sb.AppendLine();
+                sb.Append($"*{fileName}*");
+                continue;
+            }
+
+            // Snippet line: "  > text" → "> text"
+            if (rawLine.StartsWith("  >", StringComparison.Ordinal))
+            {
+                sb.AppendLine();
+                sb.Append(rawLine.TrimStart());
+                continue;
+            }
+
+            // Blank lines — suppress (we add our own spacing above)
+            if (!string.IsNullOrWhiteSpace(rawLine))
+                sb.AppendLine(rawLine);
+        }
+
+        return sb.ToString().TrimEnd();
     }
 
     private async Task<bool> SendSlackReplyAsync(

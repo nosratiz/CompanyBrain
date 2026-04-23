@@ -170,6 +170,14 @@ public static class DashboardApplicationBuilderExtensions
             );
             """;
         await db.Database.ExecuteSqlRawAsync(createTableSql);
+
+        // Add DevTunnelId column to existing installations (safe: ignored if already present).
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE ChatBotSettings ADD COLUMN \"DevTunnelId\" TEXT NOT NULL DEFAULT ''");
+        }
+        catch { /* column already exists — safe to ignore */ }
     }
 
     private static async Task EnsureConversationThreadsTableAsync(DocumentAssignmentDbContext db)

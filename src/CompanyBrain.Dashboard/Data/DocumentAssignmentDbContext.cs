@@ -394,6 +394,7 @@ public sealed class DocumentAssignmentDbContext : DbContext
             entity.Property(e => e.EncryptedSlackSigningSecret).HasMaxLength(4096).HasDefaultValue(string.Empty);
             entity.Property(e => e.TeamsAppId).HasMaxLength(100).HasDefaultValue(string.Empty);
             entity.Property(e => e.EncryptedTeamsAppPassword).HasMaxLength(4096).HasDefaultValue(string.Empty);
+            entity.Property(e => e.DevTunnelId).HasMaxLength(200).HasDefaultValue(string.Empty);
             entity.Property(e => e.TunnelUrl).HasMaxLength(500).HasDefaultValue(string.Empty);
             entity.Property(e => e.UpdatedAtUtc).IsRequired();
         });

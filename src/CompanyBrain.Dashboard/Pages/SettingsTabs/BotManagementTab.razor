@@ -1,6 +1,8 @@
 @using CompanyBrain.Dashboard.Features.ChatRelay.Models
 @using CompanyBrain.Dashboard.Features.ChatRelay.Services
+@implements IDisposable
 @inject ChatRelaySettingsService SettingsService
+@inject DevTunnelService DevTunnelService
 @inject IConversationThreadRepository ThreadRepository
 @inject ISnackbar Snackbar
 @inject ILogger<BotManagementTab> Logger
@@ -134,15 +136,58 @@
                     <CardHeaderContent>
                         <MudText Typo="Typo.h6">Dev Tunnel (Inbound Webhooks)</MudText>
                     </CardHeaderContent>
+                    <CardHeaderActions>
+                        @if (!string.IsNullOrEmpty(_tunnelUrl))
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small"
+                                     Icon="@Icons.Material.Filled.CloudDone" Class="mr-1">Tunnel active</MudChip>
+                        }
+                        else if (_tunnelEnabled)
+                        {
+                            <MudChip T="string" Color="Color.Warning" Size="Size.Small"
+                                     Icon="@Icons.Material.Outlined.CloudOff" Class="mr-1">Not connected</MudChip>
+                        }
+                        @if (_tunnelEnabled)
+                        {
+                            <MudButton Variant="Variant.Outlined"
+                                       Size="Size.Small"
+                                       Color="Color.Secondary"
+                                       StartIcon="@Icons.Material.Filled.Refresh"
+                                       OnClick="RegenerateTunnel"
+                                       Disabled="_regenerating"
+                                       Class="ml-1">
+                                @if (_regenerating)
+                                {
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                    <span>Regenerating…</span>
+                                }
+                                else
+                                {
+                                    <span>Regenerate Tunnel</span>
+                                }
+                            </MudButton>
+                        }
+                    </CardHeaderActions>
                 </MudCardHeader>
                 <MudCardContent>
+
+                    <!-- What is a tunnel? -->
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Text" Dense="true" Class="mb-4">
+                        <MudText Typo="Typo.body2">
+                            <strong>What is this?</strong> Slack and Teams need to reach this server over the internet to deliver messages.
+                            The tunnel creates a secure public URL that forwards traffic to your local machine — no firewall changes needed.
+                            <strong>devtunnel</strong> is installed automatically when you enable this toggle.
+                        </MudText>
+                    </MudAlert>
+
                     <MudSwitch @bind-Value="_tunnelEnabled"
-                               Label="Enable Tunnel (devtunnel / cloudflared)"
+                               Label="Enable Tunnel (auto-managed)"
                                Color="Color.Secondary"
                                Class="mb-3" />
 
                     @if (!string.IsNullOrEmpty(_tunnelUrl))
                     {
+                        <!-- Active: show URL + copy -->
                         <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
                             <MudTextField Value="@_tunnelUrl"
                                           Label="Active Tunnel URL"
@@ -153,16 +198,48 @@
                                            Title="Copy URL"
                                            OnClick="@CopyTunnelUrl" />
                         </MudStack>
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">
-                            Configure this URL as the Request URL in your Slack App or Teams Bot manifest.
-                        </MudText>
+                        <MudAlert Severity="Severity.Success" Variant="Variant.Text" Dense="true" Class="mb-2">
+                            <MudText Typo="Typo.caption">
+                                Paste <strong>@(TunnelSlackUrl)</strong> into
+                                <strong>Slack App → Event Subscriptions → Request URL</strong>, then save.
+                            </MudText>
+                        </MudAlert>
                     }
                     else if (_tunnelEnabled)
                     {
-                        <MudAlert Severity="Severity.Warning" Dense="true">
-                            Tunnel is enabled but no URL has been detected yet.
-                            Ensure <code>devtunnel</code> or <code>cloudflared</code> is installed and
-                            that you have run <code>devtunnel login</code> at least once.
+                        <!-- Enabled but URL not yet detected -->
+                        <MudAlert Severity="Severity.Warning" Class="mb-3">
+                            <MudText Typo="Typo.body2" Class="mb-2">
+                                <strong>Tunnel starting…</strong> If it stays here for more than 30 seconds, follow these one-time steps:
+                            </MudText>
+                            <MudList T="string" Dense="true">
+                                <MudListItem Icon="@Icons.Material.Filled.LooksOne">
+                                    Open a terminal and run:
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-1">
+                                        <code style="background:var(--mud-palette-background-grey);padding:4px 8px;border-radius:4px;font-size:0.85em">devtunnel login</code>
+                                        <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small"
+                                                       Title="Copy command"
+                                                       OnClick="@(() => CopyToClipboard("devtunnel login"))" />
+                                    </MudStack>
+                                </MudListItem>
+                                <MudListItem Icon="@Icons.Material.Filled.LooksTwo">
+                                    Sign in with your <strong>Microsoft account</strong> in the browser that opens.
+                                </MudListItem>
+                                <MudListItem Icon="@Icons.Material.Filled.Looks3">
+                                    Come back here and <strong>restart the app</strong> — the URL will appear automatically.
+                                </MudListItem>
+                            </MudList>
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <!-- Disabled state: explain the steps upfront -->
+                        <MudAlert Severity="Severity.Normal" Variant="Variant.Text" Dense="true">
+                            <MudText Typo="Typo.body2">
+                                Enable the toggle above to start the tunnel. On first use you will need to run
+                                <code>devtunnel login</code> once in a terminal to authenticate with Microsoft.
+                                After that everything is automatic.
+                            </MudText>
                         </MudAlert>
                     }
                 </MudCardContent>
@@ -246,6 +323,7 @@
 @code {
     private bool _loading = true;
     private bool _saving;
+    private bool _regenerating;
 
     // Form state
     private bool _slackEnabled;
@@ -266,10 +344,14 @@
         ? string.Empty
         : $"{_tunnelUrl.TrimEnd('/')}/api/chat/slack";
 
+    private string TunnelSlackUrl => SlackWebhookUrl;
+
     private List<ConversationThread> _threads = [];
 
     protected override async Task OnInitializedAsync()
     {
+        DevTunnelService.TunnelUrlChanged += OnTunnelUrlChanged;
+
         try
         {
             var settings = await SettingsService.GetSettingsAsync();
@@ -277,7 +359,9 @@
             _teamsEnabled = settings.TeamsEnabled;
             _teamsAppId = settings.TeamsAppId ?? string.Empty;
             _tunnelEnabled = settings.TunnelEnabled;
-            _tunnelUrl = settings.TunnelUrl;
+            // Prefer the live URL from the service if already running, else fall back to DB value.
+            var liveUrl = DevTunnelService.TunnelUrl;
+            _tunnelUrl = string.IsNullOrEmpty(liveUrl) ? settings.TunnelUrl : liveUrl;
             _slackTokenConfigured = !string.IsNullOrEmpty(settings.EncryptedSlackBotToken);
             _slackSecretConfigured = !string.IsNullOrEmpty(settings.EncryptedSlackSigningSecret);
             _teamsPasswordConfigured = !string.IsNullOrEmpty(settings.EncryptedTeamsAppPassword);
@@ -293,6 +377,35 @@
         {
             _loading = false;
         }
+    }
+
+    private void OnTunnelUrlChanged(string url)
+    {
+        _tunnelUrl = url;
+        _regenerating = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RegenerateTunnel()
+    {
+        _regenerating = true;
+        _tunnelUrl = null;
+        try
+        {
+            await DevTunnelService.RegenerateTunnelAsync();
+            Snackbar.Add("Regenerating tunnel — a new URL will appear shortly.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to regenerate tunnel");
+            Snackbar.Add("Failed to regenerate tunnel.", Severity.Error);
+            _regenerating = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        DevTunnelService.TunnelUrlChanged -= OnTunnelUrlChanged;
     }
 
     private async Task SaveSettings()

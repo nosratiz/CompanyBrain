@@ -15,6 +15,8 @@ public static partial class SecurityHelpers
         (GitHubTokenRegex,  "[GITHUB_TOKEN_REDACTED]"),
         (SlackTokenRegex,   "[SLACK_TOKEN_REDACTED]"),
         (AwsAccessKeyRegex, "[AWS_KEY_REDACTED]"),
+        (PhoneNationalRegex, "[PHONE_REDACTED]"),
+        (PhoneIntlRegex,     "[PHONE_REDACTED]"),
     ];
 
     [GeneratedRegex(@"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", RegexOptions.Compiled)]
@@ -34,6 +36,14 @@ public static partial class SecurityHelpers
     
     [GeneratedRegex(@"AKIA[0-9A-Z]{16}", RegexOptions.Compiled)]
     private static partial Regex AwsAccessKeyRegex();
+
+    /// <summary>Dutch/European national numbers: 10 digits starting with 0 (e.g. 0684304623).</summary>
+    [GeneratedRegex(@"\b0[1-9]\d{8}\b", RegexOptions.Compiled)]
+    private static partial Regex PhoneNationalRegex();
+
+    /// <summary>International phone format: +CC followed by 6–14 digits/separators (e.g. +31 6 84304623).</summary>
+    [GeneratedRegex(@"\+\d{1,3}[\s\-.]?\(?\d{1,4}\)?[\s\-.]?\d{2,4}[\s\-.]?\d{3,4}[\s\-.]?\d{0,4}\b", RegexOptions.Compiled)]
+    private static partial Regex PhoneIntlRegex();
 
     public static bool IsPathSafe(string requestedPath, string tenantBasePath)
     {

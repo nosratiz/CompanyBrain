@@ -44,6 +44,14 @@ public sealed class ChatBotSettings
     /// <summary>When true, <see cref="DevTunnelService"/> will spin up a secure inbound tunnel.</summary>
     public bool TunnelEnabled { get; set; }
 
+    /// <summary>
+    /// Persistent devtunnel ID created on first startup (e.g. "abc123def").
+    /// When set, <see cref="DevTunnelService"/> re-hosts the same tunnel so the
+    /// public URL stays stable across restarts and the Slack/Teams webhook URL
+    /// never needs to be updated.
+    /// </summary>
+    public string DevTunnelId { get; set; } = string.Empty;
+
     /// <summary>Last known public tunnel URL (runtime-populated, persisted for display).</summary>
     public string TunnelUrl { get; set; } = string.Empty;
 

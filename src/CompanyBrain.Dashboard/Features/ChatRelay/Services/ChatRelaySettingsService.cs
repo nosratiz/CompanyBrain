@@ -175,6 +175,47 @@ public sealed class ChatRelaySettingsService
         InvalidateCache();
     }
 
+    /// <summary>
+    /// Persists the devtunnel ID that was created on first startup.
+    /// Subsequent restarts reuse this ID so the public URL stays stable.
+    /// </summary>
+    public async Task UpdateDevTunnelIdAsync(string tunnelId, CancellationToken ct = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(ct);
+
+        var row = await db.ChatBotSettings
+            .FirstOrDefaultAsync(s => s.Id == ChatBotSettingsConstants.SingletonId, ct);
+
+        if (row is null) return;
+
+        row.DevTunnelId = tunnelId;
+        row.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        InvalidateCache();
+    }
+
+    /// <summary>
+    /// Clears the stored devtunnel ID and current tunnel URL so the next tunnel
+    /// start creates a brand-new tunnel with a fresh public URL.
+    /// </summary>
+    public async Task ClearDevTunnelIdAsync(CancellationToken ct = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(ct);
+
+        var row = await db.ChatBotSettings
+            .FirstOrDefaultAsync(s => s.Id == ChatBotSettingsConstants.SingletonId, ct);
+
+        if (row is null) return;
+
+        row.DevTunnelId = string.Empty;
+        row.TunnelUrl = string.Empty;
+        row.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        InvalidateCache();
+    }
+
     public void InvalidateCache()
     {
         _cache = null;
