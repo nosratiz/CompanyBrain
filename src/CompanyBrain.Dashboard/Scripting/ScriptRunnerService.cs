@@ -103,7 +103,6 @@ public sealed partial class ScriptRunnerService(ILogger<ScriptRunnerService> log
     {
         var stopwatch = Stopwatch.StartNew();
         
-        // Security validation
         var securityCheck = ValidateCodeSecurity(code, context.IsWriteEnabled);
         if (!securityCheck.IsValid)
         {
@@ -112,17 +111,28 @@ public sealed partial class ScriptRunnerService(ILogger<ScriptRunnerService> log
                 "Script security validation failed for tool {ToolName}: {Reason}",
                 context.ToolName,
                 securityCheck.Reason);
-            
             return ScriptExecutionResult.SecurityViolation(securityCheck.Reason!, stopwatch.Elapsed);
         }
         
-        // Create a linked cancellation token with timeout
-        using var timeoutCts = new CancellationTokenSource(DefaultTimeout);
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, 
-            timeoutCts.Token,
-            context.CancellationToken);
+        using var linkedCts = CreateLinkedCancellationSource(cancellationToken, context.CancellationToken);
         
+        return await RunScriptAsync(code, context, stopwatch, linkedCts.Token);
+    }
+    
+    private CancellationTokenSource CreateLinkedCancellationSource(
+        CancellationToken externalToken,
+        CancellationToken contextToken)
+    {
+        var timeoutCts = new CancellationTokenSource(DefaultTimeout);
+        return CancellationTokenSource.CreateLinkedTokenSource(externalToken, timeoutCts.Token, contextToken);
+    }
+    
+    private async Task<ScriptExecutionResult> RunScriptAsync(
+        string code,
+        ScriptExecutionContext context,
+        Stopwatch stopwatch,
+        CancellationToken ct)
+    {
         try
         {
             logger.LogDebug(
@@ -130,23 +140,15 @@ public sealed partial class ScriptRunnerService(ILogger<ScriptRunnerService> log
                 context.ToolName,
                 context.Args.Count);
             
-            var options = ScriptOptions.Default
-                .WithImports(SafeImports)
-                .WithReferences(SafeAssemblies)
-                .WithAllowUnsafe(false)
-                .WithCheckOverflow(true)
-                .WithOptimizationLevel(Microsoft.CodeAnalysis.OptimizationLevel.Release);
+            var options = CreateScriptOptions();
             
-            // Execute the script with the context as the global object
             var result = await CSharpScript.EvaluateAsync<object?>(
-                code,
-                options,
+                code, options,
                 globals: context,
                 globalsType: typeof(ScriptExecutionContext),
-                cancellationToken: linkedCts.Token);
+                cancellationToken: ct);
             
             stopwatch.Stop();
-            
             logger.LogInformation(
                 "Script for tool {ToolName} completed successfully in {ElapsedMs}ms",
                 context.ToolName,
@@ -154,55 +156,40 @@ public sealed partial class ScriptRunnerService(ILogger<ScriptRunnerService> log
             
             return ScriptExecutionResult.Ok(result, stopwatch.Elapsed);
         }
-        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             stopwatch.Stop();
             logger.LogWarning(
                 "Script for tool {ToolName} timed out after {ElapsedMs}ms",
                 context.ToolName,
                 stopwatch.ElapsedMilliseconds);
-            
             return ScriptExecutionResult.Timeout(stopwatch.Elapsed);
-        }
-        catch (OperationCanceledException)
-        {
-            stopwatch.Stop();
-            logger.LogInformation(
-                "Script for tool {ToolName} was cancelled after {ElapsedMs}ms",
-                context.ToolName,
-                stopwatch.ElapsedMilliseconds);
-            
-            return ScriptExecutionResult.Fail("Script execution was cancelled.", stopwatch.Elapsed);
         }
         catch (CompilationErrorException ex)
         {
             stopwatch.Stop();
             var errors = string.Join(Environment.NewLine, ex.Diagnostics.Select(d => d.ToString()));
-            
-            logger.LogWarning(
-                ex,
+            logger.LogWarning(ex,
                 "Script compilation failed for tool {ToolName}: {Errors}",
-                context.ToolName,
-                errors);
-            
-            return ScriptExecutionResult.Fail(
-                $"Script compilation failed: {errors}",
-                stopwatch.Elapsed,
-                ex);
+                context.ToolName, errors);
+            return ScriptExecutionResult.Fail($"Script compilation failed: {errors}", stopwatch.Elapsed, ex);
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
-            logger.LogError(
-                ex,
-                "Script execution failed for tool {ToolName}",
-                context.ToolName);
-            
-            return ScriptExecutionResult.Fail(
-                $"Script execution failed: {ex.Message}",
-                stopwatch.Elapsed,
-                ex);
+            logger.LogError(ex, "Script execution failed for tool {ToolName}", context.ToolName);
+            return ScriptExecutionResult.Fail($"Script execution failed: {ex.Message}", stopwatch.Elapsed, ex);
         }
+    }
+    
+    private static ScriptOptions CreateScriptOptions()
+    {
+        return ScriptOptions.Default
+            .WithImports(SafeImports)
+            .WithReferences(SafeAssemblies)
+            .WithAllowUnsafe(false)
+            .WithCheckOverflow(true)
+            .WithOptimizationLevel(Microsoft.CodeAnalysis.OptimizationLevel.Release);
     }
     
     /// <summary>
@@ -210,33 +197,32 @@ public sealed partial class ScriptRunnerService(ILogger<ScriptRunnerService> log
     /// </summary>
     private SecurityValidationResult ValidateCodeSecurity(string code, bool isWriteEnabled)
     {
-        // Check for blocked namespaces
-        foreach (var ns in BlockedNamespaces)
-        {
-            if (code.Contains(ns, StringComparison.OrdinalIgnoreCase))
-            {
-                return SecurityValidationResult.Invalid($"Access to '{ns}' is not allowed.");
-            }
-        }
+        var blockedNamespace = FindBlockedNamespace(code);
+        if (blockedNamespace is not null)
+            return SecurityValidationResult.Invalid($"Access to '{blockedNamespace}' is not allowed.");
         
-        // Check for blocked patterns
         var match = BlockedPatternRegex.Match(code);
         if (match.Success)
-        {
             return SecurityValidationResult.Invalid($"Pattern '{match.Value}' is not allowed for security reasons.");
-        }
         
-        // If not write-enabled, check for file write operations
-        if (!isWriteEnabled)
+        if (!isWriteEnabled && FileWritePatternRegex().IsMatch(code))
         {
-            if (FileWritePatternRegex().IsMatch(code))
-            {
-                return SecurityValidationResult.Invalid(
-                    "File write operations are not allowed. Enable 'Write-Enabled' for this tool if write access is needed.");
-            }
+            return SecurityValidationResult.Invalid(
+                "File write operations are not allowed. Enable 'Write-Enabled' for this tool if write access is needed.");
         }
         
         return SecurityValidationResult.Valid();
+    }
+    
+    private static string? FindBlockedNamespace(string code)
+    {
+        foreach (var ns in BlockedNamespaces)
+        {
+            if (code.Contains(ns, StringComparison.OrdinalIgnoreCase))
+                return ns;
+        }
+        
+        return null;
     }
     
     [GeneratedRegex(

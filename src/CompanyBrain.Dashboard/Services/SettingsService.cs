@@ -9,65 +9,31 @@ namespace CompanyBrain.Dashboard.Services;
 /// Thread-safe settings service with in-memory caching for high-performance MCP tool execution.
 /// Uses IDbContextFactory for thread safety in concurrent scenarios.
 /// </summary>
-public sealed class SettingsService : IDisposable
+public sealed class SettingsService(
+    IDbContextFactory<DocumentAssignmentDbContext> contextFactory,
+    ILogger<SettingsService> logger) : IDisposable
 {
-    private readonly IDbContextFactory<DocumentAssignmentDbContext> _contextFactory;
-    private readonly ILogger<SettingsService> _logger;
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
     
-    // In-memory cache for settings
     private volatile AppSettings? _cachedSettings;
     private DateTime _cacheExpiry = DateTime.MinValue;
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
 
-    public SettingsService(
-        IDbContextFactory<DocumentAssignmentDbContext> contextFactory,
-        ILogger<SettingsService> logger)
-    {
-        _contextFactory = contextFactory;
-        _logger = logger;
-    }
-
-    /// <summary>
-    /// Gets the current settings from cache or database.
-    /// This method is optimized for high-throughput MCP tool execution.
-    /// </summary>
     public async Task<AppSettings> GetSettingsAsync(CancellationToken cancellationToken = default)
     {
-        // Fast path: return cached settings if valid
-        if (_cachedSettings is not null && DateTime.UtcNow < _cacheExpiry)
-        {
-            return _cachedSettings;
-        }
+        if (TryGetCachedSettings() is { } cached)
+            return cached;
 
         await _cacheLock.WaitAsync(cancellationToken);
         try
         {
-            // Double-check after acquiring lock
-            if (_cachedSettings is not null && DateTime.UtcNow < _cacheExpiry)
-            {
-                return _cachedSettings;
-            }
+            if (TryGetCachedSettings() is { } doubleChecked)
+                return doubleChecked;
 
-            await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+            var settings = await LoadOrCreateSettingsAsync(cancellationToken);
+            UpdateCache(settings);
             
-            var settings = await context.AppSettings
-                .AsNoTracking()
-                .FirstOrDefaultAsync(s => s.Id == AppSettingsConstants.SingletonId, cancellationToken);
-
-            if (settings is null)
-            {
-                // Create default settings if none exist
-                settings = new AppSettings { Id = AppSettingsConstants.SingletonId };
-                context.AppSettings.Add(settings);
-                await context.SaveChangesAsync(cancellationToken);
-                _logger.LogInformation("Created default application settings");
-            }
-
-            _cachedSettings = settings;
-            _cacheExpiry = DateTime.UtcNow.Add(CacheDuration);
-            
-            _logger.LogDebug("Settings loaded from database and cached");
+            logger.LogDebug("Settings loaded from database and cached");
             return settings;
         }
         finally
@@ -76,22 +42,8 @@ public sealed class SettingsService : IDisposable
         }
     }
 
-    /// <summary>
-    /// Gets settings synchronously from cache. Returns null if not cached.
-    /// Use this for synchronous code paths where blocking is acceptable.
-    /// </summary>
-    public AppSettings? GetCachedSettings()
-    {
-        if (_cachedSettings is not null && DateTime.UtcNow < _cacheExpiry)
-        {
-            return _cachedSettings;
-        }
-        return null;
-    }
+    public AppSettings? GetCachedSettings() => TryGetCachedSettings();
 
-    /// <summary>
-    /// Updates the application settings and invalidates the cache.
-    /// </summary>
     public async Task<AppSettings> UpdateSettingsAsync(
         Action<AppSettings> updateAction,
         CancellationToken cancellationToken = default)
@@ -99,7 +51,7 @@ public sealed class SettingsService : IDisposable
         await _cacheLock.WaitAsync(cancellationToken);
         try
         {
-            await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+            await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
             
             var settings = await context.AppSettings
                 .FirstOrDefaultAsync(s => s.Id == AppSettingsConstants.SingletonId, cancellationToken);
@@ -114,12 +66,9 @@ public sealed class SettingsService : IDisposable
             settings.UpdatedAtUtc = DateTime.UtcNow;
             
             await context.SaveChangesAsync(cancellationToken);
+            UpdateCache(settings);
             
-            // Update cache with new settings
-            _cachedSettings = settings;
-            _cacheExpiry = DateTime.UtcNow.Add(CacheDuration);
-            
-            _logger.LogInformation("Application settings updated successfully");
+            logger.LogInformation("Application settings updated successfully");
             return settings;
         }
         finally
@@ -128,29 +77,19 @@ public sealed class SettingsService : IDisposable
         }
     }
 
-    /// <summary>
-    /// Forces cache invalidation. Call this when external changes occur.
-    /// </summary>
     public void InvalidateCache()
     {
         _cachedSettings = null;
         _cacheExpiry = DateTime.MinValue;
-        _logger.LogDebug("Settings cache invalidated");
+        logger.LogDebug("Settings cache invalidated");
     }
 
-    /// <summary>
-    /// Checks if PII masking is currently enabled.
-    /// Uses cached settings for high performance.
-    /// </summary>
     public async Task<bool> IsPiiMaskingEnabledAsync(CancellationToken cancellationToken = default)
     {
         var settings = await GetSettingsAsync(cancellationToken);
         return settings.EnablePiiMasking;
     }
 
-    /// <summary>
-    /// Gets the system prompt prefix if configured.
-    /// </summary>
     public async Task<string?> GetSystemPromptPrefixAsync(CancellationToken cancellationToken = default)
     {
         var settings = await GetSettingsAsync(cancellationToken);
@@ -159,31 +98,54 @@ public sealed class SettingsService : IDisposable
             : settings.SystemPromptPrefix;
     }
 
-    /// <summary>
-    /// Gets the current security mode.
-    /// </summary>
     public async Task<string> GetSecurityModeAsync(CancellationToken cancellationToken = default)
     {
         var settings = await GetSettingsAsync(cancellationToken);
         return settings.SecurityMode;
     }
 
-    /// <summary>
-    /// Gets excluded patterns as an array.
-    /// </summary>
     public async Task<string[]> GetExcludedPatternsAsync(CancellationToken cancellationToken = default)
     {
         var settings = await GetSettingsAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(settings.ExcludedPatterns))
-        {
             return [];
-        }
+
         return settings.ExcludedPatterns
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
-    public void Dispose()
+    public void Dispose() => _cacheLock.Dispose();
+
+    // ── Private helpers ─────────────────────────────────────────────
+
+    private AppSettings? TryGetCachedSettings()
     {
-        _cacheLock.Dispose();
+        return _cachedSettings is not null && DateTime.UtcNow < _cacheExpiry
+            ? _cachedSettings
+            : null;
+    }
+
+    private void UpdateCache(AppSettings settings)
+    {
+        _cachedSettings = settings;
+        _cacheExpiry = DateTime.UtcNow.Add(CacheDuration);
+    }
+
+    private async Task<AppSettings> LoadOrCreateSettingsAsync(CancellationToken cancellationToken)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+            
+        var settings = await context.AppSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == AppSettingsConstants.SingletonId, cancellationToken);
+
+        if (settings is not null)
+            return settings;
+
+        settings = new AppSettings { Id = AppSettingsConstants.SingletonId };
+        context.AppSettings.Add(settings);
+        await context.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Created default application settings");
+        return settings;
     }
 }

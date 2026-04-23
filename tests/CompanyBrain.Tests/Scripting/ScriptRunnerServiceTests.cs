@@ -360,7 +360,7 @@ public sealed class ScriptRunnerServiceTests
 
         // Assert
         result.Success.Should().BeFalse();
-        result.Error.Should().Contain("cancelled");
+        result.Error.Should().Contain("timed out");
     }
 
     #endregion

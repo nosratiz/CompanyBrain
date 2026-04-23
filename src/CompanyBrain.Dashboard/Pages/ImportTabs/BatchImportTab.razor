@@ -1,6 +1,7 @@
 @inject KnowledgeApiClient Api
 @inject DocumentTenantApiClient DocumentTenantApi
 @inject ISnackbar Snackbar
+@inject UnauthorizedRedirectService AuthRedirect
 
 <MudText Typo="Typo.h6" Class="mb-4">Batch Import Wiki URLs</MudText>
 <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
@@ -130,6 +131,7 @@
         }
         catch (Exception ex)
         {
+            if (await AuthRedirect.HandleIfUnauthorized(ex)) return;
             Snackbar.Add($"Batch import failed: {ex.Message}", Severity.Error);
         }
         finally

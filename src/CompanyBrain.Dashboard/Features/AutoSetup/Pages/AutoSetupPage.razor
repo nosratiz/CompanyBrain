@@ -1,0 +1,381 @@
+@page "/auto-setup"
+@using CompanyBrain.Dashboard.Features.AutoSetup.Services
+@using CompanyBrain.Dashboard.Features.SharePoint.Services
+
+@inject ClaudeHandshakeService ClaudeService
+@inject M365DeviceCodeAuthService M365Service
+@inject CopilotManifestService CopilotService
+@inject SharePointSyncService SyncService
+@inject SharePointSettingsProvider SettingsProvider
+
+<PageTitle>Zero-Touch Setup - Company Brain</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudText Typo="Typo.h4" Class="mb-2">
+        <MudIcon Icon="@Icons.Material.Filled.RocketLaunch" Class="mr-2" Style="vertical-align: middle;" />
+        Zero-Touch Setup
+    </MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+        Configure CompanyBrain as a data source for Claude Desktop (MCP) and Microsoft 365 (Copilot / Graph) — no manual JSON editing or Azure Portal required.
+    </MudText>
+
+    @* ── One-Click Banner ── *@
+    <MudPaper Elevation="3" Class="pa-5 mb-6 rounded-lg" Style="background: linear-gradient(135deg, var(--mud-palette-primary-darken) 0%, var(--mud-palette-primary) 100%);">
+        <div class="d-flex align-center justify-space-between flex-wrap" style="gap: 16px;">
+            <div>
+                <MudText Typo="Typo.h5" Style="color: white; font-weight: 600;">One-Click Setup</MudText>
+                <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.85);" Class="mt-1">
+                    Injects MCP server into Claude Desktop and generates Copilot Agent manifest in parallel.
+                    M365 device code auth runs separately since it needs user interaction.
+                </MudText>
+            </div>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Secondary"
+                       Size="Size.Large"
+                       StartIcon="@Icons.Material.Filled.FlashOn"
+                       OnClick="RunOneClickSetupAsync"
+                       Disabled="@_runningOneClick"
+                       Style="min-width: 200px;">
+                @if (_runningOneClick)
+                {
+                    <MudProgressCircular Size="Size.Small" Color="Color.Inherit" Indeterminate="true" Class="mr-2" />
+                    <span>Setting up…</span>
+                }
+                else
+                {
+                    <span>Run Setup</span>
+                }
+            </MudButton>
+        </div>
+    </MudPaper>
+
+    @if (_oneClickMessage is not null)
+    {
+        <MudAlert Severity="@_oneClickSeverity" Class="mb-4" ShowCloseIcon="true" CloseIconClicked="() => _oneClickMessage = null">
+            @_oneClickMessage
+        </MudAlert>
+    }
+
+    @* ── Status Cards ── *@
+    <MudGrid Spacing="4" Class="mb-6">
+        @* Claude Desktop *@
+        <MudItem xs="12" md="4">
+            <MudCard Elevation="2" Class="rounded-lg" Style="height: 100%;">
+                <MudCardHeader>
+                    <CardHeaderAvatar>
+                        <MudAvatar Color="@(_claudeConfigured ? Color.Success : Color.Default)" Variant="Variant.Filled" Size="Size.Large">
+                            <MudIcon Icon="@Icons.Material.Filled.Terminal" />
+                        </MudAvatar>
+                    </CardHeaderAvatar>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Claude Desktop</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">MCP Server Injection</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudChip T="string" Color="@(_claudeConfigured ? Color.Success : Color.Warning)" Size="Size.Small" Variant="Variant.Filled">
+                            @(_claudeConfigured ? "Connected" : "Not configured")
+                        </MudChip>
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent>
+                    @if (_claudeConfigPath is not null)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                            @_claudeConfigPath
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Auto-injects a <code>company-brain</code> MCP server entry into Claude Desktop's config with SSE transport.
+                        </MudText>
+                    }
+                </MudCardContent>
+                <MudCardActions Class="pa-4 pt-0">
+                    @if (_claudeConfigured)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.LinkOff"
+                                   OnClick="RemoveClaudeAsync" Disabled="@_configuringClaude">
+                            Remove
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" Class="ml-2"
+                                   StartIcon="@Icons.Material.Filled.Refresh"
+                                   OnClick="ConfigureClaudeAsync" Disabled="@_configuringClaude">
+                            Re-inject
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Link"
+                                   OnClick="ConfigureClaudeAsync" Disabled="@_configuringClaude">
+                            @if (_configuringClaude)
+                            {
+                                <MudProgressCircular Size="Size.Small" Color="Color.Inherit" Indeterminate="true" Class="mr-1" />
+                            }
+                            Inject Config
+                        </MudButton>
+                    }
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+
+        @* Microsoft 365 *@
+        <MudItem xs="12" md="4">
+            <MudCard Elevation="2" Class="rounded-lg" Style="height: 100%;">
+                <MudCardHeader>
+                    <CardHeaderAvatar>
+                        <MudAvatar Color="@(_m365Connected ? Color.Success : Color.Default)" Variant="Variant.Filled" Size="Size.Large">
+                            <MudIcon Icon="@Icons.Material.Filled.CloudSync" />
+                        </MudAvatar>
+                    </CardHeaderAvatar>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Microsoft 365</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Device Code Auth</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudChip T="string" Color="@(_m365Connected ? Color.Success : Color.Warning)" Size="Size.Small" Variant="Variant.Filled">
+                            @(_m365Connected ? "Connected" : "Not connected")
+                        </MudChip>
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent>
+                    @if (_m365User is not null)
+                    {
+                        <MudText Typo="Typo.body2">
+                            <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                            @_m365User
+                        </MudText>
+                        @if (_discoveredSites is not null && _discoveredSites.Count > 0)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                                <MudIcon Icon="@Icons.Material.Filled.Language" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                                @_discoveredSites.Count site(s) discovered
+                                @if (_provisionResults.Count > 0)
+                                {
+                                    var totalDrives = _provisionResults.Sum(r => r.DrivesConfigured);
+                                    <span> — @totalDrives library folder(s) auto-provisioned</span>
+                                }
+                            </MudText>
+                        }
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Sign in with your Microsoft account using a device code — no client secret required.
+                        </MudText>
+                    }
+                </MudCardContent>
+                <MudCardActions Class="pa-4 pt-0">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Login"
+                               OnClick="StartDeviceCodeFlowAsync"
+                               Disabled="@_m365Authenticating">
+                        @if (_m365Authenticating)
+                        {
+                            <MudProgressCircular Size="Size.Small" Color="Color.Inherit" Indeterminate="true" Class="mr-1" />
+                        }
+                        @(_m365Connected ? "Re-authenticate" : "Sign In")
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+
+        @* Copilot Manifest *@
+        <MudItem xs="12" md="4">
+            <MudCard Elevation="2" Class="rounded-lg" Style="height: 100%;">
+                <MudCardHeader>
+                    <CardHeaderAvatar>
+                        <MudAvatar Color="@(_copilotManifestExists ? Color.Success : Color.Default)" Variant="Variant.Filled" Size="Size.Large">
+                            <MudIcon Icon="@Icons.Material.Filled.SmartToy" />
+                        </MudAvatar>
+                    </CardHeaderAvatar>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Copilot Agent</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Manifest Generation</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudChip T="string" Color="@(_copilotManifestExists ? Color.Success : Color.Warning)" Size="Size.Small" Variant="Variant.Filled">
+                            @(_copilotManifestExists ? "Generated" : "Not generated")
+                        </MudChip>
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent>
+                    @if (_copilotManifestPath is not null)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            <MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                            @_copilotManifestPath
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Generates a Microsoft Copilot Agent manifest (v2.2) that registers CompanyBrain's search functions.
+                        </MudText>
+                    }
+                </MudCardContent>
+                <MudCardActions Class="pa-4 pt-0">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                               StartIcon="@(_copilotManifestExists ? Icons.Material.Filled.Refresh : Icons.Material.Filled.Add)"
+                               OnClick="GenerateCopilotManifestAsync"
+                               Disabled="@_generatingManifest">
+                        @if (_generatingManifest)
+                        {
+                            <MudProgressCircular Size="Size.Small" Color="Color.Inherit" Indeterminate="true" Class="mr-1" />
+                        }
+                        @(_copilotManifestExists ? "Regenerate" : "Generate")
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+
+    @* ── Device Code Dialog ── *@
+    @if (_deviceCodeVisible)
+    {
+        <MudPaper Elevation="4" Class="pa-6 mb-6 rounded-lg" Style="border-left: 4px solid var(--mud-palette-info);">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.PhonelinkLock" Class="mr-2" Style="vertical-align: middle;" />
+                Microsoft Device Code Sign-In
+            </MudText>
+            <MudText Typo="Typo.body1" Class="mb-3">
+                @_deviceCodeMessage
+            </MudText>
+            <div class="d-flex align-center flex-wrap" style="gap: 16px;">
+                <MudPaper Elevation="0" Class="pa-3 rounded" Style="background: var(--mud-palette-surface); border: 2px dashed var(--mud-palette-lines-default);">
+                    <MudText Typo="Typo.h4" Style="font-family: monospace; letter-spacing: 4px; font-weight: 700;">
+                        @_deviceCodeUserCode
+                    </MudText>
+                </MudPaper>
+                <div>
+                    <MudButton Variant="Variant.Filled" Color="Color.Info"
+                               StartIcon="@Icons.Material.Filled.OpenInNew"
+                               Href="@_deviceCodeVerificationUrl" Target="_blank">
+                        Open Verification Page
+                    </MudButton>
+                    <MudButton Variant="Variant.Text" Color="Color.Default" Class="ml-2"
+                               OnClick="CancelDeviceCodeFlow">
+                        Cancel
+                    </MudButton>
+                </div>
+            </div>
+            <MudProgressLinear Color="Color.Info" Indeterminate="true" Class="mt-4" />
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                Waiting for sign-in approval…
+            </MudText>
+        </MudPaper>
+    }
+
+    @* ── Auto-Provisioning Progress ── *@
+    @if (_autoProvisioning)
+    {
+        <MudPaper Elevation="4" Class="pa-6 mb-6 rounded-lg" Style="border-left: 4px solid var(--mud-palette-primary);">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Sync" Class="mr-2" Style="vertical-align: middle;" />
+                Auto-Provisioning SharePoint Sites
+            </MudText>
+            <MudProgressLinear Color="Color.Primary" Value="@(_provisionTotal > 0 ? _provisionedCount * 100.0 / _provisionTotal : 0)" Class="mb-2" />
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                @_provisioningStatus (@_provisionedCount / @_provisionTotal)
+            </MudText>
+        </MudPaper>
+    }
+
+    @* ── Provisioned Sites Results ── *@
+    @if (_provisionResults.Count > 0)
+    {
+        <MudText Typo="Typo.h6" Class="mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.CloudDone" Class="mr-2" Style="vertical-align: middle;" />
+            Auto-Provisioned SharePoint Sites
+        </MudText>
+        <MudTable Items="_provisionResults" Hover="true" Striped="true" Dense="true" Elevation="2" Class="mb-6 rounded-lg">
+            <HeaderContent>
+                <MudTh>Site Name</MudTh>
+                <MudTh>URL</MudTh>
+                <MudTh>Type</MudTh>
+                <MudTh>Libraries Synced</MudTh>
+                <MudTh>Status</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Site Name">
+                    <MudIcon Icon="@Icons.Material.Filled.Web" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                    @context.SiteName
+                </MudTd>
+                <MudTd DataLabel="URL">
+                    <MudLink Href="@context.WebUrl" Target="_blank" Typo="Typo.body2">@context.WebUrl</MudLink>
+                </MudTd>
+                <MudTd DataLabel="Type">
+                    <MudChip T="string" Size="Size.Small" Color="@(context.IsRootSite ? Color.Primary : Color.Default)" Variant="Variant.Outlined">
+                        @(context.IsRootSite ? "Root" : "Site")
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Libraries Synced">
+                    <MudChip T="string" Size="Size.Small" Color="@(context.DrivesConfigured > 0 ? Color.Success : Color.Warning)">
+                        @context.DrivesConfigured
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Status">
+                    @if (context.Error is not null)
+                    {
+                        <MudTooltip Text="@context.Error">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error">Failed</MudChip>
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">Configured</MudChip>
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-6">
+            Synced folders will appear on the <MudLink Href="/sharepoint">SharePoint Connector</MudLink> page.
+            The background worker syncs every 30 minutes, or you can trigger a manual sync there.
+        </MudAlert>
+    }
+
+    @* ── Maintenance Worker Status ── *@
+    <MudExpansionPanels Elevation="2" Class="mb-6 rounded-lg">
+        <MudExpansionPanel>
+            <TitleContent>
+                <div class="d-flex align-center">
+                    <MudIcon Icon="@Icons.Material.Filled.CleaningServices" Class="mr-3" />
+                    <div>
+                        <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">Sovereign Maintenance Worker</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Auto-prune orphaned entries &amp; PII scrub — runs every 6 hours</MudText>
+                    </div>
+                </div>
+            </TitleContent>
+            <ChildContent>
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" sm="6">
+                        <MudPaper Elevation="0" Class="pa-4 rounded" Style="background: var(--mud-palette-surface);">
+                            <MudText Typo="Typo.overline" Color="Color.Secondary">Orphan Pruning</MudText>
+                            <MudText Typo="Typo.body2" Class="mt-1">
+                                Removes index entries older than 48 hours where the local file no longer exists on disk.
+                                Also cleans up resolved sync conflict records.
+                            </MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudPaper Elevation="0" Class="pa-4 rounded" Style="background: var(--mud-palette-surface);">
+                            <MudText Typo="Typo.overline" Color="Color.Secondary">PII Scrub</MudText>
+                            <MudText Typo="Typo.body2" Class="mt-1">
+                                Scans extracted document content and redacts personal identity numbers, credit cards,
+                                email addresses, phone numbers, and social security numbers.
+                            </MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                            The maintenance worker runs automatically in the background. First cycle starts 5 minutes after application launch, then repeats every 6 hours.
+                        </MudAlert>
+                    </MudItem>
+                </MudGrid>
+            </ChildContent>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
+</MudContainer>

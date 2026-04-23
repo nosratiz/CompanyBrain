@@ -4,6 +4,7 @@ using CompanyBrain.Dashboard.Data.Models;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Requests;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Responses;
 using CompanyBrain.Dashboard.Services;
+using CompanyBrain.Dashboard.Services.Dtos;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -24,7 +25,7 @@ internal static class DocumentTenantApi
             .WithName("GetAllDocumentTenantAssignments")
             .Produces<DocumentTenantAssignmentListResponse>();
 
-        group.MapGet("/by-document/{fileName}", GetAssignmentsByDocumentAsync)
+        group.MapGet("/by-document/{**fileName}", GetAssignmentsByDocumentAsync)
             .WithName("GetAssignmentsByDocument")
             .Produces<DocumentAssignmentsResponse>()
             .ProducesProblem(StatusCodes.Status404NotFound);
@@ -40,7 +41,7 @@ internal static class DocumentTenantApi
             .ProducesProblem(StatusCodes.Status409Conflict)
             .DisableAntiforgery();
 
-        group.MapPut("/by-document/{fileName}", UpdateDocumentTenantsAsync)
+        group.MapPut("/by-document/{**fileName}", UpdateDocumentTenantsAsync)
             .WithName("UpdateDocumentTenants")
             .Produces<DocumentAssignmentsResponse>()
             .ProducesValidationProblem(StatusCodes.Status400BadRequest)
@@ -51,7 +52,7 @@ internal static class DocumentTenantApi
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
-        group.MapDelete("/by-document/{fileName}/tenant/{tenantId:guid}", RemoveAssignmentByDocumentAndTenantAsync)
+        group.MapDelete("/by-document/tenant/{tenantId:guid}/{**fileName}", RemoveAssignmentByDocumentAndTenantAsync)
             .WithName("RemoveAssignmentByDocumentAndTenant")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status404NotFound);
@@ -136,6 +137,7 @@ internal static class DocumentTenantApi
 
         var assignment = new DocumentTenantAssignment
         {
+            CollectionId = ExtractCollectionId(request.FileName),
             FileName = request.FileName,
             TenantId = request.TenantId,
             TenantName = request.TenantName,
@@ -169,6 +171,7 @@ internal static class DocumentTenantApi
 
         var newAssignments = request.Tenants.Select(t => new DocumentTenantAssignment
         {
+            CollectionId = ExtractCollectionId(decodedFileName),
             FileName = decodedFileName,
             TenantId = t.TenantId,
             TenantName = t.TenantName,
@@ -236,4 +239,16 @@ internal static class DocumentTenantApi
 
     private static DocumentTenantAssignmentResponse MapToResponse(DocumentTenantAssignment assignment) =>
         new(assignment.Id, assignment.FileName, assignment.TenantId, assignment.TenantName, assignment.CreatedAtUtc);
+
+    private static string ExtractCollectionId(string fileName)
+    {
+        var normalized = fileName.Replace('\\', '/').Trim('/');
+        var slashIndex = normalized.IndexOf('/');
+        if (slashIndex < 0)
+        {
+            return "General";
+        }
+
+        return normalized[..slashIndex];
+    }
 }

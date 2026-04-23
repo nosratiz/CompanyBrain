@@ -1,5 +1,6 @@
 @inject ExternalTenantApiClient ExternalTenantApi
 @inject ISnackbar Snackbar
+@inject UnauthorizedRedirectService AuthRedirect
 
 <MudExpansionPanels Class="mb-4">
     <MudExpansionPanel Text="Tenant Access Settings" Icon="@Icons.Material.Filled.Business" @bind-Expanded="_expanded">
@@ -107,6 +108,7 @@
         }
         catch (Exception ex)
         {
+            if (await AuthRedirect.HandleIfUnauthorized(ex)) return;
             Snackbar.Add($"Failed to load tenants: {ex.Message}", Severity.Warning);
             _availableTenants = [];
         }

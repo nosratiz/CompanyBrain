@@ -1,4 +1,5 @@
 @inject McpStatusClient McpClient
+@inject UnauthorizedRedirectService AuthRedirect
 
 <MudDialog>
     <TitleContent>
@@ -94,6 +95,7 @@
         }
         catch (Exception ex)
         {
+            if (await AuthRedirect.HandleIfUnauthorized(ex)) return;
             _error = ex.Message;
         }
         finally

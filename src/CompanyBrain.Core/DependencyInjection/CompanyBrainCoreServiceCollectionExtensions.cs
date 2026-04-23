@@ -1,6 +1,7 @@
 using CompanyBrain.Application;
 using CompanyBrain.Constants;
 using CompanyBrain.Hosting;
+using CompanyBrain.Pruning;
 using CompanyBrain.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -13,9 +14,15 @@ public static class CompanyBrainCoreServiceCollectionExtensions
     {
         var knowledgeRoot = ResolveKnowledgeRoot(contentRootPath);
 
+        services.AddDeepRootVectorSearch(knowledgeRoot);
+
         services.AddSingleton(sp => new KnowledgeStore(
             knowledgeRoot,
             sp.GetRequiredService<ILogger<KnowledgeStore>>()));
+
+        services.AddSingleton(sp => new CollectionManagerService(
+            knowledgeRoot,
+            sp.GetRequiredService<ILogger<CollectionManagerService>>()));
 
         services.AddSingleton(sp => new HttpClient(new SocketsHttpHandler
         {
@@ -47,6 +54,13 @@ public static class CompanyBrainCoreServiceCollectionExtensions
         services.AddHostedService(sp => new KnowledgeFolderBootstrapper(
             sp.GetRequiredService<KnowledgeStore>(),
             sp.GetRequiredService<ILogger<KnowledgeFolderBootstrapper>>()));
+
+        services.AddSingleton<PruningConfiguration>();
+        services.AddSingleton<IRelevanceScoringStrategy, TfIdfScoringStrategy>();
+        services.AddSingleton(sp => new IntelligentPruningService(
+            sp.GetRequiredService<IRelevanceScoringStrategy>(),
+            sp.GetRequiredService<PruningConfiguration>(),
+            sp.GetRequiredService<ILogger<IntelligentPruningService>>()));
 
         return services;
     }

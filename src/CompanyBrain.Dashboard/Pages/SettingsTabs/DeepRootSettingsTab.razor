@@ -1,0 +1,330 @@
+@using CompanyBrain.Dashboard.Data.Models
+@using CompanyBrain.Dashboard.Services
+@using CompanyBrain.Search.Vector
+@inject DeepRootSettingsService SettingsService
+@inject DatabaseEmbeddingOptionsAccessor Accessor
+@inject EmbeddingProviderFactory ProviderFactory
+@inject ISnackbar Snackbar
+@inject ILogger<DeepRootSettingsTab> Logger
+
+<MudGrid>
+    <MudItem xs="12">
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+            <MudText Typo="Typo.body2">
+                <strong>DeepRoot Vector Search</strong> embeds your knowledge documents into a local sqlite-vec index for semantic retrieval.
+                API keys are <strong>encrypted at rest</strong> with ASP.NET Data Protection. Changes apply immediately — no restart required.
+            </MudText>
+        </MudAlert>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-tertiary">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Embedding Provider</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudSelect T="string"
+                           @bind-Value="_form.Provider"
+                           @bind-Value:after="OnProviderChanged"
+                           Label="Provider"
+                           Variant="Variant.Outlined"
+                           Class="mb-3">
+                    <MudSelectItem Value="@("None")">None (keyword search fallback)</MudSelectItem>
+                    <MudSelectItem Value="@("OpenAI")">OpenAI (text-embedding-3-small / -large)</MudSelectItem>
+                    <MudSelectItem Value="@("Gemini")">Google Gemini (text-embedding-004)</MudSelectItem>
+                    <MudSelectItem Value="@("Voyage")">Claude (Voyage AI — recommended for Anthropic)</MudSelectItem>
+                </MudSelect>
+
+                <MudTextField @bind-Value="_form.Model"
+                              Label="Model"
+                              Placeholder="@_modelPlaceholder"
+                              Variant="Variant.Outlined"
+                              Disabled="@IsNoneProvider"
+                              Class="mb-3"
+                              HelperText="@_modelHelperText" />
+
+                <MudNumericField @bind-Value="_form.Dimensions"
+                                 Label="Dimensions"
+                                 Placeholder="@_dimPlaceholder"
+                                 Min="0"
+                                 Max="4096"
+                                 Variant="Variant.Outlined"
+                                 Disabled="@IsNoneProvider"
+                                 Class="mb-3"
+                                 HelperText="0 = use the model default." />
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-tertiary">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Credentials</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudAlert Severity="@(_status.HasApiKey ? Severity.Success : Severity.Warning)"
+                          Variant="Variant.Text"
+                          Dense="true"
+                          Class="mb-3">
+                    @if (_status.HasApiKey)
+                    {
+                        <span>An encrypted API key is currently saved. Leave the field blank to keep it.</span>
+                    }
+                    else
+                    {
+                        <span>No API key saved. Required for OpenAI, Gemini, and Voyage providers.</span>
+                    }
+                </MudAlert>
+
+                <MudTextField @bind-Value="_apiKeyInput"
+                              Label="API Key"
+                              Placeholder="@(_status.HasApiKey ? "•••••••• (unchanged)" : "Paste your provider key…")"
+                              Variant="Variant.Outlined"
+                              InputType="InputType.Password"
+                              Disabled="@IsNoneProvider"
+                              Class="mb-3" />
+
+                <MudTextField @bind-Value="_form.Endpoint"
+                              Label="Custom Endpoint (optional)"
+                              Placeholder="@_endpointPlaceholder"
+                              Variant="Variant.Outlined"
+                              Disabled="@IsNoneProvider"
+                              Class="mb-3"
+                              HelperText="Override for Azure OpenAI / Vertex / proxy. Leave blank for default." />
+
+                <MudTextField @bind-Value="_form.DatabasePath"
+                              Label="Vector DB Path (optional)"
+                              Placeholder="<KnowledgeRoot>/.deeproot/vectors.db"
+                              Variant="Variant.Outlined"
+                              Class="mb-3"
+                              HelperText="Where to keep the local sqlite-vec index. Leave blank for default." />
+
+                @if (!string.IsNullOrEmpty(_status.ApiKeyClearMessage))
+                {
+                    <MudButton Size="Size.Small"
+                               Variant="Variant.Text"
+                               Color="Color.Error"
+                               OnClick="ClearApiKey">
+                        Clear stored API key
+                    </MudButton>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-default">
+            <MudCardContent>
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" md="4">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Status</MudText>
+                        <MudText Typo="Typo.body1">
+                            @if (_status.ProviderActive)
+                            {
+                                <MudChip T="string" Color="Color.Success" Size="Size.Small">Active</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Color="Color.Default" Size="Size.Small">Disabled (keyword fallback)</MudChip>
+                            }
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Resolved Model</MudText>
+                        <MudText Typo="Typo.body1">@(_status.ResolvedModel ?? "—")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Resolved Dimensions</MudText>
+                        <MudText Typo="Typo.body1">@(_status.ResolvedDimensions == 0 ? "—" : _status.ResolvedDimensions.ToString())</MudText>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Last Updated (UTC)</MudText>
+                        <MudText Typo="Typo.body2">@_status.UpdatedAtUtc.ToString("u")</MudText>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   OnClick="SaveAsync"
+                   StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="_saving">
+            @if (_saving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            Save DeepRoot Settings
+        </MudButton>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private FormState _form = new();
+    private string _apiKeyInput = string.Empty;
+    private StatusState _status = new();
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var row = await SettingsService.GetSettingsAsync();
+            _form = new FormState
+            {
+                Provider = string.IsNullOrWhiteSpace(row.Provider) ? "None" : row.Provider,
+                Model = row.Model,
+                Dimensions = row.Dimensions,
+                Endpoint = row.Endpoint,
+                DatabasePath = row.DatabasePath,
+            };
+            // Read already-resolved state without triggering a blocking Refresh().
+            // The factory is refreshed lazily on the next actual search/embed request,
+            // or explicitly via Reload() after a save (see SaveAsync / ClearApiKey).
+            _status = new StatusState
+            {
+                HasApiKey = !string.IsNullOrEmpty(row.EncryptedApiKey),
+                ProviderActive = ProviderFactory.ResolvedProvider != EmbeddingProviderType.None,
+                ResolvedModel = ProviderFactory.ResolvedModel,
+                ResolvedDimensions = ProviderFactory.ResolvedDimensions,
+                UpdatedAtUtc = row.UpdatedAtUtc,
+                ApiKeyClearMessage = !string.IsNullOrEmpty(row.EncryptedApiKey) ? "stored" : null,
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load DeepRoot settings");
+            Snackbar.Add("Failed to load DeepRoot settings", Severity.Error);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            // null = keep existing, "" = clear, else replace
+            string? apiKey = string.IsNullOrEmpty(_apiKeyInput) ? null : _apiKeyInput;
+
+            await SettingsService.UpdateAsync(
+                _form.Provider,
+                _form.Model ?? string.Empty,
+                _form.Dimensions,
+                apiKey,
+                _form.Endpoint ?? string.Empty,
+                _form.DatabasePath ?? string.Empty);
+
+            Accessor.Invalidate();
+            ProviderFactory.Reload();  // signal: rebuild generator on next search request
+            _apiKeyInput = string.Empty;
+            await LoadAsync();
+            Snackbar.Add("DeepRoot settings saved", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save DeepRoot settings");
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ClearApiKey()
+    {
+        _saving = true;
+        try
+        {
+            await SettingsService.UpdateAsync(
+                _form.Provider,
+                _form.Model ?? string.Empty,
+                _form.Dimensions,
+                apiKey: string.Empty,
+                _form.Endpoint ?? string.Empty,
+                _form.DatabasePath ?? string.Empty);
+            Accessor.Invalidate();
+            ProviderFactory.Reload();  // signal: rebuild generator on next search request
+            _apiKeyInput = string.Empty;
+            await LoadAsync();
+            Snackbar.Add("Stored API key cleared", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to clear API key");
+            Snackbar.Add($"Clear failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void OnProviderChanged()
+    {
+        // Reset model + dimensions so the user sees the placeholder for the new provider's defaults.
+        _form.Model = string.Empty;
+        _form.Dimensions = 0;
+    }
+
+    private bool IsNoneProvider => string.Equals(_form.Provider, "None", StringComparison.OrdinalIgnoreCase);
+
+    private string _modelPlaceholder => _form.Provider switch
+    {
+        "OpenAI" => "text-embedding-3-small",
+        "Gemini" => "text-embedding-004",
+        "Voyage" => "voyage-3",
+        _ => string.Empty,
+    };
+
+    private string _dimPlaceholder => _form.Provider switch
+    {
+        "OpenAI" => "1536",
+        "Gemini" => "768",
+        "Voyage" => "1024",
+        _ => "0",
+    };
+
+    private string _endpointPlaceholder => _form.Provider switch
+    {
+        "OpenAI" => "https://api.openai.com/v1",
+        "Gemini" => "https://generativelanguage.googleapis.com/v1beta",
+        "Voyage" => "https://api.voyageai.com/v1",
+        _ => string.Empty,
+    };
+
+    private string _modelHelperText => _form.Provider switch
+    {
+        "OpenAI" => "Leave blank for text-embedding-3-small (1536 dims).",
+        "Gemini" => "Leave blank for text-embedding-004 (768 dims).",
+        "Voyage" => "Voyage AI is the embedding family Anthropic recommends for Claude RAG. Leave blank for voyage-3 (1024 dims).",
+        _ => "Select a provider to configure embeddings.",
+    };
+
+    private sealed class FormState
+    {
+        public string Provider { get; set; } = "None";
+        public string Model { get; set; } = string.Empty;
+        public int Dimensions { get; set; }
+        public string Endpoint { get; set; } = string.Empty;
+        public string DatabasePath { get; set; } = string.Empty;
+    }
+
+    private sealed class StatusState
+    {
+        public bool HasApiKey { get; set; }
+        public bool ProviderActive { get; set; }
+        public string ResolvedModel { get; set; } = string.Empty;
+        public int ResolvedDimensions { get; set; }
+        public DateTime UpdatedAtUtc { get; set; }
+        public string? ApiKeyClearMessage { get; set; }
+    }
+}

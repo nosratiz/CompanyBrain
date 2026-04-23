@@ -1,0 +1,443 @@
+@page "/collections"
+@using CompanyBrain.Dashboard.Mcp.Collections
+@using CompanyBrain.Services
+@inject CollectionManagerService CollectionManager
+@inject CollectionAuthorizationHandler CollectionAuth
+@inject CollectionPolicyService PolicyService
+@inject ISnackbar Snackbar
+@inject ILogger<SovereignTree> Logger
+@implements IDisposable
+
+<PageTitle>Sovereign Tree - Company Brain</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-2">Sovereign Tree</MudText>
+<MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-4 d-block">
+    Knowledge root: <code>@CollectionManager.RootPath</code>
+</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else if (_loadError is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4" ShowCloseIcon="true" CloseIconClicked="() => _loadError = null">
+        Failed to load collections: @_loadError
+        <MudButton Variant="Variant.Text" Color="Color.Inherit" OnClick="RetryAsync" Class="ml-2">Retry</MudButton>
+    </MudAlert>
+}
+
+<MudGrid>
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4 pruning-panel">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-3">
+                <MudText Typo="Typo.h6">Named Collections</MudText>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.CreateNewFolder"
+                           OnClick="OpenCreateDialog">
+                    New
+                </MudButton>
+            </MudStack>
+
+            @if (_creating)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-3">
+                    <MudTextField T="string"
+                                  @bind-Value="_newCollectionName"
+                                  Placeholder="e.g. Marketing"
+                                  Immediate="true"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  OnKeyDown="OnNewCollectionKeyDown" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Check"
+                                   Color="Color.Success"
+                                   Disabled="@(string.IsNullOrWhiteSpace(_newCollectionName) || _saving)"
+                                   OnClick="CreateCollectionAsync" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                   Color="Color.Default"
+                                   OnClick="CancelCreate" />
+                </MudStack>
+            }
+
+            <MudTreeView T="string" Hover="true" Dense="true">
+                @foreach (var node in _collectionNodes)
+                {
+                    <MudTreeViewItem T="string" Value="@node.CollectionId" Expanded="true" OnClick="@(() => SelectCollection(node))">
+                        <Content>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="collection-tree-item">
+                                <MudIcon Icon="@GetCollectionIcon(node)" Color="@GetCollectionIconColor(node)" />
+                                <MudText Typo="Typo.body2">@node.CollectionId</MudText>
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text">@node.DocumentCount docs</MudChip>
+                                @if (!node.IsAllowed)
+                                {
+                                    <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Outlined">
+                                        Locked
+                                    </MudChip>
+                                }
+                                @if (node.IsSyncing)
+                                {
+                                    <MudChip T="string" Color="Color.Info" Size="Size.Small" Variant="Variant.Filled">
+                                        Syncing
+                                    </MudChip>
+                                }
+                            </MudStack>
+                        </Content>
+                    </MudTreeViewItem>
+                }
+            </MudTreeView>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4 pruning-panel">
+            @if (_selected is null)
+            {
+                <MudText Typo="Typo.body1">Select a collection to configure privacy settings.</MudText>
+            }
+            else
+            {
+                <MudStack Spacing="3">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                        <MudText Typo="Typo.h6">Collection Settings: @_selected.CollectionId</MudText>
+                        @if (!_selected.IsAllowed)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Filled.LockOpen">
+                                Upgrade to Unlock
+                            </MudButton>
+                        }
+                    </MudStack>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Folder: <code>@_selected.FolderPath</code> &middot; @_selected.DocumentCount docs
+                    </MudText>
+
+                    <MudAlert Severity="@(_selected.IsAllowed ? Severity.Success : Severity.Warning)" Dense="true">
+                        @(_selected.IsAllowed
+                            ? "Active and queryable under your current license tier."
+                            : "This collection is license-gated. Upgrade your plan or request Enterprise access.")
+                    </MudAlert>
+
+                    <MudSelect T="string" Label="Department" @bind-Value="_department" @bind-Value:after="OnDepartmentChangedAsync" Disabled="@(!_selected.IsAllowed)">
+                        <MudSelectItem Value="@("HR")">HR</MudSelectItem>
+                        <MudSelectItem Value="@("Sales")">Sales</MudSelectItem>
+                        <MudSelectItem Value="@("Engineering")">Engineering</MudSelectItem>
+                        <MudSelectItem Value="@("Operations")">Operations</MudSelectItem>
+                    </MudSelect>
+
+                    <MudStack>
+                        <MudText Typo="Typo.body2" Class="mb-1">
+                            Privacy Aggression: @_privacyAggression% (PII masking strength)
+                        </MudText>
+                        <MudSlider T="int"
+                                   @bind-Value="_privacyAggression"
+                                   Min="0"
+                                   Max="100"
+                                   Step="5"
+                                   Color="Color.Primary"
+                                   Disabled="@(!_selected.IsAllowed)" />
+                    </MudStack>
+
+                    <MudSwitch T="bool" Label="Collection is syncing" @bind-Value="_isSyncing" Disabled="@(!_selected.IsAllowed)" />
+
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Save"
+                               Disabled="@(!_selected.IsAllowed || _saving)"
+                               OnClick="SavePolicyAsync">
+                        @(_saving ? "Saving..." : "Save Collection Settings")
+                    </MudButton>
+                </MudStack>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private readonly CancellationTokenSource _cts = new();
+    private bool _disposed;
+    private bool _loading = true;
+    private string? _loadError;
+
+    private List<CollectionNode> _collectionNodes = [];
+    private CollectionNode? _selected;
+    private string _department = "HR";
+    private int _privacyAggression = 100;
+    private bool _isSyncing;
+    private bool _saving;
+    private bool _creating;
+    private string _newCollectionName = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+    }
+
+    private async Task RetryAsync()
+    {
+        _loadError = null;
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_disposed) return;
+
+        _loading = true;
+        _loadError = null;
+        if (!_disposed) StateHasChanged();
+
+        var ct = _cts.Token;
+        try
+        {
+            var collections = await CollectionManager.ListCollectionsAsync(ct);
+            var nodes = new List<CollectionNode>(collections.Count);
+
+            foreach (var collection in collections)
+            {
+                ct.ThrowIfCancellationRequested();
+                var auth = await CollectionAuth.AuthorizeCollectionAsync(collection.CollectionId, ct);
+                var policies = await PolicyService.GetByCollectionAsync(collection.CollectionId, ct);
+
+                nodes.Add(new CollectionNode(
+                    collection.CollectionId,
+                    collection.ResourceUri,
+                    collection.FolderPath,
+                    collection.DocumentCount,
+                    auth.IsAllowed,
+                    policies.Any(policy => policy.IsSyncing)));
+            }
+
+            ct.ThrowIfCancellationRequested();
+            _collectionNodes = nodes;
+            _selected = _collectionNodes.FirstOrDefault(n => _selected is not null && n.CollectionId == _selected.CollectionId)
+                        ?? _collectionNodes.FirstOrDefault();
+
+            if (_selected is not null)
+            {
+                await LoadPolicyAsync(_selected.CollectionId);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Component disposed mid-load – nothing to do.
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to refresh sovereign tree collections");
+            _loadError = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+            if (!_disposed)
+            {
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task SelectCollection(CollectionNode node)
+    {
+        _selected = node;
+        await LoadPolicyAsync(node.CollectionId);
+    }
+
+    private async Task LoadPolicyAsync(string collectionId)
+    {
+        var ct = _cts.Token;
+        try
+        {
+            var existing = (await PolicyService.GetByCollectionAsync(collectionId, ct))
+                .FirstOrDefault(policy => policy.Department == _department);
+
+            _privacyAggression = existing?.PrivacyAggressionPercent ?? (_department == "HR" ? 100 : 50);
+            _isSyncing = existing?.IsSyncing ?? false;
+
+            if (!_disposed)
+            {
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // ignore – component disposed
+        }
+    }
+
+    private async Task OnDepartmentChangedAsync()
+    {
+        if (_selected is not null)
+        {
+            await LoadPolicyAsync(_selected.CollectionId);
+        }
+    }
+
+    private void OpenCreateDialog()
+    {
+        _newCollectionName = string.Empty;
+        _creating = true;
+    }
+
+    private void CancelCreate()
+    {
+        _creating = false;
+        _newCollectionName = string.Empty;
+    }
+
+    private async Task OnNewCollectionKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            await CreateCollectionAsync();
+        }
+        else if (args.Key == "Escape")
+        {
+            CancelCreate();
+        }
+    }
+
+    private async Task CreateCollectionAsync()
+    {
+        var name = _newCollectionName?.Trim();
+        if (string.IsNullOrWhiteSpace(name) || _saving)
+        {
+            return;
+        }
+
+        if (_collectionNodes.Any(n => string.Equals(n.CollectionId, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            Snackbar.Add($"Collection '{name}' already exists.", Severity.Warning);
+            return;
+        }
+
+        _saving = true;
+        StateHasChanged();
+        try
+        {
+            var path = CollectionManager.EnsureCollectionFolder(name);
+            var exists = Directory.Exists(path);
+            Logger.LogInformation("Created collection folder Name={Name} Path={Path} Exists={Exists}", name, path, exists);
+
+            if (!exists)
+            {
+                Snackbar.Add($"Folder was not created at {path}. Check process write permissions.", Severity.Error);
+            }
+            else
+            {
+                Snackbar.Add($"Created '{name}' at {path}.", Severity.Success);
+            }
+
+            _creating = false;
+            _newCollectionName = string.Empty;
+
+            // Pre-select the new collection so the user lands on its settings panel.
+            _selected = new CollectionNode(name, CollectionManager.ToCollectionUri(name), path, 0, true, false);
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to create collection {Name}", name);
+            Snackbar.Add($"Failed to create '{name}': {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+            if (!_disposed) StateHasChanged();
+        }
+    }
+
+    private async Task SavePolicyAsync()
+    {
+        if (_selected is null || _saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        StateHasChanged();
+        try
+        {
+            Logger.LogInformation(
+                "Saving collection policy: {Collection}/{Department} privacy={Privacy} syncing={Syncing}",
+                _selected.CollectionId, _department, _privacyAggression, _isSyncing);
+
+            var saved = await PolicyService.UpsertAsync(
+                _selected.CollectionId,
+                _department,
+                _privacyAggression,
+                _isSyncing,
+                _cts.Token);
+
+            // Reflect new sync state in the tree without a full reload.
+            var idx = _collectionNodes.FindIndex(n => n.CollectionId == _selected.CollectionId);
+            if (idx >= 0)
+            {
+                var allPolicies = await PolicyService.GetByCollectionAsync(_selected.CollectionId, _cts.Token);
+                _collectionNodes[idx] = _collectionNodes[idx] with
+                {
+                    IsSyncing = allPolicies.Any(p => p.IsSyncing)
+                };
+                _selected = _collectionNodes[idx];
+            }
+
+            Snackbar.Add(
+                $"Saved {_selected!.CollectionId}/{_department}: privacy={saved.PrivacyAggressionPercent}%, syncing={saved.IsSyncing}.",
+                Severity.Success);
+        }
+        catch (OperationCanceledException)
+        {
+            // ignore – component disposed
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save policy for collection {Collection}", _selected.CollectionId);
+            Snackbar.Add($"Failed to save: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+            if (!_disposed) StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
+    private static string GetCollectionIcon(CollectionNode node)
+    {
+        if (!node.IsAllowed)
+        {
+            return Icons.Material.Filled.Lock;
+        }
+
+        if (node.IsSyncing)
+        {
+            return Icons.Material.Filled.Sync;
+        }
+
+        return Icons.Material.Filled.Folder;
+    }
+
+    private static Color GetCollectionIconColor(CollectionNode node)
+    {
+        if (!node.IsAllowed)
+        {
+            return Color.Warning;
+        }
+
+        return node.IsSyncing ? Color.Info : Color.Success;
+    }
+
+    private sealed record CollectionNode(
+        string CollectionId,
+        string ResourceUri,
+        string FolderPath,
+        int DocumentCount,
+        bool IsAllowed,
+        bool IsSyncing);
+}

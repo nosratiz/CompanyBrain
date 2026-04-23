@@ -1,6 +1,8 @@
 using System.Net.Http.Json;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Requests;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Responses;
+using CompanyBrain.Dashboard.Middleware;
+using CompanyBrain.Dashboard.Services.Dtos;
 
 namespace CompanyBrain.Dashboard.Services;
 
@@ -19,6 +21,7 @@ public sealed class DocumentTenantApiClient(HttpClient httpClient)
             return await httpClient.GetFromJsonAsync<DocumentAssignmentsResponse>(
                 $"/api/document-tenants/by-document/{Uri.EscapeDataString(fileName)}", ct);
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return null;
@@ -43,6 +46,7 @@ public sealed class DocumentTenantApiClient(HttpClient httpClient)
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadFromJsonAsync<DocumentAssignmentsResponse>(cancellationToken: ct);
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return null;
@@ -65,6 +69,7 @@ public sealed class DocumentTenantApiClient(HttpClient httpClient)
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadFromJsonAsync<DocumentTenantAssignmentResponse>(cancellationToken: ct);
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return null;
@@ -79,10 +84,11 @@ public sealed class DocumentTenantApiClient(HttpClient httpClient)
         try
         {
             var response = await httpClient.DeleteAsync(
-                $"/api/document-tenants/by-document/{Uri.EscapeDataString(fileName)}/tenant/{tenantId}",
+                $"/api/document-tenants/by-document/tenant/{tenantId}/{Uri.EscapeDataString(fileName)}",
                 ct);
             return response.IsSuccessStatusCode;
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return false;
@@ -99,6 +105,7 @@ public sealed class DocumentTenantApiClient(HttpClient httpClient)
             return await httpClient.GetFromJsonAsync<IReadOnlyList<TenantSummaryDto>>(
                 "/api/document-tenants/available-tenants", ct);
         }
+        catch (UnauthorizedApiException) { throw; }
         catch
         {
             return [];

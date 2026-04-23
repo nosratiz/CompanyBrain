@@ -47,72 +47,86 @@ public sealed class SharePointSyncService(
 
         try
         {
-            // Run both searches in parallel: communication sites via /sites, team sites via /groups
-            var sitesTask = client.Sites.GetAsync(config =>
-            {
-                config.QueryParameters.Search = query;
-                config.QueryParameters.Select = ["id", "displayName", "webUrl", "description", "createdDateTime"];
-            }, cancellationToken);
-
-            var groupsTask = client.Groups.GetAsync(config =>
-            {
-                config.QueryParameters.Search = $"\"displayName:{query}\"";
-                config.QueryParameters.Filter = "groupTypes/any(c:c eq 'Unified')";
-                config.QueryParameters.Select = ["id", "displayName"];
-                config.QueryParameters.Count = true;
-                config.Headers.Add("ConsistencyLevel", "eventual");
-            }, cancellationToken);
-
-            await Task.WhenAll(sitesTask, groupsTask);
-
-            var results = new Dictionary<string, SharePointSite>();
-
-            // Add communication sites
-            foreach (var s in sitesTask.Result?.Value ?? [])
-            {
-                if (s.Id is null) continue;
-                results[s.Id] = new SharePointSite(s.Id, s.DisplayName ?? "Unknown",
-                    s.WebUrl ?? string.Empty, s.Description,
-                    s.CreatedDateTime ?? DateTimeOffset.MinValue);
-            }
-
-            // Resolve team sites from matching M365 groups
-            var groupSiteTasks = (groupsTask.Result?.Value ?? [])
-                .Where(g => g.Id is not null)
-                .Select(g => ResolveGroupSiteAsync(client, g.Id!, g.DisplayName, cancellationToken));
-
-            var groupSites = await Task.WhenAll(groupSiteTasks);
-            foreach (var site in groupSites)
-            {
-                if (site is not null && !results.ContainsKey(site.Id))
-                    results[site.Id] = site;
-            }
+            var results = await SearchSitesCoreAsync(client, query, cancellationToken);
 
             if (results.Count != 0)
                 return [.. results.Values];
 
-            // Nothing found — fall back to listing all accessible sites filtered client-side
-            logger.LogInformation("Search returned no results, falling back to full site listing");
-            var allSites = await client.Sites.GetAsync(config =>
-            {
-                config.QueryParameters.Search = "*";
-                config.QueryParameters.Select = ["id", "displayName", "webUrl", "description", "createdDateTime"];
-            }, cancellationToken);
-
-            return (allSites?.Value ?? [])
-                .Where(s => s.Id is not null &&
-                            s.DisplayName != null &&
-                            s.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .Select(s => new SharePointSite(s.Id!, s.DisplayName ?? "Unknown",
-                    s.WebUrl ?? string.Empty, s.Description,
-                    s.CreatedDateTime ?? DateTimeOffset.MinValue))
-                .ToList();
+            return await FallbackSiteSearchAsync(client, query, cancellationToken);
         }
         catch (ODataError ex)
         {
             logger.LogError(ex, "Graph API error searching sites: {Message}", ex.Error?.Message);
             throw;
         }
+    }
+
+    private async Task<Dictionary<string, SharePointSite>> SearchSitesCoreAsync(
+        GraphServiceClient client,
+        string query,
+        CancellationToken ct)
+    {
+        var sitesTask = client.Sites.GetAsync(config =>
+        {
+            config.QueryParameters.Search = query;
+            config.QueryParameters.Select = ["id", "displayName", "webUrl", "description", "createdDateTime"];
+        }, ct);
+
+        var groupsTask = client.Groups.GetAsync(config =>
+        {
+            config.QueryParameters.Search = $"\"displayName:{query}\"";
+            config.QueryParameters.Filter = "groupTypes/any(c:c eq 'Unified')";
+            config.QueryParameters.Select = ["id", "displayName"];
+            config.QueryParameters.Count = true;
+            config.Headers.Add("ConsistencyLevel", "eventual");
+        }, ct);
+
+        await Task.WhenAll(sitesTask, groupsTask);
+
+        var results = new Dictionary<string, SharePointSite>();
+
+        foreach (var s in sitesTask.Result?.Value ?? [])
+        {
+            if (s.Id is null) continue;
+            results[s.Id] = new SharePointSite(s.Id, s.DisplayName ?? "Unknown",
+                s.WebUrl ?? string.Empty, s.Description,
+                s.CreatedDateTime ?? DateTimeOffset.MinValue);
+        }
+
+        var groupSiteTasks = (groupsTask.Result?.Value ?? [])
+            .Where(g => g.Id is not null)
+            .Select(g => ResolveGroupSiteAsync(client, g.Id!, g.DisplayName, ct));
+
+        var groupSites = await Task.WhenAll(groupSiteTasks);
+        foreach (var site in groupSites)
+        {
+            if (site is not null && !results.ContainsKey(site.Id))
+                results[site.Id] = site;
+        }
+
+        return results;
+    }
+
+    private async Task<IReadOnlyList<SharePointSite>> FallbackSiteSearchAsync(
+        GraphServiceClient client,
+        string query,
+        CancellationToken ct)
+    {
+        logger.LogInformation("Search returned no results, falling back to full site listing");
+        var allSites = await client.Sites.GetAsync(config =>
+        {
+            config.QueryParameters.Search = "*";
+            config.QueryParameters.Select = ["id", "displayName", "webUrl", "description", "createdDateTime"];
+        }, ct);
+
+        return (allSites?.Value ?? [])
+            .Where(s => s.Id is not null &&
+                        s.DisplayName != null &&
+                        s.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .Select(s => new SharePointSite(s.Id!, s.DisplayName ?? "Unknown",
+                s.WebUrl ?? string.Empty, s.Description,
+                s.CreatedDateTime ?? DateTimeOffset.MinValue))
+            .ToList();
     }
 
     private async Task<SharePointSite?> ResolveGroupSiteAsync(
@@ -312,58 +326,20 @@ public sealed class SharePointSyncService(
             return;
         }
 
-        // Prefer delegated (user) token — app-only client credentials require Application permissions
-        // with admin consent in Azure, which most setups don't have for SharePoint drives.
-        var delegatedClient = await graphClientFactory.CreateDelegatedClientAsync(folder.TenantId, cancellationToken);
-        var client = delegatedClient
-                  ?? await graphClientFactory.GetBackgroundClientAsync(folder.TenantId, cancellationToken);
-
+        var client = await ResolveGraphClientAsync(folder, db, cancellationToken);
         if (client is null)
-        {
-            folder.LastSyncError = "No Graph client available — reconnect SharePoint to refresh the token";
-            await db.SaveChangesAsync(cancellationToken);
             return;
-        }
-
-        logger.LogInformation("Syncing folder {FolderId} using {ClientType} client",
-            syncedFolderId, delegatedClient is not null ? "delegated" : "app-only");
 
         try
         {
-            if (string.IsNullOrEmpty(folder.DeltaLink))
-            {
-                await PerformFullCrawlAsync(db, folder, client, cancellationToken);
-            }
-            else
-            {
-                try
-                {
-                    await PerformDeltaSyncAsync(db, folder, client, cancellationToken);
-                }
-                catch (ODataError ex) when (ex.Error?.Code is "generalException" or "resyncRequired" or "deltaTokenExpired")
-                {
-                    // Delta link is stale or expired — reset and do a full crawl
-                    logger.LogWarning("Delta link invalid ({Code}) for folder {FolderId}, resetting to full crawl",
-                        ex.Error.Code, syncedFolderId);
-                    folder.DeltaLink = null;
-                    folder.SyncedFileCount = 0;
-                    folder.SyncedSizeBytes = 0;
-                    await PerformFullCrawlAsync(db, folder, client, cancellationToken);
-                }
-            }
-
+            await ExecuteSyncStrategyAsync(db, folder, client, syncedFolderId, cancellationToken);
             folder.LastSyncedAtUtc = DateTimeOffset.UtcNow;
             folder.LastSyncError = null;
             await db.SaveChangesAsync(cancellationToken);
         }
         catch (ODataError ex)
         {
-            var code = ex.Error?.Code ?? "unknown";
-            var message = ex.Error?.Message ?? ex.Message;
-            logger.LogError(ex, "Sync failed for folder {FolderId} — Graph error {Code}: {Message}",
-                syncedFolderId, code, message);
-            folder.LastSyncError = $"[{code}] {message}";
-            await db.SaveChangesAsync(cancellationToken);
+            await HandleODataSyncErrorAsync(db, folder, syncedFolderId, ex);
             throw;
         }
         catch (Exception ex)
@@ -373,6 +349,76 @@ public sealed class SharePointSyncService(
             await db.SaveChangesAsync(cancellationToken);
             throw;
         }
+    }
+
+    private async Task<GraphServiceClient?> ResolveGraphClientAsync(
+        SyncedSharePointFolder folder,
+        SharePointDbContext db,
+        CancellationToken ct)
+    {
+        var delegatedClient = await graphClientFactory.CreateDelegatedClientAsync(folder.TenantId, ct);
+        var client = delegatedClient
+                  ?? await graphClientFactory.GetBackgroundClientAsync(folder.TenantId, ct);
+
+        if (client is not null)
+        {
+            logger.LogInformation("Syncing folder {FolderId} using {ClientType} client",
+                folder.Id, delegatedClient is not null ? "delegated" : "app-only");
+            return client;
+        }
+
+        folder.LastSyncError = "No Graph client available — reconnect SharePoint to refresh the token";
+        await db.SaveChangesAsync(ct);
+        return null;
+    }
+
+    private async Task ExecuteSyncStrategyAsync(
+        SharePointDbContext db,
+        SyncedSharePointFolder folder,
+        GraphServiceClient client,
+        int syncedFolderId,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(folder.DeltaLink))
+        {
+            await PerformFullCrawlAsync(db, folder, client, ct);
+            return;
+        }
+
+        try
+        {
+            await PerformDeltaSyncAsync(db, folder, client, ct);
+        }
+        catch (ODataError ex) when (ex.Error?.Code is "generalException" or "resyncRequired" or "deltaTokenExpired")
+        {
+            logger.LogWarning("Delta link invalid ({Code}) for folder {FolderId}, resetting to full crawl",
+                ex.Error.Code, syncedFolderId);
+            folder.DeltaLink = null;
+            folder.SyncedFileCount = 0;
+            folder.SyncedSizeBytes = 0;
+            await PerformFullCrawlAsync(db, folder, client, ct);
+        }
+    }
+
+    private async Task HandleODataSyncErrorAsync(
+        SharePointDbContext db,
+        SyncedSharePointFolder folder,
+        int syncedFolderId,
+        ODataError ex)
+    {
+        var code = ex.Error?.Code ?? "unknown";
+        var message = ex.Error?.Message ?? ex.Message;
+        var innerCode = ex.Error?.InnerError?.AdditionalData?.TryGetValue("code", out var ic) == true ? ic?.ToString() : null;
+        var details = innerCode is not null ? $" (inner: {innerCode})" : "";
+
+        logger.LogError(ex, "Sync failed for folder {FolderId} — Graph error {Code}: {Message}{Details}. " +
+            "ResponseStatusCode={StatusCode}. " +
+            "Ensure the authenticated user has Sites.Read.All and Files.Read.All permissions, " +
+            "and that admin consent has been granted for the tenant.",
+            syncedFolderId, code, message, details, ex.ResponseStatusCode);
+
+        folder.LastSyncError = $"[{code}] {message}{details}";
+        await db.SaveChangesAsync(CancellationToken.None);
     }
 
     /// <summary>
@@ -416,11 +462,62 @@ public sealed class SharePointSyncService(
         logger.LogInformation("Starting full crawl for {Site}/{Drive}/{Folder}",
             folder.SiteName, folder.DriveName, folder.FolderPath);
 
+        var (allItems, deltaLink) = await FetchAllDeltaItemsAsync(client, folder, cancellationToken);
+
+        logger.LogInformation("Delta returned {Total} total items (folders+files)", allItems.Count);
+        LogDeltaItemsDebug(allItems);
+
+        var fileItems = FilterItemsByPath(allItems, folder.FolderPath)
+            .Where(i => i.File is not null)
+            .ToList();
+
+        logger.LogInformation("After filter '{FolderPath}': {Files} files",
+            folder.FolderPath, fileItems.Count);
+
+        var (downloadedCount, totalSize) = await DownloadFilteredFilesAsync(
+            db, folder, client, fileItems, cancellationToken);
+
+        folder.DeltaLink = deltaLink;
+        folder.SyncedFileCount = downloadedCount;
+        folder.SyncedSizeBytes = totalSize;
+
+        logger.LogInformation("Full crawl complete: {Downloaded}/{Total} files downloaded",
+            downloadedCount, fileItems.Count);
+    }
+
+    private async Task<(List<DriveItem> Items, string DeltaLink)> FetchAllDeltaItemsAsync(
+        GraphServiceClient client,
+        SyncedSharePointFolder folder,
+        CancellationToken ct)
+    {
         logger.LogInformation("Delta query: driveId={DriveId}", folder.DriveId);
 
-        var response = await client.Drives[folder.DriveId].Items["root"]
-            .Delta
-            .GetAsDeltaGetResponseAsync(cancellationToken: cancellationToken);
+        Microsoft.Graph.Drives.Item.Items.Item.Delta.DeltaGetResponse? response;
+        try
+        {
+            response = await client.Drives[folder.DriveId].Items["root"]
+                .Delta
+                .GetAsDeltaGetResponseAsync(cancellationToken: ct);
+        }
+        catch (ODataError ex) when (ex.Error?.Code is "accessDenied" or "unauthenticated"
+                                     || ex.ResponseStatusCode is 403 or 401)
+        {
+            logger.LogWarning(ex,
+                "Delta API returned {Code}/{StatusCode} for drive {DriveId}. " +
+                "This usually means the authenticated account lacks permission to enumerate the drive. " +
+                "Ensure the user has access to the SharePoint site and that Sites.Read.All has admin consent.",
+                ex.Error?.Code, ex.ResponseStatusCode, folder.DriveId);
+            throw;
+        }
+        catch (ODataError ex) when (ex.Error?.Code == "generalException" || ex.ResponseStatusCode >= 500)
+        {
+            logger.LogWarning(ex,
+                "Delta API returned {Code}/{StatusCode} for drive {DriveId}. " +
+                "Falling back to recursive children enumeration (no delta token will be persisted).",
+                ex.Error?.Code, ex.ResponseStatusCode, folder.DriveId);
+            var fallbackItems = await FetchAllItemsViaChildrenAsync(client, folder.DriveId, ct);
+            return (fallbackItems, string.Empty);
+        }
 
         var allItems = new List<DriveItem>();
         var deltaLink = string.Empty;
@@ -436,65 +533,125 @@ public sealed class SharePointSyncService(
                 break;
             }
 
-            if (response.OdataNextLink is not null)
+            if (response.OdataNextLink is null)
+                break;
+
+            try
             {
                 response = await client.Drives[folder.DriveId].Items["root"]
                     .Delta
                     .WithUrl(response.OdataNextLink)
-                    .GetAsDeltaGetResponseAsync(cancellationToken: cancellationToken);
+                    .GetAsDeltaGetResponseAsync(cancellationToken: ct);
             }
-            else
-                break;
+            catch (ODataError ex) when (ex.Error?.Code == "generalException" || ex.ResponseStatusCode >= 500)
+            {
+                logger.LogWarning(ex,
+                    "Delta paging failed mid-stream ({Code}/{StatusCode}) for drive {DriveId}. " +
+                    "Switching to recursive children enumeration; delta token will not be persisted.",
+                    ex.Error?.Code, ex.ResponseStatusCode, folder.DriveId);
+                var fallbackItems = await FetchAllItemsViaChildrenAsync(client, folder.DriveId, ct);
+                return (fallbackItems, string.Empty);
+            }
         }
 
-        logger.LogInformation("Delta returned {Total} total items (folders+files)", allItems.Count);
+        return (allItems, deltaLink);
+    }
 
-        if (logger.IsEnabled(LogLevel.Debug))
+    /// <summary>
+    /// Fallback enumeration: recursively walks the drive via /children when Graph delta is unavailable
+    /// (e.g. Communication-site Documents libraries that return generalException on /delta).
+    /// </summary>
+    private async Task<List<DriveItem>> FetchAllItemsViaChildrenAsync(
+        GraphServiceClient client,
+        string driveId,
+        CancellationToken ct)
+    {
+        var results = new List<DriveItem>();
+        var queue = new Queue<string>();
+        queue.Enqueue("root");
+
+        while (queue.Count > 0)
         {
-            foreach (var dbg in allItems)
-                logger.LogDebug("  Item: name={Name} isFile={IsFile} parentPath={ParentPath}",
-                    dbg.Name, dbg.File is not null, dbg.ParentReference?.Path);
+            ct.ThrowIfCancellationRequested();
+            var itemId = queue.Dequeue();
+
+            DriveItemCollectionResponse? page;
+            try
+            {
+                page = await client.Drives[driveId].Items[itemId].Children.GetAsync(cancellationToken: ct);
+            }
+            catch (ODataError ex)
+            {
+                logger.LogWarning(ex,
+                    "Children enumeration failed at item {ItemId} in drive {DriveId} ({Code}/{StatusCode}); skipping subtree.",
+                    itemId, driveId, ex.Error?.Code, ex.ResponseStatusCode);
+                continue;
+            }
+
+            while (page is not null)
+            {
+                if (page.Value is not null)
+                {
+                    foreach (var child in page.Value)
+                    {
+                        if (child.Id is null) continue;
+                        results.Add(child);
+                        if (child.Folder is not null)
+                            queue.Enqueue(child.Id);
+                    }
+                }
+
+                if (page.OdataNextLink is null)
+                    break;
+
+                page = await client.Drives[driveId].Items[itemId].Children
+                    .WithUrl(page.OdataNextLink)
+                    .GetAsync(cancellationToken: ct);
+            }
         }
 
-        var relevantItems = FilterItemsByPath(allItems, folder.FolderPath).ToList();
-        var fileItems = relevantItems.Where(i => i.File is not null).ToList();
-        var relevantCount = relevantItems.Count;
-        var fileCount = fileItems.Count;
+        return results;
+    }
 
-        logger.LogInformation("After filter '{FolderPath}': {Relevant} relevant, {Files} files",
-            folder.FolderPath, relevantCount, fileCount);
+    private void LogDeltaItemsDebug(List<DriveItem> items)
+    {
+        if (!logger.IsEnabled(LogLevel.Debug))
+            return;
 
+        foreach (var dbg in items)
+            logger.LogDebug("  Item: name={Name} isFile={IsFile} parentPath={ParentPath}",
+                dbg.Name, dbg.File is not null, dbg.ParentReference?.Path);
+    }
+
+    private async Task<(int Downloaded, long TotalSize)> DownloadFilteredFilesAsync(
+        SharePointDbContext db,
+        SyncedSharePointFolder folder,
+        GraphServiceClient client,
+        List<DriveItem> fileItems,
+        CancellationToken ct)
+    {
         var downloadedCount = 0;
         var totalSize = 0L;
 
         foreach (var item in fileItems)
         {
             var hasDownloadUrl = item.AdditionalData.ContainsKey("@microsoft.graph.downloadUrl");
-            var itemName = item.Name;
-            var itemId = item.Id;
-            var itemSize = item.Size;
             logger.LogInformation("Processing file: {Name} (id={Id}, size={Size}, hasDownloadUrl={HasUrl})",
-                itemName, itemId, itemSize, hasDownloadUrl);
+                item.Name, item.Id, item.Size, hasDownloadUrl);
 
-            var downloaded = await ProcessDriveItemAsync(db, folder, client, item, isDelete: false, cancellationToken);
-            if (downloaded)
+            var downloaded = await ProcessDriveItemAsync(db, folder, client, item, isDelete: false, ct);
+            if (!downloaded)
             {
-                downloadedCount++;
-                totalSize += item.Size ?? 0;
-                logger.LogInformation("Downloaded: {Name}", itemName);
+                logger.LogWarning("Skipped (download failed or conflict): {Name}", item.Name);
+                continue;
             }
-            else
-            {
-                logger.LogWarning("Skipped (download failed or conflict): {Name}", itemName);
-            }
+
+            downloadedCount++;
+            totalSize += item.Size ?? 0;
+            logger.LogInformation("Downloaded: {Name}", item.Name);
         }
 
-        folder.DeltaLink = deltaLink;
-        folder.SyncedFileCount = downloadedCount;
-        folder.SyncedSizeBytes = totalSize;
-
-        logger.LogInformation("Full crawl complete: {Downloaded}/{Total} files downloaded",
-            downloadedCount, fileItems.Count);
+        return (downloadedCount, totalSize);
     }
 
     /// <summary>
@@ -575,10 +732,7 @@ public sealed class SharePointSyncService(
         bool isDelete,
         CancellationToken cancellationToken)
     {
-        if (item.Id is null || item.Name is null)
-            return false;
-
-        if (item.Folder is not null)
+        if (item.Id is null || item.Name is null || item.Folder is not null)
             return false;
 
         var relativeParent = GetRelativeParentPath(item.ParentReference?.Path);
@@ -589,44 +743,71 @@ public sealed class SharePointSyncService(
             .FirstOrDefaultAsync(f => f.DriveItemId == item.Id, cancellationToken);
 
         if (isDelete)
+            return await HandleDeleteAsync(db, existingFile, localPath, cancellationToken);
+
+        if (HasLocalConflict(existingFile, localPath, item))
         {
-            if (existingFile is not null)
-            {
-                if (File.Exists(localPath)) File.Delete(localPath);
-                db.SyncedFiles.Remove(existingFile);
-                await db.SaveChangesAsync(cancellationToken);
-                logger.LogInformation("Deleted file: {Path}", localPath);
-            }
+            await CreateConflictAsync(db, existingFile!, localPath, remotePath,
+                folder.DriveId, item.Id, new FileInfo(localPath).LastWriteTimeUtc,
+                item.LastModifiedDateTime ?? DateTimeOffset.MinValue, cancellationToken);
             return false;
-        }
-
-        // Check for conflict
-        if (existingFile is not null && File.Exists(localPath))
-        {
-            var localFileInfo = new FileInfo(localPath);
-            var remoteLastModified = item.LastModifiedDateTime ?? DateTimeOffset.MinValue;
-
-            if (localFileInfo.LastWriteTimeUtc > existingFile.LocalLastModifiedUtc &&
-                localFileInfo.LastWriteTimeUtc > remoteLastModified)
-            {
-                await CreateConflictAsync(db, existingFile, localPath, remotePath,
-                    folder.DriveId, item.Id, localFileInfo.LastWriteTimeUtc, remoteLastModified,
-                    cancellationToken);
-                return false;
-            }
         }
 
         var downloaded = await DownloadFileAsync(client, folder.DriveId, item, localPath, cancellationToken);
         if (!downloaded)
             return false;
 
+        await UpsertSyncedFileAsync(db, existingFile, folder, item, localPath, remotePath, cancellationToken);
+        return true;
+    }
+
+    private async Task<bool> HandleDeleteAsync(
+        SharePointDbContext db,
+        SyncedSharePointFile? existingFile,
+        string localPath,
+        CancellationToken ct)
+    {
+        if (existingFile is null)
+            return false;
+
+        if (File.Exists(localPath)) File.Delete(localPath);
+        db.SyncedFiles.Remove(existingFile);
+        await db.SaveChangesAsync(ct);
+        logger.LogInformation("Deleted file: {Path}", localPath);
+        return false;
+    }
+
+    private static bool HasLocalConflict(
+        SyncedSharePointFile? existingFile,
+        string localPath,
+        DriveItem item)
+    {
+        if (existingFile is null || !File.Exists(localPath))
+            return false;
+
+        var localFileInfo = new FileInfo(localPath);
+        var remoteLastModified = item.LastModifiedDateTime ?? DateTimeOffset.MinValue;
+
+        return localFileInfo.LastWriteTimeUtc > existingFile.LocalLastModifiedUtc &&
+               localFileInfo.LastWriteTimeUtc > remoteLastModified;
+    }
+
+    private async Task UpsertSyncedFileAsync(
+        SharePointDbContext db,
+        SyncedSharePointFile? existingFile,
+        SyncedSharePointFolder folder,
+        DriveItem item,
+        string localPath,
+        string remotePath,
+        CancellationToken ct)
+    {
         if (existingFile is null)
         {
             existingFile = new SyncedSharePointFile
             {
                 SyncedFolderId = folder.Id,
-                DriveItemId = item.Id,
-                FileName = item.Name,
+                DriveItemId = item.Id!,
+                FileName = item.Name!,
                 LocalPath = localPath,
                 RemotePath = remotePath
             };
@@ -641,8 +822,7 @@ public sealed class SharePointSyncService(
         existingFile.LastSyncedAtUtc = DateTimeOffset.UtcNow;
         existingFile.ExtractedContent = await ExtractTextContentAsync(localPath, item.File?.MimeType);
 
-        await db.SaveChangesAsync(cancellationToken);
-        return true;
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>
@@ -660,54 +840,11 @@ public sealed class SharePointSyncService(
         var syncOptions = await settingsProvider.GetEffectiveOptionsAsync(cancellationToken);
 
         logger.LogInformation("Downloading '{Name}' → {LocalPath}", item.Name, localPath);
+        EnsureDirectoryExists(localPath);
 
-        var directory = Path.GetDirectoryName(localPath);
-        if (directory is not null)
-        {
-            Directory.CreateDirectory(directory);
-            var dirExists = Directory.Exists(directory);
-            logger.LogInformation("Target directory: {Dir} (exists={Exists})", directory, dirExists);
-        }
-
-        Stream contentStream;
-        var itemName = item.Name;
-        var itemId = item.Id;
-
-        try
-        {
-            if (item.AdditionalData.TryGetValue("@microsoft.graph.downloadUrl", out var urlObj) &&
-                urlObj is string downloadUrl)
-            {
-                logger.LogInformation("Using pre-signed URL for {Name}", itemName);
-                contentStream = await SharedHttpClient.Instance.GetStreamAsync(downloadUrl, cancellationToken);
-            }
-            else
-            {
-                logger.LogInformation("No pre-signed URL for {Name} — using Graph content endpoint", itemName);
-                var stream = await client.Drives[driveId].Items[itemId!].Content
-                    .GetAsync(cancellationToken: cancellationToken);
-
-                if (stream is null)
-                {
-                    logger.LogWarning("Graph content endpoint returned null for {Name} (id={Id})", itemName, itemId);
-                    return false;
-                }
-                contentStream = stream;
-            }
-        }
-        catch (ODataError ex)
-        {
-            var code = ex.Error?.Code;
-            var message = ex.Error?.Message ?? ex.Message;
-            logger.LogError("Content download failed for {Name}: [{Code}] {Message}", itemName, code, message);
+        var contentStream = await AcquireContentStreamAsync(client, driveId, item, cancellationToken);
+        if (contentStream is null)
             return false;
-        }
-        catch (Exception ex)
-        {
-            var message = ex.Message;
-            logger.LogError("Content download failed for {Name}: {Message}", itemName, message);
-            return false;
-        }
 
         await using var _ = contentStream;
         await using var fileStream = new FileStream(
@@ -724,6 +861,57 @@ public sealed class SharePointSyncService(
 
         logger.LogDebug("Downloaded {Name} to {Path} ({Size} bytes)", item.Name, localPath, item.Size);
         return true;
+    }
+
+    private void EnsureDirectoryExists(string localPath)
+    {
+        var directory = Path.GetDirectoryName(localPath);
+        if (directory is null)
+            return;
+
+        Directory.CreateDirectory(directory);
+        logger.LogInformation("Target directory: {Dir} (exists={Exists})",
+            directory, Directory.Exists(directory));
+    }
+
+    private async Task<Stream?> AcquireContentStreamAsync(
+        GraphServiceClient client,
+        string driveId,
+        DriveItem item,
+        CancellationToken ct)
+    {
+        try
+        {
+            if (item.AdditionalData.TryGetValue("@microsoft.graph.downloadUrl", out var urlObj) &&
+                urlObj is string downloadUrl)
+            {
+                logger.LogInformation("Using pre-signed URL for {Name}", item.Name);
+                return await SharedHttpClient.Instance.GetStreamAsync(downloadUrl, ct);
+            }
+
+            logger.LogInformation("No pre-signed URL for {Name} — using Graph content endpoint", item.Name);
+            var stream = await client.Drives[driveId].Items[item.Id!].Content
+                .GetAsync(cancellationToken: ct);
+
+            if (stream is null)
+            {
+                logger.LogWarning("Graph content endpoint returned null for {Name} (id={Id})", item.Name, item.Id);
+                return null;
+            }
+
+            return stream;
+        }
+        catch (ODataError ex)
+        {
+            logger.LogError("Content download failed for {Name}: [{Code}] {Message}",
+                item.Name, ex.Error?.Code, ex.Error?.Message ?? ex.Message);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError("Content download failed for {Name}: {Message}", item.Name, ex.Message);
+            return null;
+        }
     }
 
     /// <summary>

@@ -1,11 +1,13 @@
 @inherits LayoutComponentBase
 @using CompanyBrain.Dashboard.Features.Auth.Services
+@using CompanyBrain.Dashboard.Features.License
 @using CompanyBrain.Dashboard.Services
 @inject AuthTokenStore TokenStore
 @inject TokenAuthenticationStateProvider AuthStateProvider
 @inject BrowserAuthSessionStorage SessionStorage
 @inject NavigationManager Navigation
 @inject NetworkStatusService NetworkStatus
+@inject LicenseStateService LicenseState
 @implements IDisposable
 
 <MudThemeProvider Theme="_theme" IsDarkMode="true" />
@@ -83,6 +85,7 @@ else
             <MudNavMenu Class="mt-4 nav-menu">
                 @if (TokenStore.IsAuthenticated)
                 {
+                    @* ── Tier 0 (Free): Core features ── *@
                     <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard" Class="nav-item">
                         Dashboard
                     </MudNavLink>
@@ -95,18 +98,40 @@ else
                     <MudNavLink Href="/import" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.CloudUpload" Class="nav-item">
                         Import
                     </MudNavLink>
-                    <MudNavLink Href="/sharepoint" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Cloud" Class="nav-item">
-                        SharePoint
-                    </MudNavLink>
                     <MudNavLink Href="/mcp-server" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Hub" Class="nav-item">
                         MCP Server
                     </MudNavLink>
-                    <MudNavLink Href="/tools" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Build" Class="nav-item">
-                        Tool Builder
-                    </MudNavLink>
-                    <MudNavLink Href="/settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings" Class="nav-item">
-                        Settings
-                    </MudNavLink>
+
+                    @* ── Tier 1 (Starter): Integrations ── *@
+                    @if (LicenseState.CanAccessIntegrations)
+                    {
+                        <MudNavLink Href="/sharepoint" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Cloud" Class="nav-item">
+                            SharePoint
+                        </MudNavLink>
+                        <MudNavLink Href="/confluence" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Article" Class="nav-item">
+                            Confluence
+                        </MudNavLink>
+                        <MudNavLink Href="/settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings" Class="nav-item">
+                            Settings
+                        </MudNavLink>
+                    }
+
+                    @* ── Tier 2 (Professional): Advanced ── *@
+                    @if (LicenseState.CanAccessAdvanced)
+                    {
+                        <MudNavLink Href="/collections" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AccountTree" Class="nav-item">
+                            Sovereign Tree
+                        </MudNavLink>
+                        <MudNavLink Href="/pruning-insights" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ContentCut" Class="nav-item">
+                            Pruning Insights
+                        </MudNavLink>
+                        <MudNavLink Href="/tools" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Build" Class="nav-item">
+                            Tool Builder
+                        </MudNavLink>
+                        <MudNavLink Href="/auto-setup" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.RocketLaunch" Class="nav-item">
+                            Zero-Touch Setup
+                        </MudNavLink>
+                    }
                 }
                 else
                 {
@@ -294,6 +319,7 @@ else
 @code {
     private bool _drawerOpen = true;
     private bool _isInitializing = true;
+    private bool _disposed;
 
     private bool IsLoginPage => Navigation.Uri.Contains("/login", StringComparison.OrdinalIgnoreCase);
     private bool IsOfflinePage => Navigation.Uri.Contains("/offline", StringComparison.OrdinalIgnoreCase);
@@ -318,6 +344,7 @@ else
             if (restored)
             {
                 AuthStateProvider.NotifyAuthStateChanged();
+                await LicenseState.LoadAsync();
             }
             _isInitializing = false;
             StateHasChanged();
@@ -326,9 +353,18 @@ else
     
     private void HandleNetworkStatusChanged(bool isOnline)
     {
+        if (_disposed) return;
         if (!isOnline && !IsOfflinePage)
         {
-            InvokeAsync(() => RedirectToOffline());
+            try
+            {
+                _ = InvokeAsync(() =>
+                {
+                    if (_disposed) return;
+                    RedirectToOffline();
+                });
+            }
+            catch (ObjectDisposedException) { }
         }
     }
     
@@ -382,6 +418,7 @@ else
     
     public void Dispose()
     {
+        _disposed = true;
         NetworkStatus.OnStatusChanged -= HandleNetworkStatusChanged;
     }
 }

@@ -48,6 +48,6 @@ public sealed class SharePointSyncOptions
     [
         "https://graph.microsoft.com/Sites.Read.All",
         "https://graph.microsoft.com/Files.Read.All",
-        "https://graph.microsoft.com/offline_access"
+        "offline_access"
     ];
 }

@@ -21,6 +21,8 @@ namespace CompanyBrain.Dashboard.Api.Serialization;
 [JsonSerializable(typeof(KnowledgeResourceDescriptor))]
 [JsonSerializable(typeof(IReadOnlyList<KnowledgeResourceDescriptor>))]
 [JsonSerializable(typeof(List<KnowledgeResourceDescriptor>))]
+[JsonSerializable(typeof(DeepRootSettingsResponse))]
+[JsonSerializable(typeof(DeepRootSettingsUpdateRequest))]
 [JsonSerializable(typeof(ProblemDetails))]
 [JsonSerializable(typeof(HttpValidationProblemDetails))]
 internal sealed partial class CompanyBrainJsonSerializerContext : JsonSerializerContext

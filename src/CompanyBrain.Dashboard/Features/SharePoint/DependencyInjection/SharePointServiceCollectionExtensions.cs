@@ -1,3 +1,4 @@
+using CompanyBrain.Dashboard.Data;
 using CompanyBrain.Dashboard.Features.SharePoint.Data;
 using CompanyBrain.Dashboard.Features.SharePoint.Mcp;
 using CompanyBrain.Dashboard.Features.SharePoint.Models;
@@ -54,7 +55,7 @@ public static class SharePointServiceCollectionExtensions
         IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString("SharePointSync")
-            ?? "Data Source=sharepoint_sync.db";
+            ?? DatabasePaths.ConnectionString("sharepoint_sync.db");
 
         services.AddDbContextFactory<SharePointDbContext>(options =>
         {

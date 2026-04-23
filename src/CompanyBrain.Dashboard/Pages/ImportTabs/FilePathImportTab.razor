@@ -1,6 +1,7 @@
 @inject KnowledgeApiClient Api
 @inject DocumentTenantApiClient DocumentTenantApi
 @inject ISnackbar Snackbar
+@inject UnauthorizedRedirectService AuthRedirect
 
 <MudText Typo="Typo.h6" Class="mb-4">Import from File Path</MudText>
 <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
@@ -78,6 +79,7 @@
         }
         catch (Exception ex)
         {
+            if (await AuthRedirect.HandleIfUnauthorized(ex)) return;
             Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
             await OnImportError.InvokeAsync(ex.Message);
         }

@@ -11,6 +11,7 @@ namespace CompanyBrain.Services;
 
 public sealed class KnowledgeStore
 {
+    private const string DefaultCollection = "General";
     private readonly ILogger<KnowledgeStore> logger;
     private readonly string rootPath;
 
@@ -24,16 +25,27 @@ public sealed class KnowledgeStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(rootPath);
+        Directory.CreateDirectory(Path.Combine(rootPath, DefaultCollection));
         return Task.CompletedTask;
     }
 
-    public async Task<SavedKnowledgeDocument> SaveMarkdownAsync(string name, string markdown,
+    public Task<SavedKnowledgeDocument> SaveMarkdownAsync(string name, string markdown,
+        CancellationToken cancellationToken)
+        => SaveMarkdownToCollectionAsync(DefaultCollection, name, markdown, cancellationToken);
+
+    public async Task<SavedKnowledgeDocument> SaveMarkdownToCollectionAsync(
+        string collectionId,
+        string name,
+        string markdown,
         CancellationToken cancellationToken)
     {
         await EnsureFolderExistsAsync(cancellationToken);
 
         var fileName = FileNameHelper.ToMarkdownFileName(name);
-        var filePath = Path.Combine(rootPath, fileName);
+        var safeCollection = NormalizeCollectionId(collectionId);
+        var collectionPath = Path.Combine(rootPath, safeCollection);
+        Directory.CreateDirectory(collectionPath);
+        var filePath = Path.Combine(collectionPath, fileName);
         var existed = File.Exists(filePath);
         var normalized = MarkdownUtilities.Normalize(markdown);
 
@@ -42,7 +54,8 @@ public sealed class KnowledgeStore
 
         await File.WriteAllTextAsync(filePath, normalized, Encoding.UTF8, cancellationToken);
 
-        return new SavedKnowledgeDocument(fileName, filePath, ToResourceUri(fileName), existed);
+        var resourcePath = $"{safeCollection}/{fileName}";
+        return new SavedKnowledgeDocument(resourcePath, filePath, ToResourceUri(resourcePath), existed);
     }
 
     public Task<IReadOnlyList<KnowledgeResourceDescriptor>> ListResourcesAsync(CancellationToken cancellationToken)
@@ -53,18 +66,22 @@ public sealed class KnowledgeStore
         logger.LogDebug("Listing knowledge resources from '{RootPath}'.", rootPath);
 
         var resources = Directory
-            .EnumerateFiles(rootPath, "*.md", SearchOption.TopDirectoryOnly)
-            .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+            .EnumerateFiles(rootPath, "*.md", SearchOption.AllDirectories)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .Select(filePath =>
             {
                 var fileInfo = new FileInfo(filePath);
-                var fileName = fileInfo.Name;
+                var relativePath = Path.GetRelativePath(rootPath, filePath)
+                    .Replace(Path.DirectorySeparatorChar, '/');
+                var fileName = relativePath;
+                var title = fileInfo.Name;
+                var collection = fileName.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? DefaultCollection;
 
                 return new KnowledgeResourceDescriptor(
                     $"resources/{fileName}",
-                    $"@resources/{fileName}",
+                    $"@resources/{title}",
                     ToResourceUri(fileName),
-                    $"Knowledge document stored in {CompanyBrainConstants.KnowledgeFolderName}/{fileName}.",
+                    $"Knowledge document stored in {CompanyBrainConstants.KnowledgeFolderName}/{collection}/{title}.",
                     "text/markdown",
                     fileInfo.Length);
             })
@@ -87,7 +104,7 @@ public sealed class KnowledgeStore
             return Task.FromResult(Result.Fail<KnowledgeResourceContent>(fileName.Errors));
         }
 
-        var filePath = Path.Combine(rootPath, fileName.Value);
+        var filePath = Path.Combine(rootPath, fileName.Value.Replace('/', Path.DirectorySeparatorChar));
         if (!File.Exists(filePath))
         {
             logger.LogWarning("Requested knowledge resource was not found: '{FilePath}'.", filePath);
@@ -110,7 +127,14 @@ public sealed class KnowledgeStore
             content));
     }
 
-    public async Task<Result<string>> SearchAsync(string query, int maxResults, CancellationToken cancellationToken)
+    public Task<Result<string>> SearchAsync(string query, int maxResults, CancellationToken cancellationToken)
+        => SearchAsync(query, maxResults, null, cancellationToken);
+
+    public async Task<Result<string>> SearchAsync(
+        string query,
+        int maxResults,
+        string? collectionId,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(rootPath);
@@ -131,11 +155,20 @@ public sealed class KnowledgeStore
 
         var matches = new List<SearchMatch>();
 
-        foreach (var filePath in Directory.EnumerateFiles(rootPath, "*.md", SearchOption.TopDirectoryOnly))
+        var searchRoot = string.IsNullOrWhiteSpace(collectionId)
+            ? rootPath
+            : Path.Combine(rootPath, NormalizeCollectionId(collectionId));
+
+        if (!Directory.Exists(searchRoot))
+        {
+            return Result.Ok($"No matches found for '{query}' in collection '{collectionId}'.");
+        }
+
+        foreach (var filePath in Directory.EnumerateFiles(searchRoot, "*.md", SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var fileName = Path.GetFileName(filePath);
+            var fileName = Path.GetRelativePath(rootPath, filePath).Replace(Path.DirectorySeparatorChar, '/');
             var content = await File.ReadAllTextAsync(filePath, cancellationToken);
             foreach (var snippet in SearchUtilities.ExtractSnippets(content))
             {
@@ -152,7 +185,11 @@ public sealed class KnowledgeStore
         if (matches.Count == 0)
         {
             logger.LogInformation("Search completed with no matches for query '{Query}'.", query);
-            return Result.Ok($"No matches found for '{query}' in {CompanyBrainConstants.KnowledgeFolderName}.");
+            var scope = string.IsNullOrWhiteSpace(collectionId)
+                ? CompanyBrainConstants.KnowledgeFolderName
+                : $"{CompanyBrainConstants.KnowledgeFolderName}/{NormalizeCollectionId(collectionId)}";
+
+            return Result.Ok($"No matches found for '{query}' in {scope}.");
         }
 
         var builder = new StringBuilder();
@@ -177,13 +214,13 @@ public sealed class KnowledgeStore
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var normalized = Path.GetFileName(fileName);
-        if (string.IsNullOrWhiteSpace(normalized) || !normalized.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+        var normalized = NormalizeRelativeMarkdownPath(fileName);
+        if (string.IsNullOrWhiteSpace(normalized))
         {
             return Result.Fail(new ValidationAppError($"Invalid resource file name: {fileName}"));
         }
 
-        var filePath = Path.Combine(rootPath, normalized);
+        var filePath = Path.Combine(rootPath, normalized.Replace('/', Path.DirectorySeparatorChar));
         if (!File.Exists(filePath))
         {
             logger.LogWarning("Attempted to delete non-existent resource: '{FilePath}'.", filePath);
@@ -207,13 +244,46 @@ public sealed class KnowledgeStore
 
         var encodedName = resourceUri[CompanyBrainConstants.ResourceScheme.Length..].Trim('/');
         var fileName = Uri.UnescapeDataString(encodedName);
-        var normalized = Path.GetFileName(fileName);
+        var normalized = NormalizeRelativeMarkdownPath(fileName);
 
-        if (string.IsNullOrWhiteSpace(normalized) || !normalized.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(normalized))
         {
             return Result.Fail<string>(new ValidationAppError($"Unsupported knowledge resource: {resourceUri}"));
         }
 
         return Result.Ok(normalized);
+    }
+
+    private static string NormalizeRelativeMarkdownPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return string.Empty;
+        }
+
+        var segments = path
+            .Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(Path.GetFileName)
+            .Where(segment => !string.IsNullOrWhiteSpace(segment))
+            .ToArray();
+
+        if (segments.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var normalized = string.Join('/', segments);
+        return normalized.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ? normalized : string.Empty;
+    }
+
+    private static string NormalizeCollectionId(string collectionId)
+    {
+        if (string.IsNullOrWhiteSpace(collectionId))
+        {
+            return DefaultCollection;
+        }
+
+        var normalized = string.Concat(collectionId.Where(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_'));
+        return string.IsNullOrWhiteSpace(normalized) ? DefaultCollection : normalized;
     }
 }

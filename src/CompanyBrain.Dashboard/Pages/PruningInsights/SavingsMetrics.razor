@@ -1,0 +1,127 @@
+@* Savings & efficiency metrics: donut chart, token counter, dollar savings *@
+
+<MudPaper Class="pa-4 pruning-panel">
+    <MudStack Spacing="3">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.Savings" Color="Color.Success" />
+            <MudText Typo="Typo.h6">Savings &amp; Efficiency</MudText>
+        </MudStack>
+
+        @if (State.Session.TotalCallsRecorded == 0)
+        {
+            <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-6">
+                <MudIcon Icon="@Icons.Material.Filled.BarChart" Size="Size.Large"
+                         Style="color: var(--mud-palette-text-disabled);" />
+                <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-secondary);">
+                    Metrics will appear after the first pruning operation.
+                </MudText>
+            </MudStack>
+        }
+        else
+        {
+            <MudGrid>
+                @* Donut Chart *@
+                <MudItem xs="12" md="5">
+                    <MudStack AlignItems="AlignItems.Center" Spacing="2">
+                        <MudChart ChartType="ChartType.Donut"
+                                  InputData="@ChartData"
+                                  InputLabels="@ChartLabels"
+                                  Width="200px" Height="200px"
+                                  ChartOptions="_chartOptions" />
+                        <MudStack Row="true" Spacing="3" Justify="Justify.Center">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                <div style="width:12px; height:12px; border-radius:3px; background: var(--mud-palette-primary);"></div>
+                                <MudText Typo="Typo.caption">Kept Local</MudText>
+                            </MudStack>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                <div style="width:12px; height:12px; border-radius:3px; background: var(--mud-palette-success);"></div>
+                                <MudText Typo="Typo.caption">Sent to Cloud</MudText>
+                            </MudStack>
+                        </MudStack>
+                    </MudStack>
+                </MudItem>
+
+                @* Metric Cards *@
+                <MudItem xs="12" md="7">
+                    <MudGrid>
+                        <MudItem xs="6">
+                            <MudPaper Class="pa-3 metric-card" Elevation="0">
+                                <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary);">
+                                    Tokens Saved
+                                </MudText>
+                                <MudText Typo="Typo.h5" Color="Color.Primary" Style="font-weight: 700;">
+                                    @FormatNumber(State.Session.CumulativeTokensSaved)
+                                </MudText>
+                            </MudPaper>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudPaper Class="pa-3 metric-card" Elevation="0">
+                                <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary);">
+                                    Est. Savings
+                                </MudText>
+                                <MudText Typo="Typo.h5" Color="Color.Success" Style="font-weight: 700;">
+                                    $@State.EstimatedDollarsSaved.ToString("F4")
+                                </MudText>
+                            </MudPaper>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudPaper Class="pa-3 metric-card" Elevation="0">
+                                <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary);">
+                                    Tool Calls
+                                </MudText>
+                                <MudText Typo="Typo.h5" Style="font-weight: 700;">
+                                    @State.Session.TotalCallsRecorded
+                                </MudText>
+                            </MudPaper>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudPaper Class="pa-3 metric-card" Elevation="0">
+                                <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary);">
+                                    Reduction
+                                </MudText>
+                                <MudText Typo="Typo.h5" Color="Color.Warning" Style="font-weight: 700;">
+                                    @((State.DataKeptLocalRatio * 100).ToString("F1"))%
+                                </MudText>
+                            </MudPaper>
+                        </MudItem>
+                    </MudGrid>
+                </MudItem>
+            </MudGrid>
+
+            @* Cost breakdown *@
+            <MudDivider />
+            <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary);">
+                <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="mr-1"
+                         Style="vertical-align: text-bottom;" />
+                Estimated at $15.00 per 1M tokens (average Claude/GPT pricing).
+                Original: @FormatNumber(State.Session.CumulativeOriginalTokens) tokens →
+                Sent: @FormatNumber(State.Session.CumulativePrunedTokens) tokens.
+            </MudText>
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired]
+    public PruningStateContainer State { get; set; } = null!;
+
+    private readonly ChartOptions _chartOptions = new()
+    {
+        ChartPalette = ["#667eea", "#4caf50"]
+    };
+
+    private double[] ChartData =>
+    [
+        Math.Max(State.DataKeptLocalRatio * 100, 0.1),
+        Math.Max((1 - State.DataKeptLocalRatio) * 100, 0.1)
+    ];
+
+    private string[] ChartLabels => ["Kept Local", "Sent to Cloud"];
+
+    private static string FormatNumber(long value) => value switch
+    {
+        >= 1_000_000 => $"{value / 1_000_000.0:F1}M",
+        >= 1_000 => $"{value / 1_000.0:F1}K",
+        _ => value.ToString("N0")
+    };
+}

@@ -1,4 +1,6 @@
 using CompanyBrain.Application;
+using CompanyBrain.Dashboard.Mcp.Collections;
+using CompanyBrain.Services;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -7,7 +9,7 @@ namespace CompanyBrain.Dashboard.Mcp.Resources;
 
 internal static class KnowledgeResourceHandlers
 {
-    private const string IndexResourceUri = "knowledge://index";
+    private const string IndexResourceUri = "mcp://internal/knowledge/index";
     private const string IndexResourceName = "_index";
 
     public static async ValueTask<ListResourcesResult> ListResourcesAsync(
@@ -17,25 +19,41 @@ internal static class KnowledgeResourceHandlers
         // Track this MCP session so REST API endpoints can broadcast notifications.
         TrackSession(request);
 
-        var service = GetKnowledgeApplicationService(request);
-        var result = await service.ListResourcesAsync(cancellationToken);
+        var collectionManager = GetCollectionManager(request);
+        var authorization = GetCollectionAuthorizationHandler(request);
+        var collections = await collectionManager.ListCollectionsAsync(cancellationToken);
 
-        if (result.IsFailed)
+        var resources = new List<Resource>();
+        foreach (var collection in collections)
         {
-            throw new McpException(string.Join(Environment.NewLine, result.Errors.Select(error => error.Message)));
-        }
-
-        var resources = result.Value
-            .Select(resource => new Resource
+            var auth = await authorization.AuthorizeCollectionAsync(collection.CollectionId, cancellationToken);
+            if (!auth.IsAllowed)
             {
-                Name = resource.Name,
-                Title = resource.Title,
-                Uri = resource.Uri,
-                Description = resource.Description,
-                MimeType = resource.MimeType,
-                Size = resource.Size,
-            })
-            .ToList();
+                continue;
+            }
+
+            resources.Add(new Resource
+            {
+                Name = $"collection/{collection.CollectionId}",
+                Title = $"📁 {collection.DisplayName}",
+                Uri = collection.ResourceUri,
+                Description = $"Collection root for {collection.CollectionId}. {collection.DocumentCount} markdown files.",
+                MimeType = "text/markdown",
+            });
+
+            var files = await collectionManager.ListCollectionDocumentsAsync(collection.CollectionId, cancellationToken);
+            foreach (var file in files)
+            {
+                resources.Add(new Resource
+                {
+                    Name = $"collection/{collection.CollectionId}/{file}",
+                    Title = file,
+                    Uri = collectionManager.ToDocumentUri(collection.CollectionId, file),
+                    Description = $"Knowledge document in {collection.CollectionId}.",
+                    MimeType = "text/markdown",
+                });
+            }
+        }
 
         // Add index resource at the beginning that lists all available resources
         resources.Insert(0, new Resource
@@ -43,7 +61,7 @@ internal static class KnowledgeResourceHandlers
             Name = IndexResourceName,
             Title = "📋 Resource Index",
             Uri = IndexResourceUri,
-            Description = $"Dynamic index of all {result.Value.Count} knowledge resources. Read this to see what's available.",
+            Description = $"Dynamic index of all {resources.Count} knowledge resources. Read this to see what's available.",
             MimeType = "text/markdown",
         });
 
@@ -59,7 +77,26 @@ internal static class KnowledgeResourceHandlers
         // Handle special index resource
         if (request.Params.Uri == IndexResourceUri)
         {
-            return await ReadIndexResourceAsync(service, cancellationToken);
+            return await ReadIndexResourceAsync(request, cancellationToken);
+        }
+
+        var collectionManager = GetCollectionManager(request);
+        var authorization = GetCollectionAuthorizationHandler(request);
+
+        if (collectionManager.TryResolveUri(request.Params.Uri, out var collectionId, out var relativePath))
+        {
+            var auth = await authorization.AuthorizeCollectionAsync(collectionId, cancellationToken);
+            if (!auth.IsAllowed)
+            {
+                throw new McpException(auth.Reason ?? "Collection is locked by your current license tier.");
+            }
+
+            if (string.IsNullOrWhiteSpace(relativePath))
+            {
+                return await ReadCollectionRootAsync(collectionManager, collectionId, cancellationToken);
+            }
+
+            return await ReadCollectionDocumentAsync(collectionManager, collectionId, relativePath, cancellationToken);
         }
 
         var result = await service.ReadResourceAsync(request.Params.Uri, cancellationToken);
@@ -84,50 +121,45 @@ internal static class KnowledgeResourceHandlers
     }
 
     private static async ValueTask<ReadResourceResult> ReadIndexResourceAsync(
-        KnowledgeApplicationService service,
+        RequestContext<ReadResourceRequestParams> request,
         CancellationToken cancellationToken)
     {
-        var result = await service.ListResourcesAsync(cancellationToken);
+        var collectionManager = GetCollectionManager(request);
+        var authorization = GetCollectionAuthorizationHandler(request);
+        var collections = await collectionManager.ListCollectionsAsync(cancellationToken);
 
-        if (result.IsFailed)
-        {
-            throw new McpException(string.Join(Environment.NewLine, result.Errors.Select(error => error.Message)));
-        }
-
-        var resources = result.Value;
         var lines = new List<string>
         {
             "# Knowledge Resource Index",
             string.Empty,
-            $"**Total resources:** {resources.Count}",
+            $"**Total collections discovered:** {collections.Count}",
             string.Empty,
         };
 
-        if (resources.Count == 0)
+        if (collections.Count == 0)
         {
             lines.Add("_No knowledge resources available yet. Ingest content through the API first._");
         }
         else
         {
-            lines.Add("## Available Resources");
+            lines.Add("## Available Collections");
             lines.Add(string.Empty);
 
-            foreach (var resource in resources.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
+            foreach (var collection in collections.OrderBy(r => r.CollectionId, StringComparer.OrdinalIgnoreCase))
             {
-                lines.Add($"### {resource.Title ?? resource.Name}");
+                var auth = await authorization.AuthorizeCollectionAsync(collection.CollectionId, cancellationToken);
+                if (!auth.IsAllowed)
+                {
+                    continue;
+                }
+
+                var files = await collectionManager.ListCollectionDocumentsAsync(collection.CollectionId, cancellationToken);
+
+                lines.Add($"### {collection.DisplayName}");
                 lines.Add(string.Empty);
-                lines.Add($"- **URI:** `{resource.Uri}`");
-                lines.Add($"- **Name:** {resource.Name}");
-
-                if (!string.IsNullOrWhiteSpace(resource.Description))
-                {
-                    lines.Add($"- **Description:** {resource.Description}");
-                }
-
-                if (resource.Size.HasValue)
-                {
-                    lines.Add($"- **Size:** {resource.Size.Value:N0} bytes");
-                }
+                lines.Add($"- **URI:** `{collection.ResourceUri}`");
+                lines.Add($"- **Collection:** {collection.CollectionId}");
+                lines.Add($"- **Documents:** {files.Count}");
 
                 lines.Add(string.Empty);
             }
@@ -147,9 +179,84 @@ internal static class KnowledgeResourceHandlers
         };
     }
 
+    private static async ValueTask<ReadResourceResult> ReadCollectionRootAsync(
+        CollectionManagerService collectionManager,
+        string collectionId,
+        CancellationToken cancellationToken)
+    {
+        var files = await collectionManager.ListCollectionDocumentsAsync(collectionId, cancellationToken);
+        var lines = new List<string>
+        {
+            $"# Collection: {collectionId}",
+            string.Empty,
+            $"**Documents:** {files.Count}",
+            string.Empty,
+        };
+
+        if (files.Count == 0)
+        {
+            lines.Add("_No markdown files in this collection yet._");
+        }
+        else
+        {
+            foreach (var file in files)
+            {
+                lines.Add($"- `{collectionManager.ToDocumentUri(collectionId, file)}`");
+            }
+        }
+
+        return new ReadResourceResult
+        {
+            Contents =
+            [
+                new TextResourceContents
+                {
+                    Uri = collectionManager.ToCollectionUri(collectionId),
+                    MimeType = "text/markdown",
+                    Text = string.Join(Environment.NewLine, lines),
+                }
+            ],
+        };
+    }
+
+    private static async ValueTask<ReadResourceResult> ReadCollectionDocumentAsync(
+        CollectionManagerService collectionManager,
+        string collectionId,
+        string relativePath,
+        CancellationToken cancellationToken)
+    {
+        if (!collectionManager.TryResolveDocumentPath(collectionId, relativePath, out var fullPath)
+            || !File.Exists(fullPath))
+        {
+            throw new McpException($"Collection resource not found: {collectionId}/{relativePath}");
+        }
+
+        var text = await File.ReadAllTextAsync(fullPath, cancellationToken);
+        return new ReadResourceResult
+        {
+            Contents =
+            [
+                new TextResourceContents
+                {
+                    Uri = collectionManager.ToDocumentUri(collectionId, relativePath),
+                    MimeType = "text/markdown",
+                    Text = text,
+                }
+            ],
+        };
+    }
+
     private static KnowledgeApplicationService GetKnowledgeApplicationService<TParams>(RequestContext<TParams> request)
         => GetServices(request).GetService(typeof(KnowledgeApplicationService)) as KnowledgeApplicationService
             ?? throw new InvalidOperationException("Knowledge application service was not available.");
+
+    private static CollectionManagerService GetCollectionManager<TParams>(RequestContext<TParams> request)
+        => GetServices(request).GetService(typeof(CollectionManagerService)) as CollectionManagerService
+            ?? throw new InvalidOperationException("Collection manager service was not available.");
+
+    private static CollectionAuthorizationHandler GetCollectionAuthorizationHandler<TParams>(RequestContext<TParams> request)
+        => GetServices(request).GetService(typeof(CollectionAuthorizationHandler)) as CollectionAuthorizationHandler
+            ?? throw new InvalidOperationException("Collection authorization handler was not available.");
 
     private static IServiceProvider GetServices<TParams>(RequestContext<TParams> request)
         => request.Services ?? throw new InvalidOperationException("MCP request services were not available.");

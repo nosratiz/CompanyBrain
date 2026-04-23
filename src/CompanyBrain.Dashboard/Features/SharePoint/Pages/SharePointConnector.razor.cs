@@ -44,9 +44,26 @@ public partial class SharePointConnector : IDisposable
 
     protected override async Task OnInitializedAsync()
     {
+        HandleAdminConsentCallback();
         await CheckSharePointConnectionAsync();
         await LoadSyncedFoldersAsync();
         await LoadConflictsAsync();
+    }
+
+    private void HandleAdminConsentCallback()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        var adminConsent = query["admin_consent"];
+
+        if (adminConsent == "granted")
+        {
+            Snackbar.Add("Admin consent granted! Click 'Connect to SharePoint' to sign in.", Severity.Success);
+        }
+        else if (adminConsent == "declined")
+        {
+            Snackbar.Add("Admin consent was declined. SharePoint sync requires admin-consented permissions.", Severity.Warning);
+        }
     }
 
     private async Task CheckSharePointConnectionAsync()
@@ -67,6 +84,11 @@ public partial class SharePointConnector : IDisposable
     private void ConnectSharePoint()
     {
         NavigationManager.NavigateTo("/api/sharepoint/connect", forceLoad: true);
+    }
+
+    private void RequestAdminConsent()
+    {
+        NavigationManager.NavigateTo("/api/sharepoint/admin-consent", forceLoad: true);
     }
 
     private async Task DisconnectSharePointAsync()

@@ -239,6 +239,7 @@
     private readonly int _autoRetrySeconds = 10;
     private Timer? _autoRetryTimer;
     private string? _returnUrl;
+    private bool _disposed;
 
     protected override void OnInitialized()
     {
@@ -258,26 +259,43 @@
 
     private async void AutoRetryCallback(object? state)
     {
-        await InvokeAsync(async () =>
+        if (_disposed) return;
+        try
         {
-            if (!_isChecking)
+            await InvokeAsync(async () =>
             {
-                await CheckConnectionAsync();
-            }
-        });
+                if (_disposed) return;
+                if (!_isChecking)
+                {
+                    await CheckConnectionAsync();
+                }
+            });
+        }
+        catch (ObjectDisposedException) { }
+        catch (OperationCanceledException) { }
     }
 
     private void HandleNetworkStatusChanged(bool isOnline)
     {
+        if (_disposed) return;
         _isOnline = isOnline;
-        
+
         if (isOnline)
         {
             // Redirect back when online
             Navigation.NavigateTo(_returnUrl ?? "/", forceLoad: true);
+            return;
         }
-        
-        InvokeAsync(StateHasChanged);
+
+        try
+        {
+            _ = InvokeAsync(() =>
+            {
+                if (_disposed) return;
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException) { }
     }
 
     private async Task CheckConnectionAsync()
@@ -302,6 +320,7 @@
 
     public void Dispose()
     {
+        _disposed = true;
         NetworkStatus.OnStatusChanged -= HandleNetworkStatusChanged;
         _autoRetryTimer?.Dispose();
     }

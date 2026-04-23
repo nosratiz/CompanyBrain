@@ -1,11 +1,28 @@
 @inject KnowledgeApiClient Api
 @inject DocumentTenantApiClient DocumentTenantApi
 @inject ISnackbar Snackbar
+@inject UnauthorizedRedirectService AuthRedirect
+@inject CompanyBrain.Services.CollectionManagerService CollectionManager
 
 <MudText Typo="Typo.h6" Class="mb-4">Upload Documents</MudText>
 <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
     Upload one or more files directly. Each file is converted to Markdown and added to the knowledge base as an MCP resource.
 </MudText>
+
+<MudSelect T="string"
+           Label="Save into collection"
+           @bind-Value="_selectedCollection"
+           Variant="Variant.Outlined"
+           Margin="Margin.Dense"
+           Class="mb-4"
+           HelperText="@($"Files are written to {(_selectedCollection ?? "General")}/ under the knowledge root.")">
+    @foreach (var collection in _collections)
+    {
+        <MudSelectItem T="string" Value="@collection.CollectionId">
+            @collection.CollectionId (@collection.DocumentCount docs)
+        </MudSelectItem>
+    }
+</MudSelect>
 
 <MudFileUpload T="IReadOnlyList<IBrowserFile>"
                Accept=".md,.txt,.html,.htm,.docx,.doc,.pdf,.rtf"
@@ -106,6 +123,21 @@
     private List<UploadItem> _uploadItems = [];
     private int _uploadProgress;
     private bool _uploadComplete;
+    private string? _selectedCollection;
+    private IReadOnlyList<CompanyBrain.Models.KnowledgeCollectionDescriptor> _collections = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _collections = await CollectionManager.ListCollectionsAsync(CancellationToken.None);
+            _selectedCollection = _collections.FirstOrDefault()?.CollectionId;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load collections: {ex.Message}", Severity.Warning);
+        }
+    }
 
     private void OnFilesSelected(IReadOnlyList<IBrowserFile>? files)
     {
@@ -140,7 +172,7 @@
                 try
                 {
                     await using var stream = file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024);
-                    var result = await Api.UploadDocumentAsync(stream, file.Name);
+                    var result = await Api.UploadDocumentAsync(stream, file.Name, name: null, collectionId: _selectedCollection);
                     item.Status = UploadStatus.Success;
                     item.ReplacedExisting = result?.ReplacedExisting ?? false;
 
@@ -151,6 +183,7 @@
                 }
                 catch (Exception ex)
                 {
+                    if (await AuthRedirect.HandleIfUnauthorized(ex)) return;
                     item.Status = UploadStatus.Failed;
                     item.Error = ex.Message;
                 }

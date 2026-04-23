@@ -14,5 +14,9 @@ internal sealed class SearchRequestValidator : AbstractValidator<SearchRequest>
         RuleFor(request => request.MaxResults)
             .InclusiveBetween(1, 20)
             .When(request => request.MaxResults.HasValue);
+
+        RuleFor(request => request.CollectionId)
+            .MaximumLength(80)
+            .When(request => !string.IsNullOrWhiteSpace(request.CollectionId));
     }
 }

@@ -9,7 +9,9 @@ using ModelContextProtocol.Server;
 namespace CompanyBrain.Dashboard.Mcp.Tools;
 
 [McpServerToolType]
-internal sealed class CompanyBrainTools(KnowledgeApplicationService service)
+internal sealed class CompanyBrainTools(
+    KnowledgeApplicationService service,
+    GovernanceToolWrapper governance)
 {
     [McpServerTool, Description("Lists the knowledge documents that were already saved by the API and are available for MCP consumption.")]
     public async Task<string> ListResources(CancellationToken cancellationToken)
@@ -29,10 +31,17 @@ internal sealed class CompanyBrainTools(KnowledgeApplicationService service)
     public async Task<string> SearchDocs(
         [Description("Search query.")] string query,
         [Description("Maximum number of results to include. Defaults to 5.")] int maxResults,
+        [Description("Optional named collection scope (e.g. Engineering, HR).")]
+        string? collectionId,
         CancellationToken cancellationToken)
     {
-        var result = await service.SearchAsync(query, maxResults <= 0 ? 5 : maxResults, cancellationToken);
-        return EnsureSuccess(result);
+        var effectiveMaxResults = maxResults <= 0 ? 5 : maxResults;
+        var result = string.IsNullOrWhiteSpace(collectionId)
+            ? await service.SearchAsync(query, effectiveMaxResults, cancellationToken)
+            : await service.SearchCollectionAsync(collectionId, query, effectiveMaxResults, cancellationToken);
+
+        var text = EnsureSuccess(result);
+        return await governance.PruneTextAsync(text, query, cancellationToken);
     }
 
     [McpServerTool, Description("Ingests a wiki page from a URL and saves it as a knowledge resource. After ingestion the MCP resource list is updated automatically.")]

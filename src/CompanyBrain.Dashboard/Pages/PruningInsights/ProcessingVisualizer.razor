@@ -1,0 +1,115 @@
+@* Real-time processing visualizer with phase animation and privacy badge *@
+
+<MudPaper Class="pa-4 pruning-panel">
+    <MudStack Spacing="3">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.Memory" Color="Color.Secondary" />
+            <MudText Typo="Typo.h6">Local Processing</MudText>
+        </MudStack>
+
+        @if (State.IsProcessing)
+        {
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-secondary);">
+                    Processing: <strong>@State.ActiveQuery</strong>
+                </MudText>
+                <MudProgressLinear Color="@PhaseColor"
+                                   Value="@PhaseProgress"
+                                   Max="100"
+                                   Striped="true"
+                                   Size="Size.Medium"
+                                   Rounded="true"
+                                   Class="my-2" />
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.caption" Style="@PhaseTextStyle(ProcessingPhase.LocalRanking)">
+                        <MudIcon Icon="@Icons.Material.Filled.Sort" Size="Size.Small" Class="mr-1" />
+                        Local Ranking...
+                    </MudText>
+                    <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                             Style="color: var(--mud-palette-text-disabled);" />
+                    <MudText Typo="Typo.caption" Style="@PhaseTextStyle(ProcessingPhase.PiiMasking)">
+                        <MudIcon Icon="@Icons.Material.Filled.Shield" Size="Size.Small" Class="mr-1" />
+                        PII Masking...
+                    </MudText>
+                    <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                             Style="color: var(--mud-palette-text-disabled);" />
+                    <MudText Typo="Typo.caption" Style="@PhaseTextStyle(ProcessingPhase.BudgetSelection)">
+                        <MudIcon Icon="@Icons.Material.Filled.CloudQueue" Size="Size.Small" Class="mr-1" />
+                        Ready for Cloud
+                    </MudText>
+                </MudStack>
+            </MudStack>
+        }
+        else
+        {
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-4">
+                <MudIcon Icon="@Icons.Material.Filled.HourglassEmpty" Size="Size.Large"
+                         Style="color: var(--mud-palette-text-disabled);" />
+                <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-secondary);">
+                    Waiting for next MCP tool call...
+                </MudText>
+            </MudStack>
+        }
+
+        <MudDivider />
+
+        @* Privacy Badge *@
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <div class="privacy-badge @(IsSafe ? "safe" : "pending")">
+                    <MudIcon Icon="@(IsSafe ? Icons.Material.Filled.VerifiedUser : Icons.Material.Filled.Security)"
+                             Size="Size.Small" />
+                </div>
+                <MudStack Spacing="0">
+                    <MudText Typo="Typo.body2" Style="font-weight: 600;">
+                        @(IsSafe ? "Safe to Send" : "Awaiting Verification")
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary);">
+                        @(IsSafe ? "PII scrubbing complete" : "No active processing")
+                    </MudText>
+                </MudStack>
+            </MudStack>
+            @if (State.Session.TotalCallsRecorded > 0)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">
+                    @State.Session.TotalCallsRecorded calls processed
+                </MudChip>
+            }
+        </MudStack>
+    </MudStack>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired]
+    public PruningStateContainer State { get; set; } = null!;
+
+    private bool IsSafe => State.CurrentPhase == ProcessingPhase.Complete
+                           || (State.CurrentPhase == ProcessingPhase.Idle && State.Session.TotalCallsRecorded > 0);
+
+    private int PhaseProgress => State.CurrentPhase switch
+    {
+        ProcessingPhase.LocalRanking => 33,
+        ProcessingPhase.PiiMasking => 66,
+        ProcessingPhase.BudgetSelection => 90,
+        ProcessingPhase.Complete => 100,
+        _ => 0
+    };
+
+    private Color PhaseColor => State.CurrentPhase switch
+    {
+        ProcessingPhase.LocalRanking => Color.Primary,
+        ProcessingPhase.PiiMasking => Color.Warning,
+        ProcessingPhase.BudgetSelection => Color.Success,
+        ProcessingPhase.Complete => Color.Success,
+        _ => Color.Default
+    };
+
+    private string PhaseTextStyle(ProcessingPhase phase)
+    {
+        var isActive = State.CurrentPhase == phase;
+        var isPast = State.CurrentPhase > phase;
+        if (isActive) return "color: var(--mud-palette-primary); font-weight: 600;";
+        if (isPast) return "color: var(--mud-palette-success); font-weight: 500;";
+        return "color: var(--mud-palette-text-disabled);";
+    }
+}

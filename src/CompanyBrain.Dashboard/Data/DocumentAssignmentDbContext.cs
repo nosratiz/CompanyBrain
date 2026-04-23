@@ -1,4 +1,5 @@
 using CompanyBrain.Dashboard.Data.Models;
+using CompanyBrain.Dashboard.Features.AutoSync.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace CompanyBrain.Dashboard.Data;
@@ -14,18 +15,27 @@ public sealed class DocumentAssignmentDbContext : DbContext
     }
 
     public DbSet<DocumentTenantAssignment> DocumentTenantAssignments => Set<DocumentTenantAssignment>();
+
+    public DbSet<CollectionPolicy> CollectionPolicies => Set<CollectionPolicy>();
     
     public DbSet<CustomTool> CustomTools => Set<CustomTool>();
     
     public DbSet<AppSettings> AppSettings => Set<AppSettings>();
+
+    public DbSet<DeepRootEmbeddingSettings> DeepRootEmbeddingSettings => Set<DeepRootEmbeddingSettings>();
+
+    public DbSet<SyncSchedule> SyncSchedules => Set<SyncSchedule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
         ConfigureDocumentTenantAssignment(modelBuilder);
+        ConfigureCollectionPolicies(modelBuilder);
         ConfigureCustomTool(modelBuilder);
         ConfigureAppSettings(modelBuilder);
+        ConfigureDeepRootEmbeddingSettings(modelBuilder);
+        ConfigureSyncSchedules(modelBuilder);
     }
     
     private static void ConfigureDocumentTenantAssignment(ModelBuilder modelBuilder)
@@ -35,6 +45,10 @@ public sealed class DocumentAssignmentDbContext : DbContext
             entity.ToTable("DocumentTenantAssignments");
             
             entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.CollectionId)
+                .IsRequired()
+                .HasMaxLength(120);
             
             entity.Property(e => e.FileName)
                 .IsRequired()
@@ -50,8 +64,8 @@ public sealed class DocumentAssignmentDbContext : DbContext
             entity.Property(e => e.CreatedAtUtc)
                 .IsRequired();
 
-            // Create a unique index on FileName + TenantId to prevent duplicate assignments
-            entity.HasIndex(e => new { e.FileName, e.TenantId })
+            // Create a unique index on Collection + FileName + TenantId to prevent duplicate assignments
+            entity.HasIndex(e => new { e.CollectionId, e.FileName, e.TenantId })
                 .IsUnique();
             
             // Index for querying by tenant
@@ -59,6 +73,41 @@ public sealed class DocumentAssignmentDbContext : DbContext
             
             // Index for querying by file
             entity.HasIndex(e => e.FileName);
+
+            // Index for strict collection scoping during query-time enforcement
+            entity.HasIndex(e => new { e.CollectionId, e.TenantId });
+        });
+    }
+
+    private static void ConfigureCollectionPolicies(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<CollectionPolicy>(entity =>
+        {
+            entity.ToTable("CollectionPolicies");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.CollectionId)
+                .IsRequired()
+                .HasMaxLength(120);
+
+            entity.Property(e => e.Department)
+                .IsRequired()
+                .HasMaxLength(120);
+
+            entity.Property(e => e.PrivacyAggressionPercent)
+                .IsRequired()
+                .HasDefaultValue(50);
+
+            entity.Property(e => e.IsSyncing)
+                .IsRequired()
+                .HasDefaultValue(false);
+
+            entity.Property(e => e.UpdatedAtUtc)
+                .IsRequired();
+
+            entity.HasIndex(e => new { e.CollectionId, e.Department })
+                .IsUnique();
         });
     }
     
@@ -212,6 +261,106 @@ public sealed class DocumentAssignmentDbContext : DbContext
                 SharePointLocalBasePath = string.Empty,
                 SharePointSyncEnabled = false
             });
+        });
+    }
+
+    private static void ConfigureDeepRootEmbeddingSettings(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<DeepRootEmbeddingSettings>(entity =>
+        {
+            entity.ToTable("DeepRootEmbeddingSettings");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Provider)
+                .IsRequired()
+                .HasMaxLength(40)
+                .HasDefaultValue("None");
+
+            entity.Property(e => e.Model)
+                .HasMaxLength(120)
+                .HasDefaultValue(string.Empty);
+
+            entity.Property(e => e.Dimensions)
+                .IsRequired()
+                .HasDefaultValue(0);
+
+            entity.Property(e => e.EncryptedApiKey)
+                .HasMaxLength(4096)
+                .HasDefaultValue(string.Empty);
+
+            entity.Property(e => e.Endpoint)
+                .HasMaxLength(500)
+                .HasDefaultValue(string.Empty);
+
+            entity.Property(e => e.DatabasePath)
+                .HasMaxLength(500)
+                .HasDefaultValue(string.Empty);
+
+            entity.Property(e => e.UpdatedAtUtc)
+                .IsRequired();
+
+            entity.HasData(new DeepRootEmbeddingSettings
+            {
+                Id = DeepRootEmbeddingSettingsConstants.SingletonId,
+                Provider = "None",
+                Model = string.Empty,
+                Dimensions = 0,
+                EncryptedApiKey = string.Empty,
+                Endpoint = string.Empty,
+                DatabasePath = string.Empty,
+                UpdatedAtUtc = DateTime.UtcNow,
+            });
+        });
+    }
+
+    private static void ConfigureSyncSchedules(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<SyncSchedule>(entity =>
+        {
+            entity.ToTable("SyncSchedules");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.SourceUrl)
+                .IsRequired()
+                .HasMaxLength(2000);
+
+            entity.Property(e => e.SourceType)
+                .IsRequired()
+                .HasConversion<string>()
+                .HasMaxLength(40);
+
+            entity.Property(e => e.CollectionName)
+                .HasMaxLength(200);
+
+            entity.Property(e => e.CronExpression)
+                .IsRequired()
+                .HasMaxLength(100);
+
+            entity.Property(e => e.LastContentHash)
+                .HasMaxLength(64);
+
+            entity.Property(e => e.LastErrorMessage)
+                .HasMaxLength(2000);
+
+            entity.Property(e => e.IsActive)
+                .IsRequired()
+                .HasDefaultValue(true);
+
+            entity.Property(e => e.ConsecutiveFailureCount)
+                .IsRequired()
+                .HasDefaultValue(0);
+
+            entity.Property(e => e.CreatedAtUtc)
+                .IsRequired();
+
+            // Index to efficiently fetch active schedules for the worker loop
+            entity.HasIndex(e => e.IsActive);
+
+            // Index to look up by URL (uniqueness is NOT enforced — same URL may appear
+            // in multiple collections or with different cron expressions)
+            entity.HasIndex(e => e.SourceUrl);
         });
     }
 }

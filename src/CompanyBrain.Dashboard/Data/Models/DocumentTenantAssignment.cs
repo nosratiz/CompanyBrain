@@ -7,6 +7,11 @@ namespace CompanyBrain.Dashboard.Data.Models;
 public sealed class DocumentTenantAssignment
 {
     public int Id { get; set; }
+
+    /// <summary>
+    /// Logical collection/department identifier (e.g., General, Engineering, HR).
+    /// </summary>
+    public required string CollectionId { get; set; }
     
     /// <summary>
     /// The file name of the document (e.g., "company-policies.md").

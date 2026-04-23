@@ -1,5 +1,6 @@
 @inject KnowledgeApiClient Api
 @inject ISnackbar Snackbar
+@inject UnauthorizedRedirectService AuthRedirect
 
 <MudText Typo="Typo.h6" Class="mb-4">Clone Git Repository</MudText>
 <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
@@ -97,6 +98,7 @@
         }
         catch (Exception ex)
         {
+            if (await AuthRedirect.HandleIfUnauthorized(ex)) return;
             Snackbar.Add($"Clone failed: {ex.Message}", Severity.Error);
             await OnCloneError.InvokeAsync(ex.Message);
         }

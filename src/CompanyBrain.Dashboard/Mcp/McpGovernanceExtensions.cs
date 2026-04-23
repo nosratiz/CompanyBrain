@@ -1,5 +1,6 @@
 using CompanyBrain.Dashboard.Helpers;
 using CompanyBrain.Dashboard.Services;
+using CompanyBrain.Pruning;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -29,6 +30,7 @@ public static class McpGovernanceExtensions
 /// </summary>
 public sealed class GovernanceToolWrapper(
     SettingsService settingsService,
+    IntelligentPruningService pruningService,
     ILogger<GovernanceToolWrapper> logger)
 {
     /// <summary>
@@ -155,6 +157,29 @@ public sealed class GovernanceToolWrapper(
             Content = [new TextContentBlock { Text = filteredText }],
             IsError = false
         };
+    }
+
+    /// <summary>
+    /// Prunes text content using intelligent relevance scoring against the given query.
+    /// Small texts that fit within the token budget are returned as-is.
+    /// </summary>
+    public async ValueTask<string> PruneTextAsync(
+        string text,
+        string query,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await pruningService.PruneAsync(text, query, cancellationToken);
+
+        if (result.WasPruned)
+        {
+            logger.LogDebug(
+                "Pruned tool output from {Original} to {Pruned} tokens ({Selected} chunks)",
+                result.OriginalTokens,
+                result.PrunedTokens,
+                result.ChunksSelected);
+        }
+
+        return result.Text;
     }
 
     private static CallToolResult CreateSecurityErrorResult(string message)

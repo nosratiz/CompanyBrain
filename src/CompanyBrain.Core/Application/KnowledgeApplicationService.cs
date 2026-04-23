@@ -183,6 +183,13 @@ internal sealed class KnowledgeApplicationService
     public Task<Result<string>> SearchAsync(string query, int maxResults, CancellationToken cancellationToken)
         => knowledgeStore.SearchAsync(query, maxResults, cancellationToken);
 
+    public Task<Result<string>> SearchCollectionAsync(
+        string collectionId,
+        string query,
+        int maxResults,
+        CancellationToken cancellationToken)
+        => knowledgeStore.SearchAsync(query, maxResults, collectionId, cancellationToken);
+
     public async Task<Result<IReadOnlyList<KnowledgeResourceDescriptor>>> ListResourcesAsync(CancellationToken cancellationToken)
         => Result.Ok(await knowledgeStore.ListResourcesAsync(cancellationToken));
 
@@ -191,6 +198,74 @@ internal sealed class KnowledgeApplicationService
 
     public Task<Result<KnowledgeResourceContent>> GetResourceAsync(string fileName, CancellationToken cancellationToken)
         => knowledgeStore.ReadResourceAsync(knowledgeStore.ToResourceUri(fileName), cancellationToken);
+
+    public async Task<Result<SavedKnowledgeDocument>> IngestDocumentIntoCollectionFromPathAsync(
+        string collectionId,
+        string localPath,
+        string? name,
+        CancellationToken cancellationToken)
+    {
+        var fullPath = Path.GetFullPath(localPath, Directory.GetCurrentDirectory());
+        if (!File.Exists(fullPath))
+        {
+            return Result.Fail<SavedKnowledgeDocument>(new NotFoundAppError($"Document not found: {fullPath}"));
+        }
+
+        try
+        {
+            var markdown = await DocumentMarkdownConverter.ConvertAsync(fullPath, cancellationToken);
+            var logicalName = string.IsNullOrWhiteSpace(name) ? Path.GetFileNameWithoutExtension(fullPath) : name;
+            var document = await knowledgeStore.SaveMarkdownToCollectionAsync(collectionId, logicalName, markdown, cancellationToken);
+            return Result.Ok(document);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or NotSupportedException or ArgumentException)
+        {
+            return Result.Fail<SavedKnowledgeDocument>(new ValidationAppError(exception.Message));
+        }
+    }
+
+    public async Task<Result<SavedKnowledgeDocument>> IngestUploadedDocumentIntoCollectionAsync(
+        string collectionId,
+        Stream content,
+        string originalFileName,
+        string? name,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation(
+            "Ingesting uploaded document '{OriginalFileName}' into collection '{Collection}' as '{Name}'.",
+            originalFileName, collectionId, name);
+
+        var extension = Path.GetExtension(originalFileName);
+        var tempFilePath = Path.Combine(Path.GetTempPath(), $"company-brain-{Guid.NewGuid():N}{extension}");
+
+        await using (var fileStream = File.Create(tempFilePath))
+        {
+            await content.CopyToAsync(fileStream, cancellationToken);
+        }
+
+        try
+        {
+            var markdown = await DocumentMarkdownConverter.ConvertAsync(tempFilePath, cancellationToken);
+            var logicalName = string.IsNullOrWhiteSpace(name)
+                ? Path.GetFileNameWithoutExtension(originalFileName)
+                : name;
+
+            var document = await knowledgeStore.SaveMarkdownToCollectionAsync(collectionId, logicalName, markdown, cancellationToken);
+            return Result.Ok(document);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or NotSupportedException or ArgumentException)
+        {
+            logger.LogWarning(exception, "Uploaded document ingestion into collection failed for '{OriginalFileName}'.", originalFileName);
+            return Result.Fail<SavedKnowledgeDocument>(new ValidationAppError(exception.Message));
+        }
+        finally
+        {
+            if (File.Exists(tempFilePath))
+            {
+                File.Delete(tempFilePath);
+            }
+        }
+    }
 
     public Result DeleteResourceAsync(string fileName, CancellationToken cancellationToken)
     {

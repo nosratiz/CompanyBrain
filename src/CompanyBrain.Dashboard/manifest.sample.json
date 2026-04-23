@@ -1,0 +1,39 @@
+{
+  "name": "CompanyBrain-MCP",
+  "version": "1.0.0",
+  "resources": [
+    {
+      "name": "General Collection",
+      "uri": "mcp://internal/knowledge/General",
+      "description": "Free tier default collection"
+    },
+    {
+      "name": "Engineering Collection",
+      "uri": "mcp://internal/knowledge/Engineering",
+      "description": "Pro and Enterprise tier"
+    },
+    {
+      "name": "HR Collection",
+      "uri": "mcp://internal/knowledge/HR",
+      "description": "Enterprise with departmental RBAC"
+    },
+    {
+      "name": "Sales Collection",
+      "uri": "mcp://internal/knowledge/Sales",
+      "description": "Pro and Enterprise tier"
+    }
+  ],
+  "licenseGates": {
+    "Free": [
+      "General"
+    ],
+    "Pro": {
+      "maxCollections": 3,
+      "allowCustomCollections": true
+    },
+    "Enterprise": {
+      "allCollections": true,
+      "departmentalRbac": true
+    }
+  }
+}

@@ -1,5 +1,6 @@
 @* Inline tool tester panel for testing MCP tools *@
 @inject McpStatusClient McpClient
+@inject UnauthorizedRedirectService AuthRedirect
 
 <MudPaper Class="pa-4 mb-4" Elevation="2" Style="@(Tool is null ? "display:none" : "")">
     @if (Tool is not null)
@@ -118,6 +119,7 @@
         }
         catch (Exception ex)
         {
+            if (await AuthRedirect.HandleIfUnauthorized(ex)) return;
             _toolError = ex.Message;
         }
         finally
