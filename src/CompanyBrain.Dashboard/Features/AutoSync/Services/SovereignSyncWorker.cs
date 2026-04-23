@@ -69,6 +69,38 @@ public sealed class SovereignSyncWorker(
     public Task TriggerImmediateAsync(CancellationToken cancellationToken = default)
         => RunCheckCycleAsync(cancellationToken);
 
+    /// <summary>
+    /// Forces all active schedules to run immediately, bypassing the cron due-check.
+    /// Intended for the "Sync Now" button so the user always gets a fresh sync regardless
+    /// of when the last scheduled run occurred.
+    /// </summary>
+    public async Task ForceRunAllAsync(CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<SyncSchedule> schedules;
+        try
+        {
+            schedules = await scheduleRepository.GetActiveSchedulesAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "SovereignSyncWorker: ForceRunAll failed to fetch active schedules");
+            return;
+        }
+
+        if (schedules.Count == 0)
+        {
+            logger.LogDebug("SovereignSyncWorker: ForceRunAll — no active schedules");
+            return;
+        }
+
+        logger.LogInformation("SovereignSyncWorker: ForceRunAll — running {Count} schedule(s)", schedules.Count);
+        await Task.WhenAll(schedules.Select(s => ProcessScheduleAsync(s, cancellationToken)));
+    }
+
     // ── Core loop ─────────────────────────────────────────────────────────────
 
     private async Task RunCheckCycleAsync(CancellationToken ct)

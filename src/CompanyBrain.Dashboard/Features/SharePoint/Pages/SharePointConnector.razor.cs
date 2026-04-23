@@ -41,6 +41,7 @@ public partial class SharePointConnector : IDisposable
     private Severity _lastSyncAllSeverity = Severity.Normal;
 
     private readonly CancellationTokenSource _cts = new();
+    private Timer? _refreshTimer;
 
     protected override async Task OnInitializedAsync()
     {
@@ -48,6 +49,11 @@ public partial class SharePointConnector : IDisposable
         await CheckSharePointConnectionAsync();
         await LoadSyncedFoldersAsync();
         await LoadConflictsAsync();
+        _refreshTimer = new Timer(_ => InvokeAsync(async () =>
+        {
+            if (!_syncingAll && _syncingFolderId is null)
+                await LoadSyncedFoldersAsync();
+        }), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
     private void HandleAdminConsentCallback()
@@ -211,6 +217,7 @@ public partial class SharePointConnector : IDisposable
         finally
         {
             _loadingSyncedFolders = false;
+            StateHasChanged();
         }
     }
 
@@ -238,8 +245,6 @@ public partial class SharePointConnector : IDisposable
         {
             await SyncService.SyncFolderAsync(folderId, _cts.Token);
             Snackbar.Add("Sync completed", Severity.Success);
-            await LoadSyncedFoldersAsync();
-            await LoadConflictsAsync();
         }
         catch (Exception ex)
         {
@@ -248,6 +253,8 @@ public partial class SharePointConnector : IDisposable
         finally
         {
             _syncingFolderId = null;
+            await LoadSyncedFoldersAsync();
+            await LoadConflictsAsync();
         }
     }
 
@@ -451,6 +458,7 @@ public partial class SharePointConnector : IDisposable
 
     public void Dispose()
     {
+        _refreshTimer?.Dispose();
         _cts.Cancel();
         _cts.Dispose();
     }

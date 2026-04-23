@@ -1,5 +1,6 @@
 @page "/documents"
 @page "/documents/{FileName}"
+@using Markdig
 @inject KnowledgeApiClient Api
 @inject DocumentTenantApiClient TenantApi
 @inject ISnackbar Snackbar
@@ -29,7 +30,16 @@
                 <MudText Typo="Typo.caption" Color="Color.Secondary">@_documentContent.Uri</MudText>
             </div>
             <MudDivider Class="mb-4" />
-            <pre style="white-space: pre-wrap; word-wrap: break-word; font-family: monospace; font-size: 0.9em;">@_documentContent.Content</pre>
+            @if (_documentContent.MimeType == "text/markdown")
+            {
+                <div class="markdown-body pa-4">
+                    @((MarkupString)Markdig.Markdown.ToHtml(_documentContent.Content ?? "", _markdownPipeline))
+                </div>
+            }
+            else
+            {
+                <pre style="white-space: pre-wrap; word-wrap: break-word; font-family: monospace; font-size: 0.9em;">@_documentContent.Content</pre>
+            }
         </MudPaper>
     }
     else
@@ -133,6 +143,9 @@ else
 
 @code {
     [Parameter] public string? FileName { get; set; }
+
+    private static readonly Markdig.MarkdownPipeline _markdownPipeline =
+        new Markdig.MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
 
     private bool _loading = true;
     private bool _loadingContent = false;
