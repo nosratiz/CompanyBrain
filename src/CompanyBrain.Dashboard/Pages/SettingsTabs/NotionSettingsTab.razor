@@ -1,0 +1,229 @@
+@using CompanyBrain.Dashboard.Features.Notion.Services
+@using CompanyBrain.Dashboard.Features.Notion.Api
+@inject NotionSettingsProvider SettingsProvider
+@inject NotionApiClient ApiClient
+@inject ISnackbar Snackbar
+@inject ILogger<NotionSettingsTab> Logger
+
+<MudGrid>
+    <MudItem xs="12">
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+            <MudText Typo="Typo.body2">
+                Create an <strong>internal integration</strong> at
+                <MudLink Href="https://www.notion.so/my-integrations" Target="_blank">notion.so/my-integrations</MudLink>,
+                then share the pages you want to sync with that integration.
+                The API token is <strong>encrypted at rest</strong> using ASP.NET Data Protection.
+            </MudText>
+        </MudAlert>
+    </MudItem>
+
+    <MudItem xs="12" md="7">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-tertiary">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">
+                        <MudIcon Icon="@Icons.Material.Filled.Notes" Class="mr-2" />
+                        Notion Integration Token
+                    </MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                @if (_hasToken)
+                {
+                    <MudAlert Severity="Severity.Success" Variant="Variant.Text" Dense="true" Class="mb-3">
+                        An encrypted API token is saved. Leave the field blank to keep it unchanged.
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Text" Dense="true" Class="mb-3">
+                        No API token saved yet.
+                    </MudAlert>
+                }
+
+                <MudTextField @bind-Value="_apiToken"
+                              Label="Notion API Token"
+                              Placeholder="@(_hasToken ? "•••••••• (unchanged)" : "secret_…")"
+                              InputType="@(_showToken ? InputType.Text : InputType.Password)"
+                              Variant="Variant.Outlined"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@(_showToken ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                              OnAdornmentClick="@(() => _showToken = !_showToken)"
+                              HelperText="Create an internal integration at notion.so/my-integrations"
+                              Class="mb-3" />
+
+                <MudTextField @bind-Value="_workspaceFilter"
+                              Label="Workspace Filter (optional)"
+                              Placeholder="page-uuid-1, page-uuid-2"
+                              Variant="Variant.Outlined"
+                              HelperText="Comma-separated Notion page/database IDs to sync. Leave empty to sync all shared pages."
+                              Class="mb-4" />
+
+                <MudStack Row="true" Spacing="2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Save"
+                               OnClick="SaveAsync"
+                               Disabled="@_saving">
+                        @if (_saving)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        Save
+                    </MudButton>
+
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Secondary"
+                               StartIcon="@Icons.Material.Filled.NetworkCheck"
+                               OnClick="TestConnectionAsync"
+                               Disabled="@(_testing || (!_hasToken && string.IsNullOrWhiteSpace(_apiToken)))">
+                        @if (_testing)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        Test Connection
+                    </MudButton>
+                </MudStack>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-secondary">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Setup Guide</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudList T="string" Dense="true">
+                    <MudListItem Icon="@Icons.Material.Filled.OpenInNew" IconColor="Color.Primary">
+                        Go to <MudLink Href="https://www.notion.so/my-integrations" Target="_blank">notion.so/my-integrations</MudLink>
+                    </MudListItem>
+                    <MudListItem Icon="@Icons.Material.Filled.Add" IconColor="Color.Primary">
+                        Create a new <strong>internal</strong> integration
+                    </MudListItem>
+                    <MudListItem Icon="@Icons.Material.Filled.Key" IconColor="Color.Primary">
+                        Copy the <strong>Internal Integration Token</strong> (starts with <code>secret_</code>)
+                    </MudListItem>
+                    <MudListItem Icon="@Icons.Material.Filled.Share" IconColor="Color.Primary">
+                        Share the pages you want synced with your integration via the Notion ••• menu → <strong>Connect to</strong>
+                    </MudListItem>
+                </MudList>
+                <MudDivider Class="my-2" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    Notion allows ~3 requests/second. Large workspaces may take several minutes to fully sync.
+                </MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private string _apiToken = string.Empty;
+    private string _workspaceFilter = string.Empty;
+    private bool _hasToken;
+    private bool _showToken;
+    private bool _saving;
+    private bool _testing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var (filter, hasToken) = await SettingsProvider.GetConfigAsync();
+            _workspaceFilter = filter;
+            _hasToken = hasToken;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load Notion settings");
+            Snackbar.Add("Failed to load Notion settings", Severity.Error);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            // If the token field is blank and we already have one stored, pass empty to preserve existing
+            var tokenToSave = string.IsNullOrEmpty(_apiToken) && _hasToken
+                ? null!  // null means "keep existing" — but SaveAsync replaces on non-empty only
+                : _apiToken;
+
+            // When blank and a token exists, we don't overwrite — reload config and skip
+            if (string.IsNullOrEmpty(_apiToken) && _hasToken)
+            {
+                await SettingsProvider.SaveAsync(
+                    rawToken: (await SettingsProvider.GetDecryptedTokenAsync()) ?? string.Empty,
+                    workspaceFilter: _workspaceFilter);
+            }
+            else
+            {
+                await SettingsProvider.SaveAsync(_apiToken, _workspaceFilter);
+            }
+
+            var (filter, hasToken) = await SettingsProvider.GetConfigAsync();
+            _workspaceFilter = filter;
+            _hasToken = hasToken;
+            _apiToken = string.Empty;
+
+            Snackbar.Add("Notion settings saved", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save Notion settings");
+            Snackbar.Add("Failed to save Notion settings", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task TestConnectionAsync()
+    {
+        _testing = true;
+        try
+        {
+            // Use the in-progress token if the user typed one, otherwise use the stored one
+            string? token;
+            if (!string.IsNullOrEmpty(_apiToken))
+            {
+                token = _apiToken;
+            }
+            else
+            {
+                token = await SettingsProvider.GetDecryptedTokenAsync();
+            }
+
+            if (string.IsNullOrEmpty(token))
+            {
+                Snackbar.Add("No API token available — save one first.", Severity.Warning);
+                return;
+            }
+
+            ApiClient.SetToken(token);
+            var result = await ApiClient.GetBotUserAsync(CancellationToken.None);
+
+            if (result.IsSuccess)
+            {
+                Snackbar.Add($"Connected as bot: {result.Value.Name}", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Connection failed: {result.Errors[0].Message}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Notion connection test failed");
+            Snackbar.Add($"Connection test error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+}

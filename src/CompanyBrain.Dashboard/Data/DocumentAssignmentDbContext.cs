@@ -245,7 +245,16 @@ public sealed class DocumentAssignmentDbContext : DbContext
             entity.Property(e => e.SharePointSyncEnabled)
                 .IsRequired()
                 .HasDefaultValue(false);
-            
+
+            // Notion sync settings
+            entity.Property(e => e.NotionApiToken)
+                .HasMaxLength(4096)
+                .HasDefaultValue(string.Empty);
+
+            entity.Property(e => e.NotionWorkspaceFilter)
+                .HasMaxLength(2000)
+                .HasDefaultValue(string.Empty);
+
             // Seed the singleton settings row
             entity.HasData(new AppSettings
             {
@@ -266,7 +275,9 @@ public sealed class DocumentAssignmentDbContext : DbContext
                 SharePointClientSecret = string.Empty,
                 SharePointSyncIntervalMinutes = 30,
                 SharePointLocalBasePath = string.Empty,
-                SharePointSyncEnabled = false
+                SharePointSyncEnabled = false,
+                NotionApiToken = string.Empty,
+                NotionWorkspaceFilter = string.Empty
             });
         });
     }

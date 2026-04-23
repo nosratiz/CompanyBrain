@@ -222,6 +222,7 @@ internal static class CompanyBrainApi
 
         var document = result.Value;
         _ = audit.LogAsync(AuditEventType.DocumentCreated, new AuditEntry(
+            ActorEmail: request.Headers["X-Actor-Email"].FirstOrDefault(),
             ResourceType: "Document",
             ResourceId: document.FileName,
             ResourceName: document.FileName,

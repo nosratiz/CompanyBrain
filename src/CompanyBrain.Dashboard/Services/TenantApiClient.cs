@@ -1,10 +1,11 @@
 using System.Net.Http.Json;
+using CompanyBrain.Dashboard.Features.Auth.Services;
 using CompanyBrain.Dashboard.Middleware;
 using CompanyBrain.Dashboard.Services.Dtos;
 
 namespace CompanyBrain.Dashboard.Services;
 
-public sealed class KnowledgeApiClient(HttpClient httpClient)
+internal sealed class KnowledgeApiClient(HttpClient httpClient, AuthTokenStore tokenStore)
 {
     // === Knowledge Resources ===
 
@@ -84,7 +85,12 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
         if (!string.IsNullOrWhiteSpace(collectionId))
             content.Add(new StringContent(collectionId), "collectionId");
 
-        var response = await httpClient.PostAsync("/api/knowledge/documents/upload", content);
+        using var message = new HttpRequestMessage(HttpMethod.Post, "/api/knowledge/documents/upload");
+        message.Content = content;
+        if (!string.IsNullOrEmpty(tokenStore.Email))
+            message.Headers.TryAddWithoutValidation("X-Actor-Email", tokenStore.Email);
+
+        var response = await httpClient.SendAsync(message);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<IngestResultResponse>();
     }

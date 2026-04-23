@@ -6,7 +6,7 @@
 @inject ISnackbar Snackbar
 @inject ILogger<SettingsDashboard> Logger
 
-<PageTitle>Settings & Governance - Company Brain</PageTitle>
+<PageTitle>Settings & Governance - Deep Root</PageTitle>
 
 <MudText Typo="Typo.h4" Class="mb-4">Settings & Governance</MudText>
 <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
@@ -42,6 +42,10 @@ else if (_settings is not null)
 
         <MudTabPanel Text="Bot Integration" Icon="@Icons.Material.Filled.SmartToy">
             <BotManagementTab />
+        </MudTabPanel>
+
+        <MudTabPanel Text="Notion" Icon="@Icons.Material.Filled.Notes">
+            <NotionSettingsTab />
         </MudTabPanel>
     </MudTabs>
 }

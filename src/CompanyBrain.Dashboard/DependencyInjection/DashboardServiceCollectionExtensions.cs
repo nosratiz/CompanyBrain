@@ -11,6 +11,7 @@ using CompanyBrain.Dashboard.Features.ChatRelay.DependencyInjection;
 using CompanyBrain.Dashboard.Features.Confluence.DependencyInjection;
 using CompanyBrain.Dashboard.Features.DeepClean;
 using CompanyBrain.Dashboard.Features.License;
+using CompanyBrain.Dashboard.Features.Notion.DependencyInjection;
 using CompanyBrain.Dashboard.Features.SharePoint.DependencyInjection;
 using CompanyBrain.Dashboard.Mcp;
 using CompanyBrain.Dashboard.Mcp.Collections;
@@ -58,6 +59,7 @@ public static class DashboardServiceCollectionExtensions
             .AddDashboardValidation()
             .AddSharePointMirror(configuration)
             .AddConfluenceMirror(configuration)
+            .AddNotion()
             .AddAutoSync()
             .AddAutoSetup()
             .AddChatRelay()

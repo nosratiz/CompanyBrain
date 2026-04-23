@@ -64,6 +64,7 @@ public static class DashboardApplicationBuilderExtensions
         await EnsureSyncSchedulesTableAsync(db);
         await EnsureChatBotSettingsTableAsync(db);
         await EnsureConversationThreadsTableAsync(db);
+        await EnsureNotionColumnsAsync(db);
 
         return app;
     }
@@ -198,5 +199,29 @@ public static class DashboardApplicationBuilderExtensions
         await db.Database.ExecuteSqlRawAsync(createTableSql);
         await db.Database.ExecuteSqlRawAsync(createUniqueIndexSql);
         await db.Database.ExecuteSqlRawAsync(createActiveIndexSql);
+    }
+
+    private static async Task EnsureNotionColumnsAsync(DocumentAssignmentDbContext db)
+    {
+        // SQLite throws when you add a column that already exists; wrap each in try/catch.
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE AppSettings ADD COLUMN \"NotionApiToken\" TEXT NOT NULL DEFAULT ''");
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException)
+        {
+            // Column already exists — expected on databases that were created with the new schema.
+        }
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE AppSettings ADD COLUMN \"NotionWorkspaceFilter\" TEXT NOT NULL DEFAULT ''");
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException)
+        {
+            // Column already exists.
+        }
     }
 }
