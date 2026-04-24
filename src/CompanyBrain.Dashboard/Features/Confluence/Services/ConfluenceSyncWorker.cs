@@ -31,7 +31,23 @@ public sealed class ConfluenceSyncWorker(
             try
             {
                 if (await settingsProvider.IsConfiguredAsync(stoppingToken))
-                    await RunSyncCycleAsync(stoppingToken);
+                {
+                    if (await _syncLock.WaitAsync(TimeSpan.Zero, stoppingToken))
+                    {
+                        try
+                        {
+                            await RunSyncCycleAsync(stoppingToken);
+                        }
+                        finally
+                        {
+                            _syncLock.Release();
+                        }
+                    }
+                    else
+                    {
+                        logger.LogDebug("Confluence sync cycle skipped — manual sync already in progress");
+                    }
+                }
                 else
                     logger.LogDebug("Confluence sync skipped — not configured");
             }
@@ -78,9 +94,17 @@ public sealed class ConfluenceSyncWorker(
     {
         logger.LogInformation("Manual sync triggered for Confluence space {Id}", syncedSpaceId);
 
-        await using var scope = serviceScopeFactory.CreateAsyncScope();
-        var syncService = scope.ServiceProvider.GetRequiredService<ConfluenceSyncService>();
-        await syncService.SyncSpaceAsync(syncedSpaceId, cancellationToken);
+        await _syncLock.WaitAsync(cancellationToken);
+        try
+        {
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
+            var syncService = scope.ServiceProvider.GetRequiredService<ConfluenceSyncService>();
+            await syncService.SyncSpaceAsync(syncedSpaceId, cancellationToken);
+        }
+        finally
+        {
+            _syncLock.Release();
+        }
     }
 
     private async Task<(int Success, int Failed)> RunSyncCycleAsync(CancellationToken cancellationToken)

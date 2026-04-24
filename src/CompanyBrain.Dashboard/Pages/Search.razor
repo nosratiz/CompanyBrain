@@ -4,27 +4,33 @@
 @inject NavigationManager Navigation
 @inject UnauthorizedRedirectService AuthRedirect
 
-<PageTitle>Search - Company Brain</PageTitle>
+<PageTitle>Search - Deep Root</PageTitle>
 
 <MudText Typo="Typo.h4" Class="mb-4">Search Knowledge Base</MudText>
 
 <MudPaper Class="pa-4 mb-4">
-    <MudTextField @bind-Value="_query"
-                  Label="Search Query"
-                  Placeholder="Enter search terms..."
-                  Adornment="Adornment.Start"
-                  AdornmentIcon="@Icons.Material.Filled.Search"
-                  Variant="Variant.Outlined"
-                  FullWidth="true"
-                  OnKeyUp="HandleKeyUp" />
-    
-    <div class="d-flex align-center mt-4 gap-4">
-        <MudNumericField @bind-Value="_maxResults"
-                         Label="Max Results"
-                         Min="1"
-                         Max="100"
-                         Style="width: 150px;" />
-        
+    <div class="d-flex align-center gap-3">
+        <MudTextField @bind-Value="_query"
+                      Label="Search Query"
+                      Placeholder="Enter search terms..."
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined"
+                      Class="flex-grow-1"
+                      OnKeyUp="HandleKeyUp" />
+
+        <MudSelect T="string" @bind-Value="_selectedCollection"
+                   Label="Collection"
+                   Variant="Variant.Outlined"
+                   Style="width: 200px;"
+                   Dense="true">
+            <MudSelectItem T="string" Value="@("")">All collections</MudSelectItem>
+            @foreach (var col in _collections)
+            {
+                <MudSelectItem T="string" Value="@col">@col</MudSelectItem>
+            }
+        </MudSelect>
+
         <MudButton Variant="Variant.Filled"
                    Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.Search"
@@ -40,45 +46,104 @@
                 <span>Search</span>
             }
         </MudButton>
+
+        <MudMenu Icon="@Icons.Material.Filled.Tune" Dense="true">
+            <MudMenuItem>
+                <MudNumericField @bind-Value="_maxResults"
+                                 Label="Max Results"
+                                 Min="1"
+                                 Max="100"
+                                 Style="width: 140px;" />
+            </MudMenuItem>
+        </MudMenu>
     </div>
 </MudPaper>
 
 @if (_searchPerformed)
 {
-    <MudPaper Class="pa-4">
-        @if (_results is not null && !string.IsNullOrWhiteSpace(_results.Result))
-        {
-            <MudText Typo="Typo.subtitle1" Class="mb-4">
-                Search results for "@_lastQuery" (max @_results.MaxResults)
-            </MudText>
-            
-            <MudText Typo="Typo.body2" Style="font-family: monospace; white-space: pre-wrap; background-color: var(--mud-palette-background-grey); padding: 16px; border-radius: 4px;">
-                @_results.Result
-            </MudText>
-        }
-        else
-        {
-            <MudAlert Severity="Severity.Info" Icon="@Icons.Material.Filled.SearchOff">
-                No results found for "@_lastQuery". Try different search terms.
-            </MudAlert>
-        }
-    </MudPaper>
+    @if (_visibleCards.Count > 0)
+    {
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+            @_visibleCards.Count result@(_visibleCards.Count == 1 ? "" : "s") for '@_lastQuery'
+        </MudText>
+
+        <MudGrid>
+            @foreach (var card in _visibleCards)
+            {
+                <MudItem xs="12" md="6">
+                    <MudCard Elevation="2" Style="height: 100%;">
+                        <MudCardContent>
+                            <MudText Typo="Typo.subtitle1" Style="font-weight: 700;" Class="mb-1">@card.Title</MudText>
+                            @if (!string.IsNullOrWhiteSpace(card.Snippet))
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Secondary"
+                                         Style="overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;">
+                                    @card.Snippet
+                                </MudText>
+                            }
+                        </MudCardContent>
+                        <MudCardActions Class="d-flex align-center justify-space-between pa-2">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+                                @card.Collection
+                            </MudChip>
+                            <MudTooltip Text="View in Documents">
+                                <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                               Size="Size.Small"
+                                               OnClick="@(() => Navigation.NavigateTo($"/documents/{Uri.EscapeDataString(card.Title)}"))" />
+                            </MudTooltip>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+    else
+    {
+        <div class="d-flex flex-column align-center justify-center pa-12">
+            <MudIcon Icon="@Icons.Material.Filled.SearchOff" Style="font-size: 64px; color: rgba(255,255,255,0.2);" Class="mb-4" />
+            <MudText Typo="Typo.h6" Class="mb-2">No results found</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Try different keywords or broaden your search</MudText>
+        </div>
+    }
 }
 
 @code {
     private string _query = "";
     private string _lastQuery = "";
     private int _maxResults = 10;
+    private string _selectedCollection = "";
     private bool _searching = false;
     private bool _searchPerformed = false;
     private SearchResponse? _results;
+    private List<string> _collections = [];
+    private List<ResultCard> _allCards = [];
+    private List<ResultCard> _visibleCards = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var queryParam = Navigation.ToAbsoluteUri(Navigation.Uri).Query;
+        if (queryParam.StartsWith("?q="))
+        {
+            _query = Uri.UnescapeDataString(queryParam[3..]);
+            await ExecuteSearch();
+        }
+
+        try
+        {
+            var resources = await Api.ListResourcesAsync();
+            _collections = (resources ?? [])
+                .Select(r => ExtractCollection(r.Name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(c => c)
+                .ToList();
+        }
+        catch { }
+    }
 
     private async Task HandleKeyUp(KeyboardEventArgs e)
     {
         if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_query))
-        {
             await ExecuteSearch();
-        }
     }
 
     private async Task ExecuteSearch()
@@ -87,11 +152,15 @@
 
         _searching = true;
         _searchPerformed = false;
-        
+
         try
         {
             _results = await Api.SearchAsync(_query, _maxResults);
             _lastQuery = _query;
+            _allCards = _results is not null && !string.IsNullOrWhiteSpace(_results.Result)
+                ? ParseResults(_results.Result)
+                : [];
+            ApplyCollectionFilter();
             _searchPerformed = true;
         }
         catch (Exception ex)
@@ -104,4 +173,71 @@
             _searching = false;
         }
     }
+
+    private void ApplyCollectionFilter()
+    {
+        _visibleCards = string.IsNullOrEmpty(_selectedCollection)
+            ? _allCards
+            : _allCards.Where(c => string.Equals(c.Collection, _selectedCollection, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    private static List<ResultCard> ParseResults(string result)
+    {
+        var cards = new List<ResultCard>();
+        var sections = result.Split(["\n---\n", "\n---", "---\n"], StringSplitOptions.RemoveEmptyEntries);
+
+        for (var i = 0; i < sections.Length; i++)
+        {
+            var section = sections[i].Trim();
+            if (string.IsNullOrEmpty(section)) continue;
+
+            var lines = section.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            var title = $"Result {i + 1}";
+            var bodyStart = 0;
+
+            if (lines.Length > 0 && lines[0].TrimStart().StartsWith("# "))
+            {
+                title = lines[0].TrimStart()[2..].Trim();
+                bodyStart = 1;
+            }
+            else if (lines.Length > 0 && lines[0].TrimStart().StartsWith("#"))
+            {
+                title = lines[0].TrimStart().TrimStart('#').Trim();
+                bodyStart = 1;
+            }
+
+            var bodyLines = lines.Skip(bodyStart)
+                .Where(l => !string.IsNullOrWhiteSpace(l) && !l.TrimStart().StartsWith("#"))
+                .Take(3)
+                .ToArray();
+
+            var snippet = string.Join(" ", bodyLines);
+            var collection = InferCollection(title);
+            cards.Add(new ResultCard(title, snippet, collection));
+        }
+
+        return cards;
+    }
+
+    private static string InferCollection(string title)
+    {
+        var path = title;
+        if (path.StartsWith("resources/", StringComparison.OrdinalIgnoreCase))
+            path = path[10..];
+        var slash = path.IndexOf('/');
+        if (slash > 0)
+            return path[..slash];
+        return "Knowledge Base";
+    }
+
+    private static string ExtractCollection(string name)
+    {
+        var path = name.StartsWith("resources/", StringComparison.OrdinalIgnoreCase) ? name[10..] : name;
+        var slash = path.IndexOf('/');
+        if (slash <= 0) return "General";
+        var segment = path[..slash];
+        return string.IsNullOrWhiteSpace(segment) ? "General" : segment;
+    }
+
+    private sealed record ResultCard(string Title, string Snippet, string Collection);
 }

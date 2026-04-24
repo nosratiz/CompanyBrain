@@ -41,6 +41,7 @@ public partial class SharePointConnector : IDisposable
     private Severity _lastSyncAllSeverity = Severity.Normal;
 
     private readonly CancellationTokenSource _cts = new();
+    private Timer? _refreshTimer;
 
     protected override async Task OnInitializedAsync()
     {
@@ -48,6 +49,11 @@ public partial class SharePointConnector : IDisposable
         await CheckSharePointConnectionAsync();
         await LoadSyncedFoldersAsync();
         await LoadConflictsAsync();
+        _refreshTimer = new Timer(_ => InvokeAsync(async () =>
+        {
+            if (!_syncingAll && _syncingFolderId is null)
+                await LoadSyncedFoldersAsync();
+        }), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
     private void HandleAdminConsentCallback()
@@ -211,6 +217,7 @@ public partial class SharePointConnector : IDisposable
         finally
         {
             _loadingSyncedFolders = false;
+            StateHasChanged();
         }
     }
 
@@ -234,20 +241,38 @@ public partial class SharePointConnector : IDisposable
         _syncingFolderId = folderId;
         StateHasChanged();
 
+        var folderName = _syncedFolders.FirstOrDefault(f => f.Id == folderId)?.FolderPath ?? folderId.ToString();
+
         try
         {
             await SyncService.SyncFolderAsync(folderId, _cts.Token);
+            await AuditService.LogAsync(CompanyBrain.Dashboard.Data.Audit.AuditEventType.SyncScheduleRun,
+                new CompanyBrain.Dashboard.Services.Audit.AuditEntry(
+                    ActorEmail: AuthStore.Email,
+                    ResourceType: "SharePoint.Folder",
+                    ResourceId: folderId.ToString(),
+                    ResourceName: folderName,
+                    Metadata: new { Trigger = "Manual", Source = "SharePointConnector" }));
             Snackbar.Add("Sync completed", Severity.Success);
-            await LoadSyncedFoldersAsync();
-            await LoadConflictsAsync();
         }
         catch (Exception ex)
         {
+            await AuditService.LogAsync(CompanyBrain.Dashboard.Data.Audit.AuditEventType.SyncScheduleRun,
+                new CompanyBrain.Dashboard.Services.Audit.AuditEntry(
+                    ActorEmail: AuthStore.Email,
+                    ResourceType: "SharePoint.Folder",
+                    ResourceId: folderId.ToString(),
+                    ResourceName: folderName,
+                    Success: false,
+                    ErrorMessage: ex.Message,
+                    Metadata: new { Trigger = "Manual", Source = "SharePointConnector" }));
             Snackbar.Add($"Sync failed: {ex.Message}", Severity.Error);
         }
         finally
         {
             _syncingFolderId = null;
+            await LoadSyncedFoldersAsync();
+            await LoadConflictsAsync();
         }
     }
 
@@ -272,6 +297,14 @@ public partial class SharePointConnector : IDisposable
 
             var (success, failed) = await SyncWorker.TriggerSyncAllAsync(_cts.Token);
             _lastSyncAllUtc = DateTime.UtcNow;
+
+            await AuditService.LogAsync(CompanyBrain.Dashboard.Data.Audit.AuditEventType.SyncScheduleRun,
+                new CompanyBrain.Dashboard.Services.Audit.AuditEntry(
+                    ActorEmail: AuthStore.Email,
+                    ResourceType: "SharePoint.AllFolders",
+                    ResourceName: "All SharePoint folders",
+                    Success: failed == 0,
+                    Metadata: new { Trigger = "ManualAll", Source = "SharePointConnector", Success = success, Failed = failed }));
 
             if (failed == 0 && success > 0)
             {
@@ -451,6 +484,7 @@ public partial class SharePointConnector : IDisposable
 
     public void Dispose()
     {
+        _refreshTimer?.Dispose();
         _cts.Cancel();
         _cts.Dispose();
     }

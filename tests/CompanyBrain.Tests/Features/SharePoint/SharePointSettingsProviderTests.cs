@@ -3,6 +3,7 @@ using CompanyBrain.Dashboard.Data.Models;
 using CompanyBrain.Dashboard.Features.SharePoint.Models;
 using CompanyBrain.Dashboard.Features.SharePoint.Services;
 using CompanyBrain.Dashboard.Services;
+using CompanyBrain.Dashboard.Services.Audit;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -25,7 +26,7 @@ public sealed class SharePointSettingsProviderTests : IDisposable
             .Options;
 
         var contextFactory = new TestDbContextFactory(_dbOptions);
-        _settingsService = new SettingsService(contextFactory, Substitute.For<ILogger<SettingsService>>());
+        _settingsService = new SettingsService(contextFactory, Substitute.For<IAuditService>(), Substitute.For<ILogger<SettingsService>>());
         _logger = Substitute.For<ILogger<SharePointSettingsProvider>>();
 
         _fallback = new SharePointSyncOptions

@@ -50,10 +50,6 @@
           "maxResults": {
             "type": "integer",
             "description": "Maximum results to return (default 10)"
-          },
-          "collectionId": {
-            "type": "string",
-            "description": "Optional named collection scope (e.g., Engineering, HR, Sales)"
           }
         },
         "required": [

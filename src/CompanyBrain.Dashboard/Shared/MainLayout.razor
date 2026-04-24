@@ -20,8 +20,7 @@
     <div class="loading-screen">
         <div class="loading-content">
             <div class="loading-logo">
-                <MudIcon Icon="@Icons.Material.Filled.Psychology" 
-                         Style="font-size: 48px; color: white;" />
+                <img src="/images/deeproot-logo.png" alt="Deep Root" style="width: 80px; height: 80px; object-fit: contain;" />
             </div>
             <MudProgressLinear Color="Color.Primary" Indeterminate="true" 
                                Style="width: 200px; border-radius: 4px;" />
@@ -50,13 +49,8 @@ else
                            Edge="Edge.Start"
                            OnClick="ToggleDrawer" />
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="ml-2">
-                <div class="logo-container">
-                    <MudIcon Icon="@Icons.Material.Filled.Psychology" Size="Size.Small" Style="color: white;" />
-                </div>
-                <MudLink Href="/" Style="text-decoration: none;">
-                    <MudText Typo="Typo.h6" Class="brand-text">
-                        Company Brain
-                    </MudText>
+                <MudLink Href="/" Style="text-decoration: none; display: flex; align-items: center; gap: 8px;">
+                    <img src="/images/deeproot-logo.png" alt="Deep Root" style="height: 36px; width: auto;" />
                 </MudLink>
             </MudStack>
             <MudSpacer />
@@ -111,6 +105,9 @@ else
                         <MudNavLink Href="/confluence" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Article" Class="nav-item">
                             Confluence
                         </MudNavLink>
+                        <MudNavLink Href="/notion" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Notes" Class="nav-item">
+                            Notion
+                        </MudNavLink>
                         <MudNavLink Href="/settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings" Class="nav-item">
                             Settings
                         </MudNavLink>
@@ -130,6 +127,9 @@ else
                         </MudNavLink>
                         <MudNavLink Href="/auto-setup" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.RocketLaunch" Class="nav-item">
                             Zero-Touch Setup
+                        </MudNavLink>
+                        <MudNavLink Href="/audit" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ManageSearch" Class="nav-item">
+                            Audit Log
                         </MudNavLink>
                     }
                 }

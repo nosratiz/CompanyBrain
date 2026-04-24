@@ -107,6 +107,21 @@ public sealed class AppSettings
     /// Indicates whether SharePoint sync is enabled.
     /// </summary>
     public bool SharePointSyncEnabled { get; set; }
+
+    // ───────────────────────────────────────────────────────────────
+    // Notion Sync Settings
+    // ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Notion internal integration API token (stored encrypted at rest).
+    /// </summary>
+    public string NotionApiToken { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Comma-separated list of Notion page/database IDs to sync.
+    /// Leave empty to sync all pages shared with the integration.
+    /// </summary>
+    public string NotionWorkspaceFilter { get; set; } = string.Empty;
 }
 
 /// <summary>

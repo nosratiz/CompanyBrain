@@ -1,5 +1,7 @@
 using CompanyBrain.Application;
+using CompanyBrain.Dashboard.Data.Audit;
 using CompanyBrain.Dashboard.Mcp.Collections;
+using CompanyBrain.Dashboard.Services.Audit;
 using CompanyBrain.Services;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -93,9 +95,21 @@ internal static class KnowledgeResourceHandlers
 
             if (string.IsNullOrWhiteSpace(relativePath))
             {
+                var collAudit = GetAuditService(request);
+                _ = collAudit?.LogAsync(AuditEventType.CollectionAccessed, new AuditEntry(
+                    ActorId: $"mcp-session:{request.Server.GetHashCode()}",
+                    ResourceType: "Collection",
+                    ResourceId: collectionId,
+                    ResourceName: collectionId));
                 return await ReadCollectionRootAsync(collectionManager, collectionId, cancellationToken);
             }
 
+            var collDocAudit = GetAuditService(request);
+            _ = collDocAudit?.LogAsync(AuditEventType.DocumentAccessed, new AuditEntry(
+                ActorId: $"mcp-session:{request.Server.GetHashCode()}",
+                ResourceType: "Document",
+                ResourceId: request.Params.Uri,
+                ResourceName: relativePath));
             return await ReadCollectionDocumentAsync(collectionManager, collectionId, relativePath, cancellationToken);
         }
 
@@ -105,6 +119,13 @@ internal static class KnowledgeResourceHandlers
         {
             throw new McpException(string.Join(Environment.NewLine, result.Errors.Select(error => error.Message)));
         }
+
+        var audit = GetAuditService(request);
+        _ = audit?.LogAsync(AuditEventType.DocumentAccessed, new AuditEntry(
+            ActorId: $"mcp-session:{request.Server.GetHashCode()}",
+            ResourceType: "Document",
+            ResourceId: request.Params.Uri,
+            ResourceName: result.Value.Uri));
 
         return new ReadResourceResult
         {
@@ -266,4 +287,7 @@ internal static class KnowledgeResourceHandlers
         var tracker = GetServices(request).GetService(typeof(McpSessionTracker)) as McpSessionTracker;
         tracker?.Track(request.Server);
     }
+
+    private static IAuditService? GetAuditService<TParams>(RequestContext<TParams> request)
+        => GetServices(request).GetService(typeof(IAuditService)) as IAuditService;
 }

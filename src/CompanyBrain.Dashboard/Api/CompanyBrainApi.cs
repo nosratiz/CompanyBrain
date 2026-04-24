@@ -1,7 +1,9 @@
 using CompanyBrain.Dashboard.Api.Contracts;
 using CompanyBrain.Dashboard.Api.ResultMapping;
 using CompanyBrain.Dashboard.Api.Validation;
+using CompanyBrain.Dashboard.Data.Audit;
 using CompanyBrain.Dashboard.Mcp;
+using CompanyBrain.Dashboard.Services.Audit;
 using CompanyBrain.Application;
 using CompanyBrain.Models;
 using FluentValidation;
@@ -77,11 +79,16 @@ internal static class CompanyBrainApi
         return endpoints;
     }
 
+    private static string? GetActorEmail(HttpContext ctx)
+        => ctx.Request.Headers["X-Actor-Email"].FirstOrDefault() is { Length: > 0 } email ? email : null;
+
     private static async Task<IResult> IngestWikiAsync(
         IngestWikiRequest request,
         [FromServices] IValidator<IngestWikiRequest> validator,
         [FromServices] KnowledgeApplicationService service,
         [FromServices] McpSessionTracker sessionTracker,
+        [FromServices] IAuditService audit,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         var validation = await validator.ValidateAsync(request, cancellationToken);
@@ -99,6 +106,14 @@ internal static class CompanyBrainApi
         await sessionTracker.NotifyResourceListChangedAsync(cancellationToken);
 
         var document = result.Value;
+        _ = audit.LogAsync(AuditEventType.DocumentCreated, new AuditEntry(
+            ActorEmail: GetActorEmail(httpContext),
+            ResourceType: "Document",
+            ResourceId: document.FileName,
+            ResourceName: document.FileName,
+            Metadata: new { source = "wiki", url = request.Url },
+            IpAddress: httpContext.Connection.RemoteIpAddress?.ToString()));
+
         return TypedResults.Ok(new IngestResultResponse(document.FileName, document.ResourceUri, document.Existed));
     }
 
@@ -107,6 +122,8 @@ internal static class CompanyBrainApi
         [FromServices] IValidator<IngestWikiBatchRequest> validator,
         [FromServices] KnowledgeApplicationService service,
         [FromServices] McpSessionTracker sessionTracker,
+        [FromServices] IAuditService audit,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         var validation = await validator.ValidateAsync(request, cancellationToken);
@@ -124,6 +141,14 @@ internal static class CompanyBrainApi
         await sessionTracker.NotifyResourceListChangedAsync(cancellationToken);
 
         var batchResult = result.Value;
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString();
+        _ = audit.LogAsync(AuditEventType.DocumentCreated, new AuditEntry(
+            ActorEmail: GetActorEmail(httpContext),
+            ResourceType: "Document",
+            ResourceName: request.Url,
+            Metadata: new { source = "wiki-batch", url = request.Url, ingested = batchResult.SuccessfullyIngested, failed = batchResult.Failed },
+            IpAddress: ip));
+
         var responseItems = batchResult.Results.Select(r =>
             new IngestWikiBatchItemResult(r.Url, r.Name, r.FileName, r.ResourceUri, r.Success, r.Error)).ToList();
 
@@ -139,6 +164,8 @@ internal static class CompanyBrainApi
         [FromServices] IValidator<IngestPathRequest> validator,
         [FromServices] KnowledgeApplicationService service,
         [FromServices] McpSessionTracker sessionTracker,
+        [FromServices] IAuditService audit,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         var validation = await validator.ValidateAsync(request, cancellationToken);
@@ -156,6 +183,14 @@ internal static class CompanyBrainApi
         await sessionTracker.NotifyResourceListChangedAsync(cancellationToken);
 
         var document = result.Value;
+        _ = audit.LogAsync(AuditEventType.DocumentCreated, new AuditEntry(
+            ActorEmail: GetActorEmail(httpContext),
+            ResourceType: "Document",
+            ResourceId: document.FileName,
+            ResourceName: document.FileName,
+            Metadata: new { source = "path" },
+            IpAddress: httpContext.Connection.RemoteIpAddress?.ToString()));
+
         return TypedResults.Ok(new IngestResultResponse(document.FileName, document.ResourceUri, document.Existed));
     }
 
@@ -164,6 +199,7 @@ internal static class CompanyBrainApi
         [FromServices] IValidator<UploadDocumentRequest> validator,
         [FromServices] KnowledgeApplicationService service,
         [FromServices] McpSessionTracker sessionTracker,
+        [FromServices] IAuditService audit,
         CancellationToken cancellationToken)
     {
         var form = await request.ReadFormAsync(cancellationToken);
@@ -191,6 +227,14 @@ internal static class CompanyBrainApi
         await sessionTracker.NotifyResourceListChangedAsync(cancellationToken);
 
         var document = result.Value;
+        _ = audit.LogAsync(AuditEventType.DocumentCreated, new AuditEntry(
+            ActorEmail: request.Headers["X-Actor-Email"].FirstOrDefault(),
+            ResourceType: "Document",
+            ResourceId: document.FileName,
+            ResourceName: document.FileName,
+            Metadata: new { source = "upload", originalFileName = file.FileName, collectionId },
+            IpAddress: request.HttpContext.Connection.RemoteIpAddress?.ToString()));
+
         return TypedResults.Ok(new IngestResultResponse(document.FileName, document.ResourceUri, document.Existed));
     }
 
@@ -200,6 +244,8 @@ internal static class CompanyBrainApi
         string? collectionId,
         [FromServices] IValidator<SearchRequest> validator,
         [FromServices] KnowledgeApplicationService service,
+        [FromServices] IAuditService audit,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         var request = new SearchRequest(query, maxResults, collectionId);
@@ -218,6 +264,13 @@ internal static class CompanyBrainApi
         {
             return result.ToProblemResult();
         }
+
+        _ = audit.LogAsync(AuditEventType.SearchPerformed, new AuditEntry(
+            ActorEmail: GetActorEmail(httpContext),
+            ResourceType: "KnowledgeBase",
+            ResourceId: request.CollectionId,
+            Metadata: new { query = request.Query, maxResults = effectiveMaxResults, collectionId = request.CollectionId, resultLength = result.Value.Length },
+            IpAddress: httpContext.Connection.RemoteIpAddress?.ToString()));
 
         return TypedResults.Ok(new SearchResponse(request.Query, effectiveMaxResults, result.Value));
     }
@@ -253,6 +306,8 @@ internal static class CompanyBrainApi
         string fileName,
         [FromServices] KnowledgeApplicationService service,
         [FromServices] McpSessionTracker sessionTracker,
+        [FromServices] IAuditService audit,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         var result = service.DeleteResourceAsync(fileName, cancellationToken);
@@ -263,6 +318,14 @@ internal static class CompanyBrainApi
 
         await sessionTracker.NotifyResourceListChangedAsync(cancellationToken);
 
+        _ = audit.LogAsync(AuditEventType.DocumentDeleted, new AuditEntry(
+            ActorEmail: GetActorEmail(httpContext),
+            ResourceType: "Document",
+            ResourceId: fileName,
+            ResourceName: fileName,
+            Metadata: new { deletedBy = "api" },
+            IpAddress: httpContext.Connection.RemoteIpAddress?.ToString()));
+
         return TypedResults.NoContent();
     }
 
@@ -271,6 +334,8 @@ internal static class CompanyBrainApi
         [FromServices] IValidator<IngestDatabaseSchemaRequest> validator,
         [FromServices] KnowledgeApplicationService service,
         [FromServices] McpSessionTracker sessionTracker,
+        [FromServices] IAuditService audit,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         var validation = await validator.ValidateAsync(request, cancellationToken);
@@ -296,6 +361,14 @@ internal static class CompanyBrainApi
         await sessionTracker.NotifyResourceListChangedAsync(cancellationToken);
 
         var document = result.Value;
+        _ = audit.LogAsync(AuditEventType.DocumentCreated, new AuditEntry(
+            ActorEmail: GetActorEmail(httpContext),
+            ResourceType: "Document",
+            ResourceId: document.FileName,
+            ResourceName: document.FileName,
+            Metadata: new { source = "database-schema", provider = request.Provider },
+            IpAddress: httpContext.Connection.RemoteIpAddress?.ToString()));
+
         return TypedResults.Ok(new IngestResultResponse(document.FileName, document.ResourceUri, document.Existed));
     }
 }

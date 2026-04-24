@@ -168,6 +168,27 @@ public sealed class SecurityHelpersTests
         SecurityHelpers.RedactPii(input).Should().Be(input);
     }
 
+    [Theory]
+    [InlineData("0684304623")]                   // Dutch mobile (as it appears in the CV)
+    [InlineData("0612345678")]                   // Generic Dutch mobile
+    [InlineData("0201234567")]                   // Dutch landline (Amsterdam)
+    public void RedactPii_WithDutchPhoneNumber_ShouldRedact(string phone)
+    {
+        var result = SecurityHelpers.RedactPii($"Call me at {phone}");
+        result.Should().NotContain(phone);
+        result.Should().Contain("[PHONE_REDACTED]");
+    }
+
+    [Theory]
+    [InlineData("+31 6 84304623")]
+    [InlineData("+1 800 555 1234")]
+    public void RedactPii_WithInternationalPhoneNumber_ShouldRedact(string phone)
+    {
+        var result = SecurityHelpers.RedactPii($"Reach me at {phone} anytime");
+        result.Should().NotContain(phone);
+        result.Should().Contain("[PHONE_REDACTED]");
+    }
+
     #endregion
 
     #region ContainsPii Tests

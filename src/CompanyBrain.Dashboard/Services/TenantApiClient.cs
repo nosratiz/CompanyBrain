@@ -1,11 +1,23 @@
 using System.Net.Http.Json;
+using CompanyBrain.Dashboard.Features.Auth.Services;
 using CompanyBrain.Dashboard.Middleware;
 using CompanyBrain.Dashboard.Services.Dtos;
 
 namespace CompanyBrain.Dashboard.Services;
 
-public sealed class KnowledgeApiClient(HttpClient httpClient)
+internal sealed class KnowledgeApiClient(HttpClient httpClient, AuthTokenStore tokenStore)
 {
+    // Builds a request and injects X-Actor-Email so the server can attribute audit log entries.
+    private HttpRequestMessage BuildRequest(HttpMethod method, string url, object? body = null)
+    {
+        var request = new HttpRequestMessage(method, url);
+        if (body is not null)
+            request.Content = JsonContent.Create(body);
+        if (!string.IsNullOrEmpty(tokenStore.Email))
+            request.Headers.TryAddWithoutValidation("X-Actor-Email", tokenStore.Email);
+        return request;
+    }
+
     // === Knowledge Resources ===
 
     public async Task<IReadOnlyList<KnowledgeResourceDescriptor>?> ListResourcesAsync()
@@ -43,7 +55,10 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
             url += $"&collectionId={Uri.EscapeDataString(collectionId)}";
         try
         {
-            return await httpClient.GetFromJsonAsync<SearchResponse>(url);
+            using var request = BuildRequest(HttpMethod.Get, url);
+            var response = await httpClient.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<SearchResponse>();
         }
         catch (UnauthorizedApiException) { throw; }
         catch
@@ -56,21 +71,24 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
 
     public async Task<IngestResultResponse?> IngestWikiAsync(string url, string? name = null)
     {
-        var response = await httpClient.PostAsJsonAsync("/api/knowledge/wiki", new { Url = url, Name = name });
+        using var request = BuildRequest(HttpMethod.Post, "/api/knowledge/wiki", new { Url = url, Name = name });
+        var response = await httpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<IngestResultResponse>();
     }
 
     public async Task<IngestWikiBatchResponse?> IngestWikiBatchAsync(string url, string? linkSelector = null)
     {
-        var response = await httpClient.PostAsJsonAsync("/api/knowledge/wiki/batch", new { Url = url, LinkSelector = linkSelector });
+        using var request = BuildRequest(HttpMethod.Post, "/api/knowledge/wiki/batch", new { Url = url, LinkSelector = linkSelector });
+        var response = await httpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<IngestWikiBatchResponse>();
     }
 
     public async Task<IngestResultResponse?> IngestDocumentPathAsync(string filePath, string? name = null)
     {
-        var response = await httpClient.PostAsJsonAsync("/api/knowledge/documents/path", new { LocalPath = filePath, Name = name });
+        using var request = BuildRequest(HttpMethod.Post, "/api/knowledge/documents/path", new { LocalPath = filePath, Name = name });
+        var response = await httpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<IngestResultResponse>();
     }
@@ -84,21 +102,28 @@ public sealed class KnowledgeApiClient(HttpClient httpClient)
         if (!string.IsNullOrWhiteSpace(collectionId))
             content.Add(new StringContent(collectionId), "collectionId");
 
-        var response = await httpClient.PostAsync("/api/knowledge/documents/upload", content);
+        using var message = new HttpRequestMessage(HttpMethod.Post, "/api/knowledge/documents/upload");
+        message.Content = content;
+        if (!string.IsNullOrEmpty(tokenStore.Email))
+            message.Headers.TryAddWithoutValidation("X-Actor-Email", tokenStore.Email);
+
+        var response = await httpClient.SendAsync(message);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<IngestResultResponse>();
     }
 
     public async Task<bool> DeleteResourceAsync(string fileName)
     {
-        var response = await httpClient.DeleteAsync($"/api/knowledge/resources/{Uri.EscapeDataString(fileName)}");
+        using var request = BuildRequest(HttpMethod.Delete, $"/api/knowledge/resources/{Uri.EscapeDataString(fileName)}");
+        var response = await httpClient.SendAsync(request);
         return response.IsSuccessStatusCode;
     }
 
     public async Task<IngestResultResponse?> IngestDatabaseSchemaAsync(string connectionString, string name, string provider)
     {
-        var response = await httpClient.PostAsJsonAsync("/api/knowledge/database-schema",
+        using var request = BuildRequest(HttpMethod.Post, "/api/knowledge/database-schema",
             new { ConnectionString = connectionString, Name = name, Provider = provider });
+        var response = await httpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<IngestResultResponse>();
     }

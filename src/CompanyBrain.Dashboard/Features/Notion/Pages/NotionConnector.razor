@@ -1,0 +1,352 @@
+@page "/notion"
+@using CompanyBrain.Dashboard.Features.Notion.Api
+@using CompanyBrain.Dashboard.Features.Notion.Services
+@using CompanyBrain.Dashboard.Features.AutoSync.Models
+@using CompanyBrain.Dashboard.Features.AutoSync.Services
+@using CompanyBrain.Dashboard.Data
+@using CompanyBrain.Dashboard.Services
+@using CompanyBrain.Dashboard.Services.Dtos
+@inject NotionSettingsProvider SettingsProvider
+@inject NotionApiClient ApiClient
+@inject IDbContextFactory<DocumentAssignmentDbContext> DbFactory
+@inject SovereignSyncWorker SyncWorker
+@inject KnowledgeApiClient KnowledgeApi
+@inject ISnackbar Snackbar
+@inject ILogger<NotionConnector> Logger
+@inject CompanyBrain.Dashboard.Services.Audit.IAuditService AuditService
+@inject CompanyBrain.Dashboard.Features.Auth.Services.AuthTokenStore AuthStore
+
+<PageTitle>Notion - Deep Root</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-1" Style="font-weight: 800;">Notion</MudText>
+<MudText Typo="Typo.body2" Class="mb-6" Style="color: rgba(255,255,255,0.5);">
+    Connect to Notion and sync pages into the knowledge base.
+</MudText>
+
+<MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4">
+
+    @* ── Tab 1: Connection ── *@
+    <MudTabPanel Text="Connection" Icon="@Icons.Material.Filled.Link">
+        <MudGrid>
+            <MudItem xs="12" md="7">
+                <MudPaper Class="pa-6" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px;">
+                    <MudText Typo="Typo.h6" Class="mb-4">Notion Integration Token</MudText>
+                    <MudText Typo="Typo.body2" Class="mb-4" Style="color: rgba(255,255,255,0.5);">
+                        Create an <strong>internal integration</strong> at
+                        <MudLink Href="https://www.notion.so/my-integrations" Target="_blank">
+                            notion.so/my-integrations
+                        </MudLink>, then share your pages with it.
+                    </MudText>
+
+                    @if (_hasToken)
+                    {
+                        <MudAlert Severity="Severity.Success" Dense="true" Class="mb-4">
+                            An encrypted API token is saved. Leave blank to keep it unchanged.
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4">
+                            No API token saved yet.
+                        </MudAlert>
+                    }
+
+                    <MudTextField @bind-Value="_apiToken"
+                                  Label="Notion API Token"
+                                  Placeholder="@(_hasToken ? "•••••••• (unchanged)" : "secret_…")"
+                                  InputType="@(_showToken ? InputType.Text : InputType.Password)"
+                                  Variant="Variant.Outlined"
+                                  Adornment="Adornment.End"
+                                  AdornmentIcon="@(_showToken ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                                  OnAdornmentClick="@(() => _showToken = !_showToken)"
+                                  Class="mb-3"
+                                  Disabled="_saving" />
+
+                    <MudTextField @bind-Value="_workspaceFilter"
+                                  Label="Page Filter (optional)"
+                                  Placeholder="page-uuid-1, page-uuid-2"
+                                  Variant="Variant.Outlined"
+                                  HelperText="Comma-separated Notion page IDs to sync. Leave empty to sync all shared pages."
+                                  Class="mb-4"
+                                  Disabled="_saving" />
+
+                    <MudStack Row="true" Spacing="2">
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Save"
+                                   OnClick="SaveAsync"
+                                   Disabled="_saving || (!_hasToken && string.IsNullOrWhiteSpace(_apiToken))">
+                            @if (_saving)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            }
+                            Save
+                        </MudButton>
+
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Secondary"
+                                   StartIcon="@Icons.Material.Filled.NetworkCheck"
+                                   OnClick="TestConnectionAsync"
+                                   Disabled="@(_testing || (!_hasToken && string.IsNullOrWhiteSpace(_apiToken)))">
+                            @if (_testing)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            }
+                            Test Connection
+                        </MudButton>
+
+                        @if (_hasToken)
+                        {
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Error"
+                                       StartIcon="@Icons.Material.Filled.LinkOff"
+                                       OnClick="DisconnectAsync">
+                                Disconnect
+                            </MudButton>
+                        }
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="5">
+                <MudPaper Class="pa-6" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px;">
+                    <MudText Typo="Typo.h6" Class="mb-3">Setup Guide</MudText>
+                    <MudList T="string" Dense="true">
+                        <MudListItem Icon="@Icons.Material.Filled.OpenInNew" IconColor="Color.Primary">
+                            Go to <MudLink Href="https://www.notion.so/my-integrations" Target="_blank">notion.so/my-integrations</MudLink>
+                        </MudListItem>
+                        <MudListItem Icon="@Icons.Material.Filled.Add" IconColor="Color.Primary">
+                            Create a new <strong>internal</strong> integration
+                        </MudListItem>
+                        <MudListItem Icon="@Icons.Material.Filled.Key" IconColor="Color.Primary">
+                            Copy the <strong>Internal Integration Token</strong> (starts with <code>secret_</code>)
+                        </MudListItem>
+                        <MudListItem Icon="@Icons.Material.Filled.Share" IconColor="Color.Primary">
+                            Share pages via Notion ••• menu → <strong>Connect to</strong>
+                        </MudListItem>
+                    </MudList>
+                    <MudDivider Class="my-3" />
+                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">
+                        Notion allows ~3 requests/second. Large workspaces may take several minutes to fully sync.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </MudTabPanel>
+
+    @* ── Tab 2: Browse Pages ── *@
+    <MudTabPanel Text="Browse Pages" Icon="@Icons.Material.Filled.GridView" Disabled="!_hasToken">
+        <MudStack Spacing="3">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Refresh"
+                           OnClick="LoadPagesAsync"
+                           Disabled="_loadingPages">
+                    @if (_loadingPages)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Loading…</span>
+                    }
+                    else
+                    {
+                        <span>Load Pages</span>
+                    }
+                </MudButton>
+                <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.4);">
+                    @(_availablePages.Count > 0 ? $"{_availablePages.Count} pages found" : "Click to load pages shared with your integration")
+                </MudText>
+            </MudStack>
+
+            @if (_availablePages.Count > 0)
+            {
+                <MudGrid>
+                    @foreach (var notionPage in PagedNotionPages)
+                    {
+                        var isFiltered = _filteredPageIds.Contains(NormalizeId(notionPage.Id));
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudPaper Class="pa-4" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; height: 100%;">
+                                <MudStack Spacing="2" Style="height: 100%;">
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                        <MudIcon Icon="@Icons.Material.Filled.Notes"
+                                                 Style="color: #667eea;"
+                                                 Size="Size.Small" />
+                                        <MudText Typo="Typo.subtitle2" Style="font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                            @notionPage.GetTitle()
+                                        </MudText>
+                                    </MudStack>
+                                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.35); font-family: monospace;">
+                                        @notionPage.Id
+                                    </MudText>
+                                    @if (notionPage.LastEditedTime != default)
+                                    {
+                                        <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.35);">
+                                            Edited @notionPage.LastEditedTime.ToLocalTime().ToString("MM/dd HH:mm")
+                                        </MudText>
+                                    }
+                                    <MudSpacer />
+                                    @if (isFiltered)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.Check">
+                                            In filter
+                                        </MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudButton Variant="Variant.Outlined"
+                                                   Color="Color.Primary"
+                                                   Size="Size.Small"
+                                                   StartIcon="@Icons.Material.Filled.Add"
+                                                   OnClick="() => AddPageToFilterAsync(notionPage)">
+                                            Add to Sync
+                                        </MudButton>
+                                    }
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+                    }
+                </MudGrid>
+                @if (_availablePages.Count > BrowsePageSize)
+                {
+                    <MudStack AlignItems="AlignItems.Center" Class="mt-3">
+                        <MudPagination Count="@((int)Math.Ceiling((double)_availablePages.Count / BrowsePageSize))"
+                                       Selected="@(_browsePageIndex + 1)"
+                                       SelectedChanged="@(p => { _browsePageIndex = p - 1; StateHasChanged(); })"
+                                       Color="Color.Primary" />
+                    </MudStack>
+                }
+            }
+        </MudStack>
+    </MudTabPanel>
+
+    @* ── Tab 3: Synced Pages ── *@
+    <MudTabPanel Text="Synced Pages" Icon="@Icons.Material.Filled.Sync">
+        <MudStack Spacing="3">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.SyncAlt"
+                           OnClick="SyncNowAsync"
+                           Disabled="_syncing || !_hasToken">
+                    @if (_syncing)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Syncing…</span>
+                    }
+                    else
+                    {
+                        <span>Sync Now</span>
+                    }
+                </MudButton>
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Default"
+                           StartIcon="@Icons.Material.Filled.Refresh"
+                           OnClick="LoadSyncedPagesAsync"
+                           Disabled="_loadingSynced">
+                    Refresh
+                </MudButton>
+                @if (_syncMessage is not null)
+                {
+                    <MudAlert Severity="@_syncSeverity" Dense="true" Class="flex-1">@_syncMessage</MudAlert>
+                }
+            </MudStack>
+
+            @* Schedule info strip *@
+            @if (_schedule is not null)
+            {
+                <MudPaper Class="pa-3" Style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px;">
+                    <MudGrid Spacing="2">
+                        <MudItem xs="6" sm="3">
+                            <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.45);">Last Sync</MudText>
+                            <MudText Typo="Typo.body2">
+                                @(_schedule.LastSyncUtc.HasValue
+                                    ? _schedule.LastSyncUtc.Value.ToLocalTime().ToString("MM/dd HH:mm")
+                                    : "Never")
+                            </MudText>
+                        </MudItem>
+                        <MudItem xs="6" sm="3">
+                            <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.45);">Schedule</MudText>
+                            <MudText Typo="Typo.body2">@_schedule.CronExpression</MudText>
+                        </MudItem>
+                        <MudItem xs="6" sm="3">
+                            <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.45);">Collection</MudText>
+                            <MudText Typo="Typo.body2">@(_schedule.CollectionName ?? "notion")</MudText>
+                        </MudItem>
+                        <MudItem xs="6" sm="3">
+                            <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.45);">Status</MudText>
+                            @if (!string.IsNullOrEmpty(_schedule.LastErrorMessage))
+                            {
+                                <MudTooltip Text="@_schedule.LastErrorMessage">
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Error">Error</MudChip>
+                                </MudTooltip>
+                            }
+                            else if (_schedule.LastSyncUtc.HasValue)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success">OK</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default">Pending</MudChip>
+                            }
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+            }
+
+            @if (_loadingSynced)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+            else if (_syncedPages.Count == 0)
+            {
+                <MudPaper Class="pa-8" Style="background: rgba(255,255,255,0.02); border: 1px dashed rgba(255,255,255,0.1); border-radius: 16px; text-align: center;">
+                    <MudIcon Icon="@Icons.Material.Filled.Notes"
+                             Style="font-size: 48px; color: rgba(255,255,255,0.2);" Class="mb-3" />
+                    <MudText Typo="Typo.h6" Style="color: rgba(255,255,255,0.3);">No Notion pages synced yet</MudText>
+                    <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.2);">
+                        Save your API token and click "Sync Now" to import pages.
+                    </MudText>
+                </MudPaper>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">
+                    @_syncedPages.Count document(s) in the <strong>@(_schedule?.CollectionName ?? "notion")</strong> collection
+                </MudText>
+                <MudTable Items="_syncedPages" Dense="true" Hover="true"
+                          Style="background: transparent;" Elevation="0">
+                    <HeaderContent>
+                        <MudTh>Title</MudTh>
+                        <MudTh>Resource URI</MudTh>
+                        <MudTh Style="text-align:right;">Size</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                <MudIcon Icon="@Icons.Material.Filled.Notes"
+                                         Style="color: #667eea;" Size="Size.Small" />
+                                <MudText Typo="Typo.body2" Style="font-weight: 600;">
+                                    @(string.IsNullOrEmpty(context.Title) ? context.Name : context.Title)
+                                </MudText>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd>
+                            <MudText Typo="Typo.caption" Style="font-family: monospace; color: rgba(255,255,255,0.4); overflow: hidden; text-overflow: ellipsis; max-width: 300px; display: block; white-space: nowrap;"
+                                     title="@context.Uri">
+                                @context.Uri
+                            </MudText>
+                        </MudTd>
+                        <MudTd Style="text-align:right;">
+                            <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">
+                                @FormatBytes(context.Size ?? 0)
+                            </MudText>
+                        </MudTd>
+                    </RowTemplate>
+                    <PagerContent>
+                        <MudTablePager />
+                    </PagerContent>
+                </MudTable>
+            }
+        </MudStack>
+    </MudTabPanel>
+</MudTabs>

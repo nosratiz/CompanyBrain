@@ -197,6 +197,8 @@ public sealed class KnowledgeStore
         builder.AppendLine();
 
         foreach (var match in matches
+                     .GroupBy(m => m.FileName, StringComparer.OrdinalIgnoreCase)
+                     .Select(g => g.OrderByDescending(m => m.Score).First())
                      .OrderByDescending(match => match.Score)
                      .ThenBy(match => match.FileName, StringComparer.OrdinalIgnoreCase)
                      .Take(maxResults))

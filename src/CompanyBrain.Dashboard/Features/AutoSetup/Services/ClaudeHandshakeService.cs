@@ -35,7 +35,6 @@ public sealed class ClaudeHandshakeService(
 
         try
         {
-            var serverUrl = ResolveServerUrl();
             var configDir = Path.GetDirectoryName(configPath)!;
 
             if (!Directory.Exists(configDir))
@@ -53,19 +52,18 @@ public sealed class ClaudeHandshakeService(
 
                 root = JsonNode.Parse(existing)?.AsObject() ?? new JsonObject();
 
-                // Check if already configured with same URL
-                if (IsAlreadyConfigured(root, serverUrl))
+                if (IsAlreadyConfigured(root))
                 {
                     logger.LogInformation("CompanyBrain MCP server already configured in Claude Desktop");
                     return new HandshakeResult(true, "Already configured — no changes needed.", configPath);
                 }
 
-                return await MergeAndSave(root, serverUrl, configPath, backupPath, cancellationToken);
+                return await MergeAndSave(root, configPath, backupPath, cancellationToken);
             }
 
             // No existing config — create from scratch
             root = new JsonObject();
-            return await MergeAndSave(root, serverUrl, configPath, null, cancellationToken);
+            return await MergeAndSave(root, configPath, null, cancellationToken);
         }
         catch (JsonException ex)
         {
@@ -132,7 +130,7 @@ public sealed class ClaudeHandshakeService(
     }
 
     private async Task<HandshakeResult> MergeAndSave(
-        JsonObject root, string serverUrl, string configPath, string? backupPath,
+        JsonObject root, string configPath, string? backupPath,
         CancellationToken cancellationToken)
     {
         var mcpServers = root["mcpServers"]?.AsObject();
@@ -142,11 +140,12 @@ public sealed class ClaudeHandshakeService(
             root["mcpServers"] = mcpServers;
         }
 
-        // Build the CompanyBrain server entry (SSE transport)
+        var (command, args) = GetMcpStdioCommand();
+        var argsArray = new JsonArray(args.Select(a => (JsonNode?)JsonValue.Create(a)).ToArray());
         var serverEntry = new JsonObject
         {
-            ["url"] = $"{serverUrl}/mcp",
-            ["transport"] = "sse"
+            ["command"] = command,
+            ["args"] = argsArray
         };
 
         mcpServers[McpServerName] = serverEntry;
@@ -168,22 +167,27 @@ public sealed class ClaudeHandshakeService(
         return new HandshakeResult(true, "CompanyBrain MCP server added to Claude Desktop.", configPath, backupPath);
     }
 
-    private bool IsAlreadyConfigured(JsonObject root, string serverUrl)
+    private static bool IsAlreadyConfigured(JsonObject root)
     {
         var servers = root["mcpServers"]?.AsObject();
         if (servers?[McpServerName] is not JsonObject existing)
             return false;
 
-        var existingUrl = existing["url"]?.GetValue<string>();
-        return existingUrl == $"{serverUrl}/mcp";
+        if (existing["args"] is not JsonArray args)
+            return false;
+
+        return args.Any(a => a?.GetValue<string>() == "--stdio");
     }
 
-    private string ResolveServerUrl()
+    private (string command, string[] args) GetMcpStdioCommand()
     {
-        // Use the configured base URL based on environment
-        return environment.IsDevelopment()
-            ? "http://localhost:5202"
-            : "http://localhost:8080";
+        var processPath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "dotnet";
+        var processName = Path.GetFileNameWithoutExtension(processPath);
+
+        if (string.Equals(processName, "dotnet", StringComparison.OrdinalIgnoreCase))
+            return (processPath, ["run", "--project", environment.ContentRootPath, "--no-launch-profile", "--", "--stdio"]);
+
+        return (processPath, ["--stdio"]);
     }
 
     private static async Task<string> CreateBackupAsync(

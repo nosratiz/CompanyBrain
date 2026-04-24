@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using CompanyBrain.Dashboard.Features.Auth.Services;
 using CompanyBrain.Dashboard.Middleware;
 using CompanyBrain.Dashboard.Services;
 using CompanyBrain.Tests.TestHelpers;
@@ -13,13 +14,13 @@ public sealed class KnowledgeApiClientTests
     {
         var handler = FakeHttpMessageHandler.ReturningJson(json, status);
         var http = new HttpClient(handler) { BaseAddress = new Uri("http://localhost") };
-        return new KnowledgeApiClient(http);
+        return new KnowledgeApiClient(http, new AuthTokenStore(null!));
     }
 
     private static KnowledgeApiClient CreateClient(FakeHttpMessageHandler handler)
     {
         var http = new HttpClient(handler) { BaseAddress = new Uri("http://localhost") };
-        return new KnowledgeApiClient(http);
+        return new KnowledgeApiClient(http, new AuthTokenStore(null!));
     }
 
     #region ListResourcesAsync Tests

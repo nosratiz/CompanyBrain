@@ -19,6 +19,8 @@ internal sealed class McpSessionTracker
         return new Unsubscriber(_sessions, key);
     }
 
+    public int ActiveSessionCount => _sessions.Count;
+
     public async Task NotifyResourceListChangedAsync(CancellationToken cancellationToken = default)
     {
         foreach (var (key, server) in _sessions)

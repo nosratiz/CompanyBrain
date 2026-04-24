@@ -1,0 +1,493 @@
+@using CompanyBrain.Dashboard.Features.ChatRelay.Models
+@using CompanyBrain.Dashboard.Features.ChatRelay.Services
+@implements IDisposable
+@inject ChatRelaySettingsService SettingsService
+@inject DevTunnelService DevTunnelService
+@inject IConversationThreadRepository ThreadRepository
+@inject ISnackbar Snackbar
+@inject ILogger<BotManagementTab> Logger
+@inject IJSRuntime JS
+
+<MudGrid>
+
+    <!-- ─── Info banner ─────────────────────────────────────────────── -->
+    <MudItem xs="12">
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+            <MudText Typo="Typo.body2">
+                <strong>Sovereign Chat Relay</strong> lets employees query the DeepRoot knowledge base
+                directly from Slack or Microsoft Teams.
+                All answers are <strong>PII-redacted</strong> before being posted.
+                Credentials are encrypted at rest with ASP.NET Data Protection.
+            </MudText>
+        </MudAlert>
+    </MudItem>
+
+    @if (_loading)
+    {
+        <MudItem xs="12">
+            <MudProgressCircular Indeterminate="true" />
+        </MudItem>
+    }
+    else
+    {
+        <!-- ─── Slack ───────────────────────────────────────────────────── -->
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="0" Class="border-1 border-solid mud-border-tertiary">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Slack Integration</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        @if (_slackTokenConfigured && _slackSecretConfigured)
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small"
+                                     Icon="@Icons.Material.Filled.CheckCircle" Class="mr-1">Configured</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Color="Color.Warning" Size="Size.Small"
+                                     Icon="@Icons.Material.Outlined.HelpOutline" Class="mr-1">Setup required</MudChip>
+                        }
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent>
+                    @if (!string.IsNullOrEmpty(SlackWebhookUrl))
+                    {
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+                            <MudTextField Value="@SlackWebhookUrl"
+                                          Label="Webhook URL"
+                                          HelperText="Paste in Slack → Event Subscriptions → Request URL"
+                                          Variant="Variant.Outlined"
+                                          ReadOnly="true"
+                                          FullWidth="true" />
+                            <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                                           Title="Copy webhook URL"
+                                           OnClick="@(() => CopyToClipboard(SlackWebhookUrl))" />
+                        </MudStack>
+                    }
+
+                    <MudSwitch @bind-Value="_slackEnabled"
+                               Label="Enable Slack Bot"
+                               Color="Color.Primary"
+                               Class="mb-4" />
+
+                    <MudTextField @bind-Value="_slackBotToken"
+                                  Label="Bot Token (xoxb-…)"
+                                  HelperText="@(_slackTokenConfigured ? "✓ Token saved — leave blank to keep" : "Paste your xoxb-… token from Slack App → OAuth & Permissions")"
+                                  InputType="InputType.Password"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-3" />
+
+                    <MudTextField @bind-Value="_slackSigningSecret"
+                                  Label="Signing Secret"
+                                  HelperText="@(_slackSecretConfigured ? "✓ Secret saved — leave blank to keep" : "Found in Slack App → Basic Information → App Credentials")"
+                                  InputType="InputType.Password"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-3" />
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- ─── Teams ──────────────────────────────────────────────────── -->
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="0" Class="border-1 border-solid mud-border-tertiary">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Microsoft Teams Integration</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        @if (!string.IsNullOrEmpty(_teamsAppId) && _teamsPasswordConfigured)
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small"
+                                     Icon="@Icons.Material.Filled.CheckCircle" Class="mr-1">Configured</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Color="Color.Warning" Size="Size.Small"
+                                     Icon="@Icons.Material.Outlined.HelpOutline" Class="mr-1">Setup required</MudChip>
+                        }
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudSwitch @bind-Value="_teamsEnabled"
+                               Label="Enable Teams Bot"
+                               Color="Color.Primary"
+                               Class="mb-4" />
+
+                    <MudTextField @bind-Value="_teamsAppId"
+                                  Label="App ID"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-3" />
+
+                    <MudTextField @bind-Value="_teamsAppPassword"
+                                  Label="App Password (client secret)"
+                                  HelperText="@(_teamsPasswordConfigured ? "✓ Password saved — leave blank to keep" : "Azure AD app client secret")"
+                                  InputType="InputType.Password"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-3" />
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- ─── Tunnel ─────────────────────────────────────────────────── -->
+        <MudItem xs="12">
+            <MudCard Elevation="0" Class="border-1 border-solid mud-border-tertiary">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Dev Tunnel (Inbound Webhooks)</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        @if (!string.IsNullOrEmpty(_tunnelUrl))
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small"
+                                     Icon="@Icons.Material.Filled.CloudDone" Class="mr-1">Tunnel active</MudChip>
+                        }
+                        else if (_tunnelEnabled)
+                        {
+                            <MudChip T="string" Color="Color.Warning" Size="Size.Small"
+                                     Icon="@Icons.Material.Outlined.CloudOff" Class="mr-1">Not connected</MudChip>
+                        }
+                        @if (_tunnelEnabled)
+                        {
+                            <MudButton Variant="Variant.Outlined"
+                                       Size="Size.Small"
+                                       Color="Color.Secondary"
+                                       StartIcon="@Icons.Material.Filled.Refresh"
+                                       OnClick="RegenerateTunnel"
+                                       Disabled="_regenerating"
+                                       Class="ml-1">
+                                @if (_regenerating)
+                                {
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                    <span>Regenerating…</span>
+                                }
+                                else
+                                {
+                                    <span>Regenerate Tunnel</span>
+                                }
+                            </MudButton>
+                        }
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent>
+
+                    <!-- What is a tunnel? -->
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Text" Dense="true" Class="mb-4">
+                        <MudText Typo="Typo.body2">
+                            <strong>What is this?</strong> Slack and Teams need to reach this server over the internet to deliver messages.
+                            The tunnel creates a secure public URL that forwards traffic to your local machine — no firewall changes needed.
+                            <strong>devtunnel</strong> is installed automatically when you enable this toggle.
+                        </MudText>
+                    </MudAlert>
+
+                    <MudSwitch @bind-Value="_tunnelEnabled"
+                               Label="Enable Tunnel (auto-managed)"
+                               Color="Color.Secondary"
+                               Class="mb-3" />
+
+                    @if (!string.IsNullOrEmpty(_tunnelUrl))
+                    {
+                        <!-- Active: show URL + copy -->
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+                            <MudTextField Value="@_tunnelUrl"
+                                          Label="Active Tunnel URL"
+                                          Variant="Variant.Outlined"
+                                          ReadOnly="true"
+                                          FullWidth="true" />
+                            <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                                           Title="Copy URL"
+                                           OnClick="@CopyTunnelUrl" />
+                        </MudStack>
+                        <MudAlert Severity="Severity.Success" Variant="Variant.Text" Dense="true" Class="mb-2">
+                            <MudText Typo="Typo.caption">
+                                Paste <strong>@(TunnelSlackUrl)</strong> into
+                                <strong>Slack App → Event Subscriptions → Request URL</strong>, then save.
+                            </MudText>
+                        </MudAlert>
+                    }
+                    else if (_tunnelEnabled)
+                    {
+                        <!-- Enabled but URL not yet detected -->
+                        <MudAlert Severity="Severity.Warning" Class="mb-3">
+                            <MudText Typo="Typo.body2" Class="mb-2">
+                                <strong>Tunnel starting…</strong> If it stays here for more than 30 seconds, follow these one-time steps:
+                            </MudText>
+                            <MudList T="string" Dense="true">
+                                <MudListItem Icon="@Icons.Material.Filled.LooksOne">
+                                    Open a terminal and run:
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-1">
+                                        <code style="background:var(--mud-palette-background-grey);padding:4px 8px;border-radius:4px;font-size:0.85em">devtunnel login</code>
+                                        <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small"
+                                                       Title="Copy command"
+                                                       OnClick="@(() => CopyToClipboard("devtunnel login"))" />
+                                    </MudStack>
+                                </MudListItem>
+                                <MudListItem Icon="@Icons.Material.Filled.LooksTwo">
+                                    Sign in with your <strong>Microsoft account</strong> in the browser that opens.
+                                </MudListItem>
+                                <MudListItem Icon="@Icons.Material.Filled.Looks3">
+                                    Come back here and <strong>restart the app</strong> — the URL will appear automatically.
+                                </MudListItem>
+                            </MudList>
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <!-- Disabled state: explain the steps upfront -->
+                        <MudAlert Severity="Severity.Normal" Variant="Variant.Text" Dense="true">
+                            <MudText Typo="Typo.body2">
+                                Enable the toggle above to start the tunnel. On first use you will need to run
+                                <code>devtunnel login</code> once in a terminal to authenticate with Microsoft.
+                                After that everything is automatic.
+                            </MudText>
+                        </MudAlert>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- ─── Save button ────────────────────────────────────────────── -->
+        <MudItem xs="12">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="SaveSettings"
+                       Disabled="_saving"
+                       Class="mr-2">
+                @if (_saving)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>Saving…</span>
+                }
+                else
+                {
+                    <span>Save Bot Settings</span>
+                }
+            </MudButton>
+        </MudItem>
+
+        <!-- ─── Active Threads ─────────────────────────────────────────── -->
+        <MudItem xs="12">
+            <MudCard Elevation="0" Class="border-1 border-solid mud-border-tertiary mt-4">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Active Conversation Threads</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Error"
+                                   StartIcon="@Icons.Material.Filled.DeleteSweep"
+                                   OnClick="RevokeAllThreads"
+                                   Disabled="@(!_threads.Any())">
+                            Revoke All
+                        </MudButton>
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent>
+                    @if (!_threads.Any())
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No active threads.</MudText>
+                    }
+                    else
+                    {
+                        <MudTable Items="_threads" Dense="true" Hover="true">
+                            <HeaderContent>
+                                <MudTh>Platform</MudTh>
+                                <MudTh>Thread ID</MudTh>
+                                <MudTh>Channel ID</MudTh>
+                                <MudTh>Last Activity</MudTh>
+                                <MudTh></MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.Platform</MudTd>
+                                <MudTd>@context.ExternalThreadId</MudTd>
+                                <MudTd>@context.ExternalChannelId</MudTd>
+                                <MudTd>@context.LastActivityUtc.ToString("yyyy-MM-dd HH:mm") UTC</MudTd>
+                                <MudTd>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Block"
+                                                   Size="Size.Small"
+                                                   Color="Color.Error"
+                                                   Title="Revoke thread"
+                                                   OnClick="@(() => RevokeThread(context.Id))" />
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    }
+
+</MudGrid>
+
+@code {
+    private bool _loading = true;
+    private bool _saving;
+    private bool _regenerating;
+
+    // Form state
+    private bool _slackEnabled;
+    private string? _slackBotToken;
+    private string? _slackSigningSecret;
+    private bool _teamsEnabled;
+    private string _teamsAppId = string.Empty;
+    private string? _teamsAppPassword;
+    private bool _tunnelEnabled;
+    private string? _tunnelUrl;
+
+    // Saved-credential indicators (derived from encrypted field presence — secrets never held in plaintext)
+    private bool _slackTokenConfigured;
+    private bool _slackSecretConfigured;
+    private bool _teamsPasswordConfigured;
+
+    private string SlackWebhookUrl => string.IsNullOrEmpty(_tunnelUrl)
+        ? string.Empty
+        : $"{_tunnelUrl.TrimEnd('/')}/api/chat/slack";
+
+    private string TunnelSlackUrl => SlackWebhookUrl;
+
+    private List<ConversationThread> _threads = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        DevTunnelService.TunnelUrlChanged += OnTunnelUrlChanged;
+
+        try
+        {
+            var settings = await SettingsService.GetSettingsAsync();
+            _slackEnabled = settings.SlackEnabled;
+            _teamsEnabled = settings.TeamsEnabled;
+            _teamsAppId = settings.TeamsAppId ?? string.Empty;
+            _tunnelEnabled = settings.TunnelEnabled;
+            // Prefer the live URL from the service if already running, else fall back to DB value.
+            var liveUrl = DevTunnelService.TunnelUrl;
+            _tunnelUrl = string.IsNullOrEmpty(liveUrl) ? settings.TunnelUrl : liveUrl;
+            _slackTokenConfigured = !string.IsNullOrEmpty(settings.EncryptedSlackBotToken);
+            _slackSecretConfigured = !string.IsNullOrEmpty(settings.EncryptedSlackSigningSecret);
+            _teamsPasswordConfigured = !string.IsNullOrEmpty(settings.EncryptedTeamsAppPassword);
+
+            _threads = (await ThreadRepository.GetActiveThreadsAsync(CancellationToken.None)).ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load Chat Relay settings");
+            Snackbar.Add("Failed to load bot settings.", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OnTunnelUrlChanged(string url)
+    {
+        _tunnelUrl = url;
+        _regenerating = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RegenerateTunnel()
+    {
+        _regenerating = true;
+        _tunnelUrl = null;
+        try
+        {
+            await DevTunnelService.RegenerateTunnelAsync();
+            Snackbar.Add("Regenerating tunnel — a new URL will appear shortly.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to regenerate tunnel");
+            Snackbar.Add("Failed to regenerate tunnel.", Severity.Error);
+            _regenerating = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        DevTunnelService.TunnelUrlChanged -= OnTunnelUrlChanged;
+    }
+
+    private async Task SaveSettings()
+    {
+        _saving = true;
+        try
+        {
+            await SettingsService.UpdateAsync(
+                slackEnabled: _slackEnabled,
+                teamsEnabled: _teamsEnabled,
+                tunnelEnabled: _tunnelEnabled,
+                slackBotToken: string.IsNullOrWhiteSpace(_slackBotToken) ? null : _slackBotToken,
+                slackSigningSecret: string.IsNullOrWhiteSpace(_slackSigningSecret) ? null : _slackSigningSecret,
+                teamsAppId: _teamsAppId,
+                teamsAppPassword: string.IsNullOrWhiteSpace(_teamsAppPassword) ? null : _teamsAppPassword);
+
+            // Update configured indicators immediately so the UI reflects the new state
+            if (!string.IsNullOrWhiteSpace(_slackBotToken)) _slackTokenConfigured = true;
+            if (!string.IsNullOrWhiteSpace(_slackSigningSecret)) _slackSecretConfigured = true;
+            if (!string.IsNullOrWhiteSpace(_teamsAppPassword)) _teamsPasswordConfigured = true;
+
+            // Clear plaintext fields after save
+            _slackBotToken = null;
+            _slackSigningSecret = null;
+            _teamsAppPassword = null;
+
+            Snackbar.Add("Bot settings saved.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save Chat Relay settings");
+            Snackbar.Add("Failed to save bot settings.", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task RevokeThread(int id)
+    {
+        try
+        {
+            await ThreadRepository.RevokeAsync(id, CancellationToken.None);
+            _threads.RemoveAll(t => t.Id == id);
+            Snackbar.Add("Thread revoked.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to revoke thread {Id}", id);
+            Snackbar.Add("Failed to revoke thread.", Severity.Error);
+        }
+    }
+
+    private async Task RevokeAllThreads()
+    {
+        try
+        {
+            await ThreadRepository.RevokeAllAsync(platform: null, CancellationToken.None);
+            _threads.Clear();
+            Snackbar.Add("All threads revoked.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to revoke all threads");
+            Snackbar.Add("Failed to revoke threads.", Severity.Error);
+        }
+    }
+
+    private Task CopyTunnelUrl() => CopyToClipboard(_tunnelUrl ?? string.Empty);
+
+    private async Task CopyToClipboard(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+            Snackbar.Add("Copied to clipboard.", Severity.Success);
+        }
+        catch
+        {
+            Snackbar.Add(text, Severity.Normal);
+        }
+    }
+}

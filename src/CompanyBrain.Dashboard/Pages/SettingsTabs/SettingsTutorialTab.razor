@@ -1,0 +1,232 @@
+<MudGrid>
+    <MudItem xs="12">
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
+            <MudText Typo="Typo.body1">
+                This guide explains every Settings tab with beginner-friendly examples and a simple walkthrough of the
+                <strong>Pruning Insights</strong> page.
+            </MudText>
+        </MudAlert>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudCard Elevation="0" Class="border-1 border-solid mud-border-primary mb-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">How to Use This Page</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudList T="string" Dense="true">
+                    <MudListItem Icon="@Icons.Material.Filled.LooksOne">Open a tab and fill only the fields you need.</MudListItem>
+                    <MudListItem Icon="@Icons.Material.Filled.LooksTwo">Use the sample values below as safe placeholders, not real secrets.</MudListItem>
+                    <MudListItem Icon="@Icons.Material.Filled.Looks3">Click the save button at the bottom of that tab.</MudListItem>
+                    <MudListItem Icon="@Icons.Material.Filled.Looks4">Test the integration when a test button is available.</MudListItem>
+                </MudList>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudExpansionPanels MultiExpansion="true" Elevation="0">
+            <MudExpansionPanel Text="General Tab">
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    Use this tab to control storage limits, exclude files from ingestion, and generate a Claude Desktop MCP config.
+                </MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem>Maximum Storage (GB): set the upper limit for your knowledge base size.</MudListItem>
+                    <MudListItem>Excluded Patterns: skip sensitive or noisy files such as secrets, env files, or generated folders.</MudListItem>
+                    <MudListItem>Tenant ID: read-only identifier for tenant isolation.</MudListItem>
+                    <MudListItem>Claude Config Generator: creates a sample `claude_desktop_config.json` snippet.</MudListItem>
+                </MudList>
+                <MudPaper Class="pa-3 mt-3 mud-background-gray" Elevation="0" Style="font-family: monospace; white-space: pre-wrap;">
+Maximum Storage (GB): 100
+Excluded Patterns: *.secret;.env;**/node_modules/**;**/bin/**;**/obj/**
+Tenant ID: Not set
+                </MudPaper>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                    Example use: keep temporary build output and secret files out of your searchable knowledge base.
+                </MudText>
+            </MudExpansionPanel>
+
+            <MudExpansionPanel Text="Security Tab">
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    Use this tab to decide how strict the app should be with redaction, validation, MCP authentication, and IP restrictions.
+                </MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem>Security Mode: `Strict`, `Moderate`, or `Relaxed`.</MudListItem>
+                    <MudListItem>PII Masking: hides emails, API keys, IP addresses, and similar secrets.</MudListItem>
+                    <MudListItem>MCP API Key: requires MCP clients to authenticate before connecting.</MudListItem>
+                    <MudListItem>IP Whitelist: allows only listed IPs or CIDR ranges.</MudListItem>
+                </MudList>
+                <MudPaper Class="pa-3 mt-3 mud-background-gray" Elevation="0" Style="font-family: monospace; white-space: pre-wrap;">
+Security Mode: Strict
+Enable PII Redaction: On
+Require API Key Authentication: On
+MCP API Key: cb_demo_key_for_example_only
+Enable IP Whitelist: On
+Allowed IP Addresses: 127.0.0.1;192.168.1.0/24
+                </MudPaper>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                    Beginner advice: start with `Strict` unless you are doing local development only.
+                </MudText>
+            </MudExpansionPanel>
+
+            <MudExpansionPanel Text="AI Tuning Tab">
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    This tab adds a prefix before AI resource content. It is useful for governance instructions or response rules.
+                </MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem>System Prompt Prefix: shared instruction added before resource content.</MudListItem>
+                    <MudListItem>Prompt Templates: quick presets for security, governance, or minimal mode.</MudListItem>
+                    <MudListItem>Preview: shows how the prefix will look before sending content.</MudListItem>
+                </MudList>
+                <MudPaper Class="pa-3 mt-3 mud-background-gray" Elevation="0" Style="font-family: monospace; white-space: pre-wrap;">
+GOVERNANCE POLICY:
+- Summarize only what is relevant to the question
+- Do not expose secrets or personal data
+- Prefer internal company sources when available
+- Say when confidence is low
+                </MudPaper>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                    Good starter pattern: keep the prefix short, direct, and policy-focused.
+                </MudText>
+            </MudExpansionPanel>
+
+            <MudExpansionPanel Text="DeepRoot Tab">
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    This tab controls semantic search embeddings for DeepRoot Vector Search.
+                </MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem>Provider: `None`, `OpenAI`, `Gemini`, or `Voyage`.</MudListItem>
+                    <MudListItem>Model and Dimensions: leave blank or `0` to use provider defaults.</MudListItem>
+                    <MudListItem>API Key: stored encrypted; leave blank to keep the current key.</MudListItem>
+                    <MudListItem>Custom Endpoint: useful for Azure OpenAI, proxies, or custom routing.</MudListItem>
+                    <MudListItem>Vector DB Path: location of the local sqlite-vec database.</MudListItem>
+                </MudList>
+                <MudPaper Class="pa-3 mt-3 mud-background-gray" Elevation="0" Style="font-family: monospace; white-space: pre-wrap;">
+Provider: OpenAI
+Model: text-embedding-3-small
+Dimensions: 1536
+API Key: sk-demo-example-not-real
+Custom Endpoint: https://api.openai.com/v1
+Vector DB Path: /Users/yourname/CompanyBrain/.deeproot/vectors.db
+                </MudPaper>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                    Easiest beginner setup: choose a provider, paste the key, keep the default model, then save.
+                </MudText>
+            </MudExpansionPanel>
+
+            <MudExpansionPanel Text="SharePoint Tab">
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    Use this tab to sync SharePoint documents into the knowledge base.
+                </MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem>Enable SharePoint Sync: turns sync on or off.</MudListItem>
+                    <MudListItem>Client ID, Tenant ID, Client Secret: taken from your Azure AD app registration.</MudListItem>
+                    <MudListItem>Sync Interval: how often the app checks for changes.</MudListItem>
+                    <MudListItem>Local Sync Folder: where mirrored SharePoint files are stored locally.</MudListItem>
+                </MudList>
+                <MudPaper Class="pa-3 mt-3 mud-background-gray" Elevation="0" Style="font-family: monospace; white-space: pre-wrap;">
+Enable SharePoint Sync: On
+Client ID: 11111111-2222-3333-4444-555555555555
+Tenant ID: 99999999-8888-7777-6666-555555555555
+Client Secret: example-secret-value
+Sync Interval (minutes): 30
+Local Sync Folder: C:\NexusData\SharePoint
+                </MudPaper>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                    Required Microsoft Graph permissions shown in the tab: `Sites.Read.All`, `Files.Read.All`, and `offline_access`.
+                </MudText>
+            </MudExpansionPanel>
+
+            <MudExpansionPanel Text="Bot Integration Tab">
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    Use this tab when employees should ask DeepRoot questions from Slack or Microsoft Teams.
+                </MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem>Slack: enable the bot, add a bot token, and add the signing secret.</MudListItem>
+                    <MudListItem>Teams: enable the bot, then set the App ID and client secret.</MudListItem>
+                    <MudListItem>Dev Tunnel: creates a public webhook URL so Slack or Teams can reach your local server.</MudListItem>
+                    <MudListItem>Active Conversation Threads: lets you revoke open chat threads.</MudListItem>
+                </MudList>
+                <MudPaper Class="pa-3 mt-3 mud-background-gray" Elevation="0" Style="font-family: monospace; white-space: pre-wrap;">
+Enable Slack Bot: On
+Bot Token: xoxb-demo-token
+Signing Secret: demo-slack-secret
+
+Enable Teams Bot: Off
+App ID: 22222222-3333-4444-5555-666666666666
+App Password: demo-teams-secret
+
+Enable Tunnel: On
+Example tunnel URL: https://blue-river-1234.devtunnels.ms
+Slack Request URL: https://blue-river-1234.devtunnels.ms/api/chat/slack
+                </MudPaper>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                    First-time setup note: if the tunnel does not connect, run `devtunnel login` once in a terminal and sign in with Microsoft.
+                </MudText>
+            </MudExpansionPanel>
+
+            <MudExpansionPanel Text="Notion Tab">
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    Use this tab to connect a Notion internal integration and sync selected pages or databases.
+                </MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem>Notion API Token: starts with `secret_` and is stored encrypted.</MudListItem>
+                    <MudListItem>Workspace Filter: optional comma-separated page or database IDs.</MudListItem>
+                    <MudListItem>Test Connection: verifies the token by calling the Notion API.</MudListItem>
+                    <MudListItem>Sync Now: triggers an immediate sync.</MudListItem>
+                    <MudListItem>Sync Status: shows last sync time, schedule, collection, and last error.</MudListItem>
+                </MudList>
+                <MudPaper Class="pa-3 mt-3 mud-background-gray" Elevation="0" Style="font-family: monospace; white-space: pre-wrap;">
+Notion API Token: secret_demo_token
+Workspace Filter: 12ab34cd56ef7890abcd1234ef567890, 98fe76dc54ba3210abcd1234ef567890
+Default Schedule: 0 */6 * * *
+Collection: notion
+                </MudPaper>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                    Important: the Notion pages must be shared with the integration, otherwise sync will not see them.
+                </MudText>
+            </MudExpansionPanel>
+
+            <MudExpansionPanel Text="Pruning Insights Page - Step by Step">
+                <MudText Typo="Typo.body2" Class="mb-3">
+                    The Pruning Insights page shows how the app reduces data before sending anything to the cloud model.
+                </MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem>Step 1: A query starts, such as `How do I deploy to Azure?`.</MudListItem>
+                    <MudListItem>Step 2: Local Ranking scores candidate chunks from your knowledge base.</MudListItem>
+                    <MudListItem>Step 3: PII Masking redacts emails, keys, and other sensitive strings.</MudListItem>
+                    <MudListItem>Step 4: Budget Selection keeps only the best chunks that fit the token budget.</MudListItem>
+                    <MudListItem>Step 5: The selected, redacted snippets are ready to send to the cloud model.</MudListItem>
+                    <MudListItem>Step 6: The dashboard records token savings, reduction percentage, and snippet evidence.</MudListItem>
+                </MudList>
+
+                <MudDivider Class="my-3" />
+
+                <MudText Typo="Typo.subtitle2" Class="mb-2">What each panel means</MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem>Pruning Engine: turns pruning on or off and controls threshold, chunk count, and token budget.</MudListItem>
+                    <MudListItem>Local Processing: shows the active phase and whether the result is safe to send.</MudListItem>
+                    <MudListItem>Savings &amp; Efficiency: shows tokens saved, estimated dollar savings, and percentage reduction.</MudListItem>
+                    <MudListItem>Context Snippets: shows the exact snippets selected, their relevance score, and redacted output.</MudListItem>
+                </MudList>
+
+                <MudPaper Class="pa-3 mt-3 mud-background-gray" Elevation="0" Style="font-family: monospace; white-space: pre-wrap;">
+Example event:
+Query: How do I deploy to Azure?
+Original Tokens: 4200
+Pruned Tokens: 1100
+Chunks Evaluated: 12
+Chunks Selected: 3
+PII Detected: Yes
+Tokens Saved: 3100
+                </MudPaper>
+
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                    Simple meaning: the system found 12 candidate chunks, kept the best 3, removed sensitive values, and sent only 1,100 of the original 4,200 tokens.
+                </MudText>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+    </MudItem>
+</MudGrid>

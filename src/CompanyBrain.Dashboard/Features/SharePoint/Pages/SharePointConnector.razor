@@ -10,8 +10,10 @@
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 @inject SharePointSettingsProvider SettingsProvider
+@inject CompanyBrain.Dashboard.Services.Audit.IAuditService AuditService
+@inject CompanyBrain.Dashboard.Features.Auth.Services.AuthTokenStore AuthStore
 
-<PageTitle>SharePoint Connector - Company Brain</PageTitle>
+<PageTitle>SharePoint Connector - Deep Root</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
     <MudText Typo="Typo.h4" Class="mb-4">
@@ -298,6 +300,9 @@
                                        OnClick="@(() => RemoveSyncFolderAsync(context))" />
                     </MudTd>
                 </RowTemplate>
+                <PagerContent>
+                    <MudTablePager />
+                </PagerContent>
             </MudTable>
             }
         </MudTabPanel>
@@ -340,6 +345,9 @@
                             </MudButtonGroup>
                         </MudTd>
                     </RowTemplate>
+                    <PagerContent>
+                        <MudTablePager />
+                    </PagerContent>
                 </MudTable>
             }
         </MudTabPanel>

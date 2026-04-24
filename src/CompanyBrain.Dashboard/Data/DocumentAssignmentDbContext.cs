@@ -1,5 +1,6 @@
 using CompanyBrain.Dashboard.Data.Models;
 using CompanyBrain.Dashboard.Features.AutoSync.Models;
+using CompanyBrain.Dashboard.Features.ChatRelay.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace CompanyBrain.Dashboard.Data;
@@ -26,6 +27,10 @@ public sealed class DocumentAssignmentDbContext : DbContext
 
     public DbSet<SyncSchedule> SyncSchedules => Set<SyncSchedule>();
 
+    public DbSet<ChatBotSettings> ChatBotSettings => Set<ChatBotSettings>();
+
+    public DbSet<ConversationThread> ConversationThreads => Set<ConversationThread>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -36,6 +41,8 @@ public sealed class DocumentAssignmentDbContext : DbContext
         ConfigureAppSettings(modelBuilder);
         ConfigureDeepRootEmbeddingSettings(modelBuilder);
         ConfigureSyncSchedules(modelBuilder);
+        ConfigureChatBotSettings(modelBuilder);
+        ConfigureConversationThreads(modelBuilder);
     }
     
     private static void ConfigureDocumentTenantAssignment(ModelBuilder modelBuilder)
@@ -238,7 +245,16 @@ public sealed class DocumentAssignmentDbContext : DbContext
             entity.Property(e => e.SharePointSyncEnabled)
                 .IsRequired()
                 .HasDefaultValue(false);
-            
+
+            // Notion sync settings
+            entity.Property(e => e.NotionApiToken)
+                .HasMaxLength(4096)
+                .HasDefaultValue(string.Empty);
+
+            entity.Property(e => e.NotionWorkspaceFilter)
+                .HasMaxLength(2000)
+                .HasDefaultValue(string.Empty);
+
             // Seed the singleton settings row
             entity.HasData(new AppSettings
             {
@@ -259,7 +275,9 @@ public sealed class DocumentAssignmentDbContext : DbContext
                 SharePointClientSecret = string.Empty,
                 SharePointSyncIntervalMinutes = 30,
                 SharePointLocalBasePath = string.Empty,
-                SharePointSyncEnabled = false
+                SharePointSyncEnabled = false,
+                NotionApiToken = string.Empty,
+                NotionWorkspaceFilter = string.Empty
             });
         });
     }
@@ -361,6 +379,50 @@ public sealed class DocumentAssignmentDbContext : DbContext
             // Index to look up by URL (uniqueness is NOT enforced — same URL may appear
             // in multiple collections or with different cron expressions)
             entity.HasIndex(e => e.SourceUrl);
+        });
+    }
+
+    private static void ConfigureChatBotSettings(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ChatBotSettings>(entity =>
+        {
+            entity.ToTable("ChatBotSettings");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.EncryptedSlackBotToken).HasMaxLength(4096).HasDefaultValue(string.Empty);
+            entity.Property(e => e.EncryptedSlackSigningSecret).HasMaxLength(4096).HasDefaultValue(string.Empty);
+            entity.Property(e => e.TeamsAppId).HasMaxLength(100).HasDefaultValue(string.Empty);
+            entity.Property(e => e.EncryptedTeamsAppPassword).HasMaxLength(4096).HasDefaultValue(string.Empty);
+            entity.Property(e => e.DevTunnelId).HasMaxLength(200).HasDefaultValue(string.Empty);
+            entity.Property(e => e.TunnelUrl).HasMaxLength(500).HasDefaultValue(string.Empty);
+            entity.Property(e => e.UpdatedAtUtc).IsRequired();
+        });
+    }
+
+    private static void ConfigureConversationThreads(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ConversationThread>(entity =>
+        {
+            entity.ToTable("ConversationThreads");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Platform)
+                .IsRequired()
+                .HasConversion<string>()
+                .HasMaxLength(20);
+
+            entity.Property(e => e.ExternalThreadId).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.ExternalChannelId).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.ServiceUrl).IsRequired().HasMaxLength(500).HasDefaultValue(string.Empty);
+            entity.Property(e => e.SessionId).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.IsActive).IsRequired().HasDefaultValue(true);
+            entity.Property(e => e.CreatedAtUtc).IsRequired();
+            entity.Property(e => e.LastActivityUtc).IsRequired();
+
+            entity.HasIndex(e => new { e.Platform, e.ExternalThreadId }).IsUnique();
+            entity.HasIndex(e => e.IsActive);
         });
     }
 }

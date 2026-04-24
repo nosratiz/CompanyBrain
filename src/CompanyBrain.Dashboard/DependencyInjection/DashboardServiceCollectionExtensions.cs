@@ -1,13 +1,17 @@
 using CompanyBrain.Dashboard.Api.Serialization;
 using CompanyBrain.Dashboard.Data;
+using CompanyBrain.Dashboard.Data.Audit;
 using CompanyBrain.Dashboard.Features.Auth.Interfaces;
 using CompanyBrain.Dashboard.Features.Auth.Services;
+using CompanyBrain.Dashboard.Services.Audit;
 using CompanyBrain.Dashboard.Features.DocumentTenant.Validators;
 using CompanyBrain.Dashboard.Features.AutoSetup.DependencyInjection;
 using CompanyBrain.Dashboard.Features.AutoSync.DependencyInjection;
+using CompanyBrain.Dashboard.Features.ChatRelay.DependencyInjection;
 using CompanyBrain.Dashboard.Features.Confluence.DependencyInjection;
 using CompanyBrain.Dashboard.Features.DeepClean;
 using CompanyBrain.Dashboard.Features.License;
+using CompanyBrain.Dashboard.Features.Notion.DependencyInjection;
 using CompanyBrain.Dashboard.Features.SharePoint.DependencyInjection;
 using CompanyBrain.Dashboard.Mcp;
 using CompanyBrain.Dashboard.Mcp.Collections;
@@ -51,11 +55,14 @@ public static class DashboardServiceCollectionExtensions
             .AddDashboardScripting()
             .AddDashboardHttpClients(configuration, environment)
             .AddDashboardDatabase(configuration)
+            .AddDashboardAudit(configuration)
             .AddDashboardValidation()
             .AddSharePointMirror(configuration)
             .AddConfluenceMirror(configuration)
+            .AddNotion()
             .AddAutoSync()
             .AddAutoSetup()
+            .AddChatRelay()
             .AddDeepClean(configuration);
 
         return services;
@@ -183,6 +190,47 @@ public static class DashboardServiceCollectionExtensions
     }
     
     /// <summary>
+    /// Adds MCP services for stdio transport (used by Claude Desktop).
+    /// Registers the same tools and governance as the HTTP transport but uses stdin/stdout.
+    /// </summary>
+    public static IServiceCollection AddDashboardMcpStdio(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var externalApiOptions = configuration.GetSection(ExternalApiOptions.SectionName).Get<ExternalApiOptions>()
+            ?? new ExternalApiOptions();
+
+        // IHttpContextAccessor returns null HttpContext in stdio mode — CollectionEntitlementsService handles this gracefully
+        services.AddHttpContextAccessor();
+        services.AddDataProtection();
+        services.AddHttpClient("LicenseEntitlementsHttpClient", (_, client) =>
+        {
+            client.BaseAddress = new Uri(externalApiOptions.AuthApiBaseUrl);
+        });
+
+        services.AddSingleton<McpSessionTracker>();
+        services.AddSingleton<McpGovernanceFilter>();
+        services.AddSingleton<GovernanceToolWrapper>();
+        services.AddSingleton<PruningSessionState>();
+        services.AddSingleton<PruningStateContainer>();
+        services.AddSingleton<CollectionEntitlementsStore>();
+        services.AddSingleton<CollectionEntitlementsService>();
+        services.AddSingleton<CollectionAuthorizationHandler>();
+
+        services
+            .AddMcpServer()
+            .WithStdioServerTransport()
+            .WithTools<CompanyBrainTools>()
+            .WithTools<ResourceTemplateTools>()
+            .WithSharePointTools()
+            .WithDynamicTools()
+            .WithListResourcesHandler(CompositeResourceHandlers.ListResourcesAsync)
+            .WithReadResourceHandler(CompositeResourceHandlers.ReadResourceAsync);
+
+        return services;
+    }
+
+    /// <summary>
     /// Adds scripting services for the Dynamic MCP Tool Builder.
     /// </summary>
     public static IServiceCollection AddDashboardScripting(this IServiceCollection services)
@@ -307,6 +355,23 @@ public static class DashboardServiceCollectionExtensions
     public static IServiceCollection AddDashboardValidation(this IServiceCollection services)
     {
         services.AddValidatorsFromAssemblyContaining<AssignDocumentToTenantRequestValidator>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds the audit log SQLite database and audit service.
+    /// </summary>
+    public static IServiceCollection AddDashboardAudit(this IServiceCollection services, IConfiguration configuration)
+    {
+        var connectionString = configuration.GetConnectionString("Audit")
+            ?? DatabasePaths.ConnectionString("audit.db");
+
+        services.AddDbContextFactory<AuditDbContext>(
+            options => options.UseSqlite(connectionString),
+            ServiceLifetime.Singleton);
+
+        services.AddSingleton<IAuditService, AuditService>();
 
         return services;
     }

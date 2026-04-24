@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using CompanyBrain.Dashboard.Data;
+using CompanyBrain.Dashboard.Data.Audit;
 using CompanyBrain.Dashboard.Data.Models;
+using CompanyBrain.Dashboard.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 
 namespace CompanyBrain.Dashboard.Services;
@@ -11,6 +13,7 @@ namespace CompanyBrain.Dashboard.Services;
 /// </summary>
 public sealed class SettingsService(
     IDbContextFactory<DocumentAssignmentDbContext> contextFactory,
+    IAuditService audit,
     ILogger<SettingsService> logger) : IDisposable
 {
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
@@ -67,8 +70,14 @@ public sealed class SettingsService(
             
             await context.SaveChangesAsync(cancellationToken);
             UpdateCache(settings);
-            
+
             logger.LogInformation("Application settings updated successfully");
+
+            _ = audit.LogAsync(AuditEventType.SettingsChanged, new AuditEntry(
+                ActorId: "system",
+                ResourceType: "Settings",
+                ResourceName: "AppSettings"));
+
             return settings;
         }
         finally

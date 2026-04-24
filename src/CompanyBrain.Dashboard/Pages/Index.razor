@@ -1,84 +1,753 @@
 @page "/"
+@using CompanyBrain.Dashboard.Data
+@using CompanyBrain.Dashboard.Data.Audit
+@using CompanyBrain.Dashboard.Data.Models
+@using CompanyBrain.Dashboard.Features.AutoSync.Models
+@using CompanyBrain.Dashboard.Features.AutoSync.Services
+@using CompanyBrain.Dashboard.Features.SharePoint.Data
+@using CompanyBrain.Dashboard.Features.SharePoint.Services
+@using CompanyBrain.Dashboard.Features.Confluence.Data
+@using CompanyBrain.Dashboard.Features.Confluence.Services
+@using CompanyBrain.Dashboard.Features.Notion.Services
+@using CompanyBrain.Dashboard.Helpers
+@using CompanyBrain.Dashboard.Features.License
+@using CompanyBrain.Dashboard.Mcp
+@using CompanyBrain.Dashboard.Services
+@using CompanyBrain.Dashboard.Services.Dtos
+@using Microsoft.EntityFrameworkCore
 @inject KnowledgeApiClient Api
+@inject IDbContextFactory<DocumentAssignmentDbContext> DbFactory
+@inject IDbContextFactory<AuditDbContext> AuditDbFactory
+@inject SovereignSyncWorker SyncWorker
+@inject SharePointSyncWorker SharePointWorker
+@inject IDbContextFactory<SharePointDbContext> SharePointDbFactory
+@inject IDbContextFactory<ConfluenceDbContext> ConfluenceDbFactory
+@inject DeepRootSettingsService DeepRootSettings
+@inject McpSessionTracker SessionTracker
+@inject LicenseStateService LicenseState
+@inject SharePointSettingsProvider SharePointSettings
+@inject ConfluenceSettingsProvider ConfluenceSettings
+@inject NotionSettingsProvider NotionSettings
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject CompanyBrain.Dashboard.Services.Audit.IAuditService AuditService
+@inject CompanyBrain.Dashboard.Features.Auth.Services.AuthTokenStore AuthStore
 
-<PageTitle>Dashboard - Company Brain</PageTitle>
+<PageTitle>Dashboard - Deep Root</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-4">Knowledge Base Dashboard</MudText>
+@* ── 5: Inline Search Bar ── *@
+<MudTextField T="string"
+              @bind-Value="_searchQuery"
+              Placeholder="Search knowledge base..."
+              Adornment="Adornment.Start"
+              AdornmentIcon="@Icons.Material.Filled.Search"
+              Variant="Variant.Outlined"
+              Class="mb-5"
+              Style="max-width: 680px;"
+              OnKeyUp="OnSearchKeyUp"
+              Clearable="true" />
 
 @if (_loading)
 {
-    <MudProgressCircular Indeterminate="true" />
+    <MudProgressLinear Indeterminate="true" Class="mb-4" />
 }
-else
+
+@* ── Onboarding Checklist (only when database is empty) ── *@
+@if (!_loading && _resources.Count == 0 && _auditEvents.Count == 0 && !_allOnboardingDone)
 {
-    <MudGrid>
-        <MudItem xs="12" md="6" lg="3">
-            <StatCard Title="Documents"
-                      Value="@_resources.Count.ToString()"
-                      Icon="@Icons.Material.Filled.Description"
-                      AvatarColor="Color.Primary" />
-        </MudItem>
-
-        <MudItem xs="12" md="6" lg="3">
-            <StatCard Title="Total Size"
-                      Value="@FormatHelper.FormatBytes(_resources.Sum(r => r.Size ?? 0))"
-                      Icon="@Icons.Material.Filled.Storage"
-                      AvatarColor="Color.Info" />
-        </MudItem>
-
-        <MudItem xs="12" md="6" lg="3">
-            <StatCard Title="Markdown"
-                      Value="@_resources.Count(r => r.MimeType == "text/markdown").ToString()"
-                      Icon="@Icons.Material.Filled.Article"
-                      AvatarColor="Color.Success" />
-        </MudItem>
-
-        <MudItem xs="12" md="6" lg="3">
-            <StatCard Title="Status"
-                      Value="@(_resources.Count > 0 ? "Ready" : "Empty")"
-                      Icon="@Icons.Material.Filled.Update"
-                      AvatarColor="Color.Warning"
-                      UseBodyText="true" />
-        </MudItem>
-
-        <MudItem xs="12">
-            <RecentDocumentsPanel Documents="@_resources.Take(5)">
-                <EmptyMessage>
-                    No documents found. <MudLink Href="/import">Import your first document</MudLink>.
-                </EmptyMessage>
-            </RecentDocumentsPanel>
-        </MudItem>
-
-        <MudItem xs="12">
-            <QuickActionsPanel Actions="@_quickActions" />
-        </MudItem>
-    </MudGrid>
+    <MudPaper Class="pa-6 mb-4" Style="border: 1px solid rgba(255,255,255,0.08);">
+        <MudText Typo="Typo.h6" Class="mb-4">🚀 Get started with Deep Root</MudText>
+        <MudStack Spacing="3">
+            <div class="d-flex align-center gap-3">
+                <MudIcon Icon="@(_embeddingConfigured ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.RadioButtonUnchecked)"
+                         Style="@(_embeddingConfigured ? "color: var(--mud-palette-success)" : "color: rgba(255,255,255,0.3)")" />
+                @if (_embeddingConfigured)
+                {
+                    <MudText Typo="Typo.body2">Configure embeddings</MudText>
+                }
+                else
+                {
+                    <MudLink Href="/settings" Typo="Typo.body2">Configure embeddings</MudLink>
+                }
+            </div>
+            <div class="d-flex align-center gap-3">
+                <MudIcon Icon="@(_connectorHealth.Any(c => c.HasSchedules) ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.RadioButtonUnchecked)"
+                         Style="@(_connectorHealth.Any(c => c.HasSchedules) ? "color: var(--mud-palette-success)" : "color: rgba(255,255,255,0.3)")" />
+                @if (_connectorHealth.Any(c => c.HasSchedules))
+                {
+                    <MudText Typo="Typo.body2">Connect a source</MudText>
+                }
+                else
+                {
+                    <MudLink Href="/settings" Typo="Typo.body2">Connect a source</MudLink>
+                }
+            </div>
+            <div class="d-flex align-center gap-3">
+                <MudIcon Icon="@(_resources.Count > 0 ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.RadioButtonUnchecked)"
+                         Style="@(_resources.Count > 0 ? "color: var(--mud-palette-success)" : "color: rgba(255,255,255,0.3)")" />
+                @if (_resources.Count > 0)
+                {
+                    <MudText Typo="Typo.body2">Import your first document</MudText>
+                }
+                else
+                {
+                    <MudLink Href="/import" Typo="Typo.body2">Import your first document</MudLink>
+                }
+            </div>
+        </MudStack>
+    </MudPaper>
 }
+
+@* ── Stat Row ── *@
+<MudGrid Class="mb-4">
+    <MudItem xs="12" md="6" lg="3">
+        <MudPaper Class="pa-4 rounded-lg" Style="background: rgba(18,18,26,0.8); border: 1px solid rgba(255,255,255,0.06);">
+            <div class="d-flex align-center justify-space-between">
+                <div>
+                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.5);">TOTAL SIZE</MudText>
+                    <MudText Typo="Typo.h5" Style="font-weight:700;">@FormatHelper.FormatBytes(_resources.Sum(r => r.Size ?? 0))</MudText>
+                </div>
+                <MudAvatar Color="Color.Info" Variant="Variant.Filled" Size="Size.Medium">
+                    <MudIcon Icon="@Icons.Material.Filled.Storage" />
+                </MudAvatar>
+            </div>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="6" lg="3">
+        <MudPaper Class="pa-4 rounded-lg" Style="background: rgba(18,18,26,0.8); border: 1px solid rgba(255,255,255,0.06);">
+            <div class="d-flex align-center justify-space-between">
+                <div>
+                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.5);">DOCUMENTS</MudText>
+                    <MudText Typo="Typo.h5" Style="font-weight:700;">@_resources.Count</MudText>
+                </div>
+                <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Medium">
+                    <MudIcon Icon="@Icons.Material.Filled.Description" />
+                </MudAvatar>
+            </div>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="6" lg="3">
+        <MudPaper Class="pa-4 rounded-lg" Style="background: rgba(18,18,26,0.8); border: 1px solid rgba(255,255,255,0.06);">
+            <div class="d-flex align-center justify-space-between">
+                <div>
+                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.5);">COLLECTIONS</MudText>
+                    <MudText Typo="Typo.h5" Style="font-weight:700;">@_collectionBreakdown.Count</MudText>
+                </div>
+                <MudAvatar Color="Color.Success" Variant="Variant.Filled" Size="Size.Medium">
+                    <MudIcon Icon="@Icons.Material.Filled.AccountTree" />
+                </MudAvatar>
+            </div>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="6" lg="3">
+        <MudPaper Class="pa-4 rounded-lg" Style="background: rgba(18,18,26,0.8); border: 1px solid rgba(255,255,255,0.06);">
+            <div class="d-flex align-center justify-space-between">
+                <div>
+                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.5);">MCP SESSIONS</MudText>
+                    <div class="d-flex align-center gap-2 mt-1">
+                        <MudText Typo="Typo.h5" Style="font-weight:700;">@_mcpSessions</MudText>
+                        @if (_mcpSessions > 0)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled"
+                                     Style="font-size:0.65rem; height:20px;">active</MudChip>
+                        }
+                    </div>
+                </div>
+                <MudAvatar Color="Color.Warning" Variant="Variant.Filled" Size="Size.Medium">
+                    <MudIcon Icon="@Icons.Material.Filled.Hub" />
+                </MudAvatar>
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@* ── 1: Connector Health Strip ── *@
+<MudText Typo="Typo.h6" Class="mb-2">Connector Health</MudText>
+<MudGrid Class="mb-5">
+    @foreach (var connector in _connectorHealth)
+    {
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4 rounded-lg" Style="background: rgba(18,18,26,0.8); border: 1px solid rgba(255,255,255,0.06);">
+                <div class="d-flex align-center justify-space-between mb-3">
+                    <div class="d-flex align-center gap-2">
+                        <MudIcon Icon="@GetConnectorIcon(connector.SourceType)" Size="Size.Small"
+                                 Style="@($"color: {GetConnectorColor(connector.SourceType)}")" />
+                        <MudText Typo="Typo.subtitle2" Style="font-weight:600;">@connector.SourceType</MudText>
+                    </div>
+                    @if (connector.HasSchedules)
+                    {
+                        @if (connector.LastSyncUtc.HasValue)
+                        {
+                            <MudTooltip Text="@(connector.LastError ?? "Last sync succeeded")" Placement="Placement.Top">
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(connector.LastError == null ? Color.Success : Color.Error)"
+                                         Variant="Variant.Filled"
+                                         Style="font-size:0.65rem; height:20px; cursor:default;">
+                                    @(connector.LastError == null ? "✓ OK" : "✗ Error")
+                                </MudChip>
+                            </MudTooltip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined"
+                                     Style="font-size:0.65rem; height:20px; cursor:default;">Never synced</MudChip>
+                        }
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined"
+                                 Style="font-size:0.65rem; height:20px; cursor:default;">Not configured</MudChip>
+                    }
+                </div>
+                @if (connector.HasSchedules)
+                {
+                    <div class="mb-1">
+                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.45);">Last sync</MudText>
+                        <MudText Typo="Typo.body2">
+                            @(connector.LastSyncUtc.HasValue ? RelativeTime(connector.LastSyncUtc.Value) : "—")
+                        </MudText>
+                    </div>
+                    <div class="mb-3">
+                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.45);">Next run</MudText>
+                        <MudText Typo="Typo.body2">@(connector.NextRunDisplay ?? "—")</MudText>
+                    </div>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Sync"
+                               OnClick="@(() => RunSyncNowAsync())"
+                               Disabled="_syncRunning"
+                               FullWidth="true">
+                        @(_syncRunning ? "Syncing…" : "Sync Now")
+                    </MudButton>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.35);" Class="mb-3">
+                        No active schedules
+                    </MudText>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default"
+                               Href="/settings" FullWidth="true">
+                        Configure
+                    </MudButton>
+                }
+            </MudPaper>
+        </MudItem>
+    }
+</MudGrid>
+
+<MudGrid>
+    @* ── 2: Recent Activity Feed ── *@
+    <MudItem xs="12" lg="6">
+        <MudPaper Class="pa-4 rounded-lg" Style="background: rgba(18,18,26,0.8); border: 1px solid rgba(255,255,255,0.06);">
+            <div class="d-flex align-center justify-space-between mb-3">
+                <MudText Typo="Typo.h6">Recent Activity</MudText>
+                <MudLink Href="/audit" Typo="Typo.caption" Style="color: rgba(102,126,234,0.9);">View all →</MudLink>
+            </div>
+            @if (_auditEvents.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.35);">No recent activity.</MudText>
+            }
+            else
+            {
+                <MudList T="string" Dense="true">
+                    @foreach (var evt in _auditEvents)
+                    {
+                        <MudListItem T="string" Style="padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                            <div class="d-flex align-center gap-2">
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@GetAuditEventColor(evt.EventType)"
+                                         Variant="Variant.Filled"
+                                         Style="font-size:0.6rem; height:18px; min-width:72px; cursor:default;">
+                                    @evt.EventType.ToString()
+                                </MudChip>
+                                <MudText Typo="Typo.body2" Style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                                         title="@evt.ResourceName">
+                                    @(evt.ActorEmail ?? "system")
+                                    @if (!string.IsNullOrEmpty(evt.ResourceName))
+                                    {
+                                        <span style="color:rgba(255,255,255,0.45);"> · @evt.ResourceName</span>
+                                    }
+                                </MudText>
+                                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.35); white-space:nowrap;">
+                                    @RelativeTime(evt.Timestamp)
+                                </MudText>
+                            </div>
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+        </MudPaper>
+    </MudItem>
+
+    @* ── 3: Collections Breakdown ── *@
+    <MudItem xs="12" lg="6">
+        <MudPaper Class="pa-4 rounded-lg" Style="background: rgba(18,18,26,0.8); border: 1px solid rgba(255,255,255,0.06);">
+            <MudText Typo="Typo.h6" Class="mb-3">Collections</MudText>
+            @if (_collectionBreakdown.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.35);">
+                    No documents found. <MudLink Href="/import">Import your first document</MudLink>.
+                </MudText>
+            }
+            else
+            {
+                <MudTable Items="_collectionBreakdown" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm"
+                          Style="background:transparent;" Elevation="0">
+                    <HeaderContent>
+                        <MudTh Style="color:rgba(255,255,255,0.45); font-size:0.7rem; font-weight:600;">COLLECTION</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.45); font-size:0.7rem; font-weight:600; text-align:right;">DOCS</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.45); font-size:0.7rem; font-weight:600; text-align:right;">SIZE</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <div class="d-flex align-center gap-1">
+                                <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Small"
+                                         Style="color: rgba(102,126,234,0.7); font-size:16px;" />
+                                <MudText Typo="Typo.body2">@context.Name</MudText>
+                            </div>
+                        </MudTd>
+                        <MudTd Style="text-align:right;">
+                            <MudText Typo="Typo.body2">@context.DocumentCount</MudText>
+                        </MudTd>
+                        <MudTd Style="text-align:right;">
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.45);">
+                                @FormatHelper.FormatBytes(context.TotalBytes)
+                            </MudText>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    </MudItem>
+
+    @* ── 6: Vector Index Health Card ── *@
+    <MudItem xs="12" lg="6">
+        <MudPaper Class="pa-4 rounded-lg" Style="background: rgba(18,18,26,0.8); border: 1px solid rgba(255,255,255,0.06);">
+            <div class="d-flex align-center justify-space-between mb-3">
+                <MudText Typo="Typo.h6">Vector Index</MudText>
+                @if (_embeddingConfigured)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled"
+                             Style="font-size:0.65rem; height:20px; cursor:default;">Active</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Filled"
+                             Style="font-size:0.65rem; height:20px; cursor:default;">Not configured</MudChip>
+                }
+            </div>
+            @if (_embeddingSettings is not null)
+            {
+                <MudGrid Spacing="2">
+                    <MudItem xs="6">
+                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.45);">Provider</MudText>
+                        <MudText Typo="Typo.body2" Style="font-weight:500;">
+                            @(_embeddingSettings.Provider == "None" ? "—" : _embeddingSettings.Provider)
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.45);">Model</MudText>
+                        <MudText Typo="Typo.body2" Style="font-weight:500;">
+                            @(string.IsNullOrEmpty(_embeddingSettings.Model) ? "—" : _embeddingSettings.Model)
+                        </MudText>
+                    </MudItem>
+                    @if (_embeddingSettings.Dimensions > 0)
+                    {
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.45);">Dimensions</MudText>
+                            <MudText Typo="Typo.body2">@_embeddingSettings.Dimensions</MudText>
+                        </MudItem>
+                    }
+                    @if (!string.IsNullOrEmpty(_embeddingSettings.Endpoint))
+                    {
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.45);">Endpoint</MudText>
+                            <MudText Typo="Typo.body2" Style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                                     title="@_embeddingSettings.Endpoint">@_embeddingSettings.Endpoint</MudText>
+                        </MudItem>
+                    }
+                </MudGrid>
+                @if (!_embeddingConfigured)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3" NoIcon="false">
+                        Semantic search is disabled. <MudLink Href="/settings">Configure an embedding provider</MudLink> to enable vector search.
+                    </MudAlert>
+                }
+            }
+        </MudPaper>
+    </MudItem>
+
+    @* ── 7: Quick Actions ── *@
+    <MudItem xs="12" lg="6">
+        <MudPaper Class="pa-4 rounded-lg" Style="background: rgba(18,18,26,0.8); border: 1px solid rgba(255,255,255,0.06);">
+            <MudText Typo="Typo.h6" Class="mb-3">Quick Actions</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.Search" Href="/search">
+                        Search Knowledge
+                    </MudButton>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.Link" Href="/import">
+                        Import from Wiki
+                    </MudButton>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.Hub" Href="/mcp-server">
+                        MCP Server
+                    </MudButton>
+                </MudItem>
+                @if (LicenseState.CanAccessAdvanced)
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" FullWidth="true"
+                                   StartIcon="@Icons.Material.Filled.ManageSearch" Href="/audit">
+                            Audit Log
+                        </MudButton>
+                    </MudItem>
+                }
+                <MudItem xs="12" sm="6">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default" FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.Settings" Href="/settings">
+                        Configure Integrations
+                    </MudButton>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.Sync"
+                               OnClick="RunSyncNowAsync"
+                               Disabled="_syncRunning">
+                        @(_syncRunning ? "Running Sync…" : "Run Sync (All Active Schedules)")
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
 
 @code {
     private bool _loading = true;
-    private List<KnowledgeResourceDescriptor> _resources = [];
+    private bool _syncRunning;
+    private string _searchQuery = string.Empty;
 
-    private static readonly QuickActionsPanel.QuickAction[] _quickActions =
-    [
-        new("Search Knowledge", "/search", Icons.Material.Filled.Search, Color.Primary),
-        new("Import from Wiki", "/import", Icons.Material.Filled.Link, Color.Secondary)
-    ];
+    private List<KnowledgeResourceDescriptor> _resources = [];
+    private List<CollectionRow> _collectionBreakdown = [];
+    private List<ConnectorHealthRow> _connectorHealth = [];
+    private List<AuditLog> _auditEvents = [];
+    private DeepRootEmbeddingSettings? _embeddingSettings;
+    private bool _embeddingConfigured;
+    private int _mcpSessions;
+
+    private bool _allOnboardingDone => _embeddingConfigured && _connectorHealth.Any(c => c.HasSchedules) && _resources.Count > 0;
 
     protected override async Task OnInitializedAsync()
+    {
+        _mcpSessions = SessionTracker.ActiveSessionCount;
+
+        await Task.WhenAll(
+            LoadResourcesAsync(),
+            LoadConnectorHealthAsync(),
+            LoadAuditEventsAsync(),
+            LoadEmbeddingSettingsAsync());
+
+        _loading = false;
+    }
+
+    private async Task LoadResourcesAsync()
     {
         try
         {
             var response = await Api.ListResourcesAsync();
             _resources = response?.ToList() ?? [];
+            _collectionBreakdown = _resources
+                .GroupBy(r => ExtractCollection(r.Name))
+                .Select(g => new CollectionRow(
+                    g.Key,
+                    g.Count(),
+                    g.Sum(r => r.Size ?? 0)))
+                .OrderByDescending(c => c.DocumentCount)
+                .ToList();
         }
-        catch
+        catch { }
+    }
+
+    private async Task LoadConnectorHealthAsync()
+    {
+        try
         {
-            // Handle error silently
+            // ── SharePoint: read from its own SyncedFolders table ─────────────
+            await using var spDb = await SharePointDbFactory.CreateDbContextAsync();
+            var spFolders = await spDb.SyncedFolders
+                .Where(f => f.IsEnabled)
+                .AsNoTracking()
+                .ToListAsync();
+
+            var spConfigured = await SharePointSettings.IsConfiguredAsync();
+            var spHasSchedules = spFolders.Count > 0 || spConfigured;
+            DateTime? spLastSync = spFolders.Count > 0
+                ? spFolders.Max(f => f.LastSyncedAtUtc)?.UtcDateTime
+                : null;
+            string? spLastError = spFolders
+                .Where(f => f.LastSyncError != null)
+                .OrderByDescending(f => f.LastSyncedAtUtc)
+                .FirstOrDefault()?.LastSyncError;
+            var spOptions = await SharePointSettings.GetEffectiveOptionsAsync();
+            string? spNextRun = spHasSchedules ? $"~{spOptions.SyncIntervalMinutes} min" : null;
+            int spFailures = spFolders.Count(f => f.LastSyncError != null);
+
+            var rows = new List<ConnectorHealthRow>
+            {
+                new(SourceType.SharePoint, spHasSchedules, spLastSync, spLastError,
+                    spNextRun, spHasSchedules ? spFailures : null)
+            };
+
+            // ── Confluence & Notion: use SyncSchedules ────────────────────────
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var schedules = await db.SyncSchedules
+                .Where(s => s.IsActive &&
+                    (s.SourceType == SourceType.Confluence ||
+                     s.SourceType == SourceType.Notion))
+                .AsNoTracking()
+                .ToListAsync();
+
+            var cfConfigured = await ConfluenceSettings.IsConfiguredAsync();
+            var notionToken = await NotionSettings.GetDecryptedTokenAsync();
+            var notionConfigured = !string.IsNullOrEmpty(notionToken);
+
+            // ── Confluence: prefer per-space sync data from ConfluenceSyncedSpaces ─
+            await using var cfDb = await ConfluenceDbFactory.CreateDbContextAsync();
+            var cfSpaces = await cfDb.SyncedSpaces
+                .AsNoTracking()
+                .ToListAsync();
+
+            foreach (var st in new[] { SourceType.Confluence, SourceType.Notion })
+            {
+                var group = schedules.Where(s => s.SourceType == st).ToList();
+
+                var credentialsExist = st switch
+                {
+                    SourceType.Confluence => cfConfigured,
+                    SourceType.Notion => notionConfigured,
+                    _ => false
+                };
+
+                if (group.Count == 0 && !credentialsExist && (st != SourceType.Confluence || cfSpaces.Count == 0))
+                {
+                    rows.Add(new ConnectorHealthRow(st, false, null, null, null, null));
+                    continue;
+                }
+
+                // ── Confluence-specific: derive from ConfluenceSyncedSpaces ───
+                if (st == SourceType.Confluence && cfSpaces.Count > 0)
+                {
+                    var cfLastSync = cfSpaces
+                        .Where(s => s.LastSyncedAtUtc.HasValue)
+                        .Select(s => s.LastSyncedAtUtc!.Value.UtcDateTime)
+                        .DefaultIfEmpty()
+                        .Max();
+                    DateTime? cfLastSyncNullable = cfLastSync == default ? null : cfLastSync;
+
+                    var cfLastError = cfSpaces
+                        .Where(s => !string.IsNullOrEmpty(s.LastSyncError))
+                        .OrderByDescending(s => s.LastSyncedAtUtc)
+                        .FirstOrDefault()?.LastSyncError;
+
+                    string? cfNextRun = null;
+                    if (group.Count > 0)
+                    {
+                        try
+                        {
+                            var cron = Cronos.CronExpression.Parse(group[0].CronExpression, Cronos.CronFormat.Standard);
+                            var next = cron.GetNextOccurrence(DateTime.UtcNow, TimeZoneInfo.Utc);
+                            cfNextRun = next.HasValue ? RelativeTime(next.Value) : null;
+                        }
+                        catch { }
+                    }
+
+                    var cfFailures = cfSpaces.Count(s => !string.IsNullOrEmpty(s.LastSyncError));
+
+                    rows.Add(new ConnectorHealthRow(
+                        st,
+                        true,
+                        cfLastSyncNullable,
+                        cfLastError,
+                        cfNextRun,
+                        cfFailures));
+                    continue;
+                }
+
+                if (group.Count == 0)
+                {
+                    rows.Add(new ConnectorHealthRow(st, true, null, null, null, 0));
+                    continue;
+                }
+
+                var latest = group.OrderByDescending(s => s.LastSyncUtc ?? DateTime.MinValue).First();
+
+                string? nextRun = null;
+                try
+                {
+                    var cron = Cronos.CronExpression.Parse(latest.CronExpression, Cronos.CronFormat.Standard);
+                    var next = cron.GetNextOccurrence(DateTime.UtcNow, TimeZoneInfo.Utc);
+                    nextRun = next.HasValue ? RelativeTime(next.Value) : null;
+                }
+                catch { }
+
+                rows.Add(new ConnectorHealthRow(
+                    st,
+                    true,
+                    latest.LastSyncUtc,
+                    latest.LastErrorMessage,
+                    nextRun,
+                    group.Sum(s => s.ConsecutiveFailureCount)));
+            }
+
+            _connectorHealth = rows;
+        }
+        catch { }
+    }
+
+    private async Task LoadAuditEventsAsync()
+    {
+        try
+        {
+            await using var db = await AuditDbFactory.CreateDbContextAsync();
+            _auditEvents = await db.AuditLogs
+                .OrderByDescending(e => e.Timestamp)
+                .Take(10)
+                .AsNoTracking()
+                .ToListAsync();
+        }
+        catch { }
+    }
+
+    private async Task LoadEmbeddingSettingsAsync()
+    {
+        try
+        {
+            _embeddingSettings = await DeepRootSettings.GetSettingsAsync();
+            _embeddingConfigured = _embeddingSettings is not null &&
+                _embeddingSettings.Provider != "None" &&
+                !string.IsNullOrEmpty(_embeddingSettings.Provider) &&
+                !string.IsNullOrEmpty(_embeddingSettings.EncryptedApiKey);
+        }
+        catch { }
+    }
+
+    private async Task RunSyncNowAsync()
+    {
+        if (_syncRunning) return;
+        _syncRunning = true;
+        StateHasChanged();
+        try
+        {
+            await Task.WhenAll(
+                SyncWorker.ForceRunAllAsync(),
+                SharePointWorker.TriggerSyncAllAsync());
+            await LoadConnectorHealthAsync();
+            await AuditService.LogAsync(AuditEventType.SyncScheduleRun, new CompanyBrain.Dashboard.Services.Audit.AuditEntry(
+                ActorEmail: AuthStore.Email,
+                ResourceType: "Dashboard.AllConnectors",
+                ResourceName: "All connectors",
+                Metadata: new { Trigger = "Manual", Source = "Dashboard.Home" }));
+            Snackbar.Add("Sync complete.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            await AuditService.LogAsync(AuditEventType.SyncScheduleRun, new CompanyBrain.Dashboard.Services.Audit.AuditEntry(
+                ActorEmail: AuthStore.Email,
+                ResourceType: "Dashboard.AllConnectors",
+                ResourceName: "All connectors",
+                Success: false,
+                ErrorMessage: ex.Message,
+                Metadata: new { Trigger = "Manual", Source = "Dashboard.Home" }));
+            Snackbar.Add($"Sync failed: {ex.Message}", Severity.Error);
         }
         finally
         {
-            _loading = false;
+            _syncRunning = false;
+            StateHasChanged();
         }
     }
+
+    private void OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_searchQuery))
+            Navigation.NavigateTo($"/search?q={Uri.EscapeDataString(_searchQuery)}");
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private static string ExtractCollection(string name)
+    {
+        // Strip "resources/" prefix, then take first path segment as collection name
+        var path = name.StartsWith("resources/", StringComparison.OrdinalIgnoreCase)
+            ? name[10..]
+            : name;
+        var slash = path.IndexOf('/');
+        if (slash <= 0) return "General";
+        var segment = path[..slash];
+        return string.IsNullOrWhiteSpace(segment) ? "General" : segment;
+    }
+
+    private static string RelativeTime(DateTime utc)
+    {
+        var diff = DateTime.UtcNow - utc;
+        if (diff.TotalSeconds < 60) return "just now";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes} min ago";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 30) return $"{(int)diff.TotalDays}d ago";
+        if (diff.TotalDays < 365) return $"{(int)(diff.TotalDays / 30)}mo ago";
+        if (diff < TimeSpan.Zero) // future
+        {
+            var ahead = utc - DateTime.UtcNow;
+            if (ahead.TotalMinutes < 60) return $"in {(int)ahead.TotalMinutes} min";
+            if (ahead.TotalHours < 24) return $"in {(int)ahead.TotalHours}h";
+            return $"in {(int)ahead.TotalDays}d";
+        }
+        return utc.ToString("MMM d");
+    }
+
+    private static string GetConnectorIcon(SourceType type) => type switch
+    {
+        SourceType.SharePoint => Icons.Material.Filled.Cloud,
+        SourceType.Confluence => Icons.Material.Filled.Article,
+        SourceType.Notion => Icons.Material.Filled.Notes,
+        _ => Icons.Material.Filled.Link
+    };
+
+    private static string GetConnectorColor(SourceType type) => type switch
+    {
+        SourceType.SharePoint => "#0078d4",
+        SourceType.Confluence => "#0052cc",
+        SourceType.Notion => "#ffffff",
+        _ => "rgba(255,255,255,0.6)"
+    };
+
+    private static Color GetAuditEventColor(AuditEventType eventType) => eventType switch
+    {
+        AuditEventType.LoginFailed => Color.Error,
+        AuditEventType.DocumentDeleted => Color.Warning,
+        AuditEventType.SettingsChanged => Color.Warning,
+        AuditEventType.LoginSucceeded => Color.Success,
+        AuditEventType.DocumentCreated => Color.Success,
+        AuditEventType.SearchPerformed => Color.Info,
+        AuditEventType.DocumentAccessed => Color.Info,
+        AuditEventType.CollectionAccessed => Color.Info,
+        _ => Color.Default
+    };
+
+    // ── DTOs ─────────────────────────────────────────────────────────────────
+
+    private sealed record CollectionRow(string Name, int DocumentCount, long TotalBytes);
+
+    private sealed record ConnectorHealthRow(
+        SourceType SourceType,
+        bool HasSchedules,
+        DateTime? LastSyncUtc,
+        string? LastError,
+        string? NextRunDisplay,
+        int? TotalFailures);
 }

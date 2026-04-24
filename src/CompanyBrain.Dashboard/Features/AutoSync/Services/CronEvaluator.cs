@@ -29,7 +29,10 @@ public static class CronEvaluator
             return true; // never synced → always due
 
         var cron = Parse(cronExpression);
-        var next = cron.GetNextOccurrence(lastSyncUtc.Value, TimeZoneInfo.Utc);
+        // EF Core SQLite returns DateTime with Unspecified kind from TEXT columns.
+        // Cronos requires DateTimeKind.Utc — normalise here since LastSyncUtc is semantically UTC.
+        var fromUtc = DateTime.SpecifyKind(lastSyncUtc.Value, DateTimeKind.Utc);
+        var next = cron.GetNextOccurrence(fromUtc, TimeZoneInfo.Utc);
         return next.HasValue && next.Value <= DateTime.UtcNow;
     }
 
@@ -43,7 +46,9 @@ public static class CronEvaluator
     public static DateTime? GetNextOccurrence(string cronExpression, DateTime from)
     {
         var cron = Parse(cronExpression);
-        return cron.GetNextOccurrence(from, TimeZoneInfo.Utc);
+        // Normalise kind — Cronos requires DateTimeKind.Utc.
+        var fromUtc = DateTime.SpecifyKind(from, DateTimeKind.Utc);
+        return cron.GetNextOccurrence(fromUtc, TimeZoneInfo.Utc);
     }
 
     /// <summary>

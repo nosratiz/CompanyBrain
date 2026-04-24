@@ -92,32 +92,37 @@
 
     private string? _generatedConfig;
 
+    [Inject] private IHostEnvironment Env { get; set; } = null!;
+
     private void GenerateClaudeConfig()
     {
-        var tenantId = Settings.TenantId?.ToString() ?? "your-tenant-id";
-        var exePath = GetExecutablePath();
+        var (command, args) = GetMcpStdioCommand();
+        var argsJson = string.Join(", ", args.Select(a => $"\"{EscapeJson(a)}\""));
 
         _generatedConfig = $$"""
 {
   "mcpServers": {
     "company-brain": {
-      "command": "{{exePath}}",
-      "args": [],
-      "env": {
-        "TENANT_ID": "{{tenantId}}"
-      }
+      "command": "{{EscapeJson(command)}}",
+      "args": [{{argsJson}}]
     }
   }
 }
 """;
     }
 
-    private static string GetExecutablePath()
+    private (string command, string[] args) GetMcpStdioCommand()
     {
-        var baseDir = AppContext.BaseDirectory;
-        var exeName = OperatingSystem.IsWindows() ? "CompanyBrain.Dashboard.exe" : "CompanyBrain.Dashboard";
-        return Path.Combine(baseDir, exeName).Replace("\\", "\\\\");
+        var processPath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "dotnet";
+        var processName = Path.GetFileNameWithoutExtension(processPath);
+
+        if (string.Equals(processName, "dotnet", StringComparison.OrdinalIgnoreCase))
+            return (processPath, ["run", "--project", Env.ContentRootPath, "--no-launch-profile", "--", "--stdio"]);
+
+        return (processPath, ["--stdio"]);
     }
+
+    private static string EscapeJson(string value) => value.Replace("\\", "\\\\");
 
     private void CopyConfigToClipboard()
     {

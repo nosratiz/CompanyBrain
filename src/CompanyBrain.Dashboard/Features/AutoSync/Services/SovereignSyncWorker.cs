@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using Cronos;
+using CompanyBrain.Dashboard.Data.Audit;
 using CompanyBrain.Dashboard.Features.AutoSync.Models;
 using CompanyBrain.Dashboard.Features.AutoSync.Providers;
+using CompanyBrain.Dashboard.Services.Audit;
 
 namespace CompanyBrain.Dashboard.Features.AutoSync.Services;
 
@@ -25,6 +27,7 @@ namespace CompanyBrain.Dashboard.Features.AutoSync.Services;
 public sealed class SovereignSyncWorker(
     IScheduleRepository scheduleRepository,
     IngestionProviderFactory providerFactory,
+    IServiceScopeFactory scopeFactory,
     ILogger<SovereignSyncWorker> logger) : BackgroundService
 {
     /// <summary>How often the worker wakes up to check for due schedules.</summary>
@@ -65,6 +68,74 @@ public sealed class SovereignSyncWorker(
     /// </summary>
     public Task TriggerImmediateAsync(CancellationToken cancellationToken = default)
         => RunCheckCycleAsync(cancellationToken);
+
+    /// <summary>
+    /// Forces all active schedules to run immediately, bypassing the cron due-check.
+    /// Intended for the "Sync Now" button so the user always gets a fresh sync regardless
+    /// of when the last scheduled run occurred.
+    /// </summary>
+    public async Task ForceRunAllAsync(CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<SyncSchedule> schedules;
+        try
+        {
+            schedules = await scheduleRepository.GetActiveSchedulesAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "SovereignSyncWorker: ForceRunAll failed to fetch active schedules");
+            return;
+        }
+
+        if (schedules.Count == 0)
+        {
+            logger.LogDebug("SovereignSyncWorker: ForceRunAll — no active schedules");
+            return;
+        }
+
+        logger.LogInformation("SovereignSyncWorker: ForceRunAll — running {Count} schedule(s)", schedules.Count);
+        await Task.WhenAll(schedules.Select(s => ProcessScheduleAsync(s, cancellationToken)));
+    }
+
+    /// <summary>
+    /// Forces immediate execution of active schedules for a single <paramref name="sourceType"/>,
+    /// bypassing the cron due-check. Used by per-feature "Sync Now" buttons so other
+    /// connectors are not triggered.
+    /// </summary>
+    public async Task ForceRunBySourceTypeAsync(SourceType sourceType, CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<SyncSchedule> schedules;
+        try
+        {
+            schedules = await scheduleRepository.GetActiveSchedulesAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "SovereignSyncWorker: ForceRunBySourceType failed to fetch active schedules");
+            return;
+        }
+
+        var filtered = schedules.Where(s => s.SourceType == sourceType).ToList();
+
+        if (filtered.Count == 0)
+        {
+            logger.LogDebug("SovereignSyncWorker: ForceRunBySourceType — no active schedules for {SourceType}", sourceType);
+            return;
+        }
+
+        logger.LogInformation(
+            "SovereignSyncWorker: ForceRunBySourceType — running {Count} schedule(s) for {SourceType}",
+            filtered.Count, sourceType);
+        await Task.WhenAll(filtered.Select(s => ProcessScheduleAsync(s, cancellationToken)));
+    }
 
     // ── Core loop ─────────────────────────────────────────────────────────────
 
@@ -200,9 +271,32 @@ public sealed class SovereignSyncWorker(
                 schedule.Id, result.ErrorMessage);
             await SafeUpdateFailureAsync(schedule.Id, result.ErrorMessage ?? "Unknown error", ct);
         }
+
+        await WriteAuditAsync(schedule, result, ct);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private async Task WriteAuditAsync(SyncSchedule schedule, IngestionResult result, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var audit = scope.ServiceProvider.GetRequiredService<IAuditService>();
+            await audit.LogAsync(AuditEventType.SyncScheduleRun, new AuditEntry(
+                ActorId: "system",
+                ResourceType: "SyncSchedule",
+                ResourceId: schedule.Id.ToString(),
+                ResourceName: schedule.SourceUrl,
+                Metadata: new { sourceType = schedule.SourceType.ToString(), contentChanged = result.ContentChanged },
+                Success: result.Success,
+                ErrorMessage: result.ErrorMessage));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "SovereignSyncWorker: audit write failed for schedule {Id}", schedule.Id);
+        }
+    }
 
     private async Task SafeUpdateFailureAsync(int scheduleId, string error, CancellationToken ct)
     {

@@ -43,7 +43,7 @@ public sealed class SwaggerOptions
 {
     public const string SectionName = "Swagger";
 
-    public string Title { get; set; } = "Company Brain API";
+    public string Title { get; set; } = "Deep Root API";
     public string Version { get; set; } = "v1";
     public string Description { get; set; } = "HTTP API for ingesting internal knowledge, browsing stored Markdown resources, and searching the company knowledge base. Also serves as an MCP server.";
 }

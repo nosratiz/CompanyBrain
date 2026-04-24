@@ -31,6 +31,7 @@ public static class McpGovernanceExtensions
 public sealed class GovernanceToolWrapper(
     SettingsService settingsService,
     IntelligentPruningService pruningService,
+    PruningStateContainer pruningState,
     ILogger<GovernanceToolWrapper> logger)
 {
     /// <summary>
@@ -162,13 +163,38 @@ public sealed class GovernanceToolWrapper(
     /// <summary>
     /// Prunes text content using intelligent relevance scoring against the given query.
     /// Small texts that fit within the token budget are returned as-is.
+    /// When <paramref name="toolName"/> is supplied, live progress and a final
+    /// <see cref="PruningEvent"/> are pushed to <see cref="PruningStateContainer"/> so
+    /// the Pruning Insights dashboard reflects real activity.
     /// </summary>
     public async ValueTask<string> PruneTextAsync(
         string text,
         string query,
+        string? toolName = null,
+        string? sourceAttribution = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await pruningService.PruneAsync(text, query, cancellationToken);
+        var publishTelemetry = !string.IsNullOrWhiteSpace(toolName);
+
+        if (publishTelemetry)
+        {
+            pruningState.NotifyProcessingStarted(query);
+            pruningState.NotifyPhaseChanged(ProcessingPhase.LocalRanking);
+        }
+
+        PruningResult result;
+        try
+        {
+            result = await pruningService.PruneAsync(text, query, cancellationToken);
+        }
+        catch
+        {
+            if (publishTelemetry)
+            {
+                pruningState.NotifyPhaseChanged(ProcessingPhase.Complete);
+            }
+            throw;
+        }
 
         if (result.WasPruned)
         {
@@ -177,6 +203,56 @@ public sealed class GovernanceToolWrapper(
                 result.OriginalTokens,
                 result.PrunedTokens,
                 result.ChunksSelected);
+        }
+
+        if (publishTelemetry)
+        {
+            pruningState.NotifyPhaseChanged(ProcessingPhase.PiiMasking);
+
+            // Build snippet detail from the chunks the engine actually selected.
+            var settings = settingsService.GetCachedSettings()
+                ?? await settingsService.GetSettingsAsync(cancellationToken);
+            var maskingEnabled = settings?.EnablePiiMasking ?? false;
+
+            var piiDetected = false;
+            var snippets = new List<SnippetDetail>(result.SelectedChunks.Count);
+            foreach (var chunk in result.SelectedChunks)
+            {
+                var redacted = SecurityHelpers.RedactPii(chunk.Text);
+                var chunkHadPii = !string.Equals(redacted, chunk.Text, StringComparison.Ordinal);
+                if (chunkHadPii)
+                {
+                    piiDetected = true;
+                }
+
+                snippets.Add(new SnippetDetail
+                {
+                    Text = chunk.Text,
+                    RedactedText = maskingEnabled && chunkHadPii ? redacted : chunk.Text,
+                    SimilarityScore = chunk.Score,
+                    Index = chunk.Index,
+                    Source = sourceAttribution ?? toolName!
+                });
+            }
+
+            pruningState.NotifyPhaseChanged(ProcessingPhase.BudgetSelection);
+
+            var pruningEvent = new PruningEvent
+            {
+                ToolName = toolName!,
+                Query = query,
+                SourceAttribution = sourceAttribution ?? toolName!,
+                Timestamp = DateTimeOffset.Now,
+                OriginalTokens = result.OriginalTokens,
+                PrunedTokens = result.PrunedTokens,
+                ChunksEvaluated = result.ChunksEvaluated,
+                ChunksSelected = result.ChunksSelected,
+                WasPruned = result.WasPruned,
+                PiiDetected = piiDetected,
+                Snippets = snippets
+            };
+
+            pruningState.NotifyEventRecorded(pruningEvent);
         }
 
         return result.Text;
