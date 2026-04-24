@@ -4,6 +4,7 @@ using CompanyBrain.Dashboard.Features.ChatRelay.Api;
 using CompanyBrain.Dashboard.Features.Confluence.DependencyInjection;
 using CompanyBrain.Dashboard.Features.DocumentTenant;
 using CompanyBrain.Dashboard.Features.SharePoint.DependencyInjection;
+using CompanyBrain.Search.Vector;
 
 namespace CompanyBrain.Dashboard.DependencyInjection;
 
@@ -28,6 +29,11 @@ public static class DashboardEndpointRouteBuilderExtensions
         await app.InitializeAuditDatabaseAsync();
         await app.Services.InitializeSharePointDatabaseAsync();
         await app.Services.InitializeConfluenceDatabaseAsync();
+
+        // Create the embedding_cache table in the vector DB before the
+        // first GenerateAsync call tries to read/write it.
+        await app.Services.GetRequiredService<EmbeddingCache>()
+                          .EnsureSchemaAsync(CancellationToken.None);
     }
 
     /// <summary>

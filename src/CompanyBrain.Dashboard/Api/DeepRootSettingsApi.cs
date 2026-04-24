@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using CompanyBrain.Dashboard.Api.Contracts;
 using CompanyBrain.Dashboard.Services;
 using CompanyBrain.Search.Vector;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.AI;
 
 namespace CompanyBrain.Dashboard.Api;
 
@@ -20,6 +22,10 @@ internal static class DeepRootSettingsApi
             .WithName("UpdateDeepRootSettings")
             .Produces<DeepRootSettingsResponse>(StatusCodes.Status200OK)
             .ProducesValidationProblem(StatusCodes.Status400BadRequest);
+
+        group.MapPost("/test", TestAsync)
+            .WithName("TestDeepRootProvider")
+            .Produces<DeepRootTestResponse>(StatusCodes.Status200OK);
 
         return endpoints;
     }
@@ -45,6 +51,31 @@ internal static class DeepRootSettingsApi
             ResolvedModel: factory.ResolvedModel,
             ResolvedDimensions: factory.ResolvedDimensions,
             ProviderActive: factory.ResolvedProvider != EmbeddingProviderType.None));
+    }
+
+    private static async Task<IResult> TestAsync(
+        [FromServices] EmbeddingProviderFactory factory,
+        CancellationToken cancellationToken)
+    {
+        var generator = factory.GetGeneratorOrNull();
+        if (generator is null)
+            return TypedResults.Ok(new DeepRootTestResponse(false, "No embedding provider is configured.", null, null));
+
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            var results = await generator.GenerateAsync(
+                ["DeepRoot connectivity test"],
+                cancellationToken: cancellationToken);
+            sw.Stop();
+            var dims = results.FirstOrDefault()?.Vector.Length ?? 0;
+            return TypedResults.Ok(new DeepRootTestResponse(true, null, sw.ElapsedMilliseconds, dims));
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            return TypedResults.Ok(new DeepRootTestResponse(false, ex.Message, sw.ElapsedMilliseconds, null));
+        }
     }
 
     private static async Task<IResult> UpdateAsync(

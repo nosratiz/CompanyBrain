@@ -17,6 +17,15 @@ public sealed record DeepRootSettingsResponse(
     bool ProviderActive);
 
 /// <summary>
+/// Result returned by <c>POST /api/deeproot/settings/test</c>.
+/// </summary>
+public sealed record DeepRootTestResponse(
+    bool Success,
+    string? Error,
+    long? ElapsedMs,
+    int? EmbeddingDimensions);
+
+/// <summary>
 /// Update payload for the DeepRoot embedding settings. <see cref="ApiKey"/> is optional:
 /// <c>null</c> = leave existing key unchanged, empty string = clear the key, non-empty = replace.
 /// </summary>

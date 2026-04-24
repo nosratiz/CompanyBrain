@@ -159,7 +159,46 @@
             @if (_saving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
             Save DeepRoot Settings
         </MudButton>
+
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Secondary"
+                   OnClick="TestConnectionAsync"
+                   StartIcon="@Icons.Material.Filled.NetworkCheck"
+                   Disabled="@(_testing || IsNoneProvider)"
+                   Class="ml-3">
+            @if (_testing) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            Test Connection
+        </MudButton>
     </MudItem>
+
+    @if (_testResult is not null)
+    {
+        <MudItem xs="12">
+            <MudAlert Severity="@(_testResult.Value.Success ? Severity.Success : Severity.Error)"
+                      Variant="Variant.Outlined"
+                      Dense="true">
+                @if (_testResult.Value.Success)
+                {
+                    <span>
+                        <strong>Connection OK</strong> — embedding returned
+                        @_testResult.Value.Dims dimensions
+                        in @_testResult.Value.ElapsedMs ms.
+                    </span>
+                }
+                else
+                {
+                    <span>
+                        <strong>Connection failed</strong>
+                        @if (_testResult.Value.ElapsedMs.HasValue)
+                        {
+                            <span> after @_testResult.Value.ElapsedMs ms</span>
+                        }
+                        : @_testResult.Value.Error
+                    </span>
+                }
+            </MudAlert>
+        </MudItem>
+    }
 </MudGrid>
 
 @code {
@@ -167,6 +206,9 @@
     private string _apiKeyInput = string.Empty;
     private StatusState _status = new();
     private bool _saving;
+    private bool _testing;
+    // null = not yet tested, non-null = last test result
+    private (bool Success, string? Error, long? ElapsedMs, int? Dims)? _testResult;
 
     protected override async Task OnInitializedAsync()
     {
@@ -239,8 +281,37 @@
         }
     }
 
-    private async Task ClearApiKey()
+    private async Task TestConnectionAsync()
     {
+        _testing = true;
+        _testResult = null;
+        try
+        {
+            var generator = ProviderFactory.GetGeneratorOrNull();
+            if (generator is null)
+            {
+                _testResult = (false, "No embedding provider is currently active. Save your settings first.", null, null);
+                return;
+            }
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var results = await generator.GenerateAsync(["DeepRoot connectivity test"]);
+            sw.Stop();
+            var dims = results.FirstOrDefault()?.Vector.Length ?? 0;
+            _testResult = (true, null, sw.ElapsedMilliseconds, dims);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Embedding provider test failed");
+            _testResult = (false, ex.Message, null, null);
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+
+    private async Task ClearApiKey()    {
         _saving = true;
         try
         {

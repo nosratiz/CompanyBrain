@@ -12,6 +12,9 @@ namespace CompanyBrain.Search.Vector;
 public sealed class EmbeddingCache
 {
     private readonly string connectionString;
+    // Lazy schema init — ensures the table exists exactly once per instance, even if
+    // EnsureSchemaAsync was never called explicitly during startup.
+    private Task? _schemaInit;
 
     public EmbeddingCache(string connectionString)
     {
@@ -20,8 +23,24 @@ public sealed class EmbeddingCache
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
+        await InitSchemaOnceAsync().ConfigureAwait(false);
+    }
+
+    private Task InitSchemaOnceAsync()
+    {
+        if (_schemaInit is null)
+        {
+            // Use Interlocked to avoid a double-init race.
+            var t = CreateSchemaAsync();
+            Interlocked.CompareExchange(ref _schemaInit, t, null);
+        }
+        return _schemaInit!;
+    }
+
+    private async Task CreateSchemaAsync()
+    {
         await using var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await connection.OpenAsync().ConfigureAwait(false);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS embedding_cache (
@@ -32,11 +51,13 @@ public sealed class EmbeddingCache
                 created_utc TEXT NOT NULL
             );
             """;
-        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
 
     public async Task<float[]?> TryGetAsync(string text, string model, int dimensions, CancellationToken cancellationToken)
     {
+        await InitSchemaOnceAsync().ConfigureAwait(false);
+
         var key = ComputeKey(text, model, dimensions);
 
         await using var connection = new SqliteConnection(connectionString);
@@ -55,6 +76,8 @@ public sealed class EmbeddingCache
         {
             throw new ArgumentException($"Vector length {vector.Length} does not match expected dimensions {dimensions}.", nameof(vector));
         }
+
+        await InitSchemaOnceAsync().ConfigureAwait(false);
 
         var key = ComputeKey(text, model, dimensions);
         var blob = ToBlob(vector);
