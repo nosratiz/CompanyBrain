@@ -89,7 +89,8 @@ public sealed class IntelligentPruningService(
             originalTokens,
             prunedTokens,
             chunks.Count,
-            selected.Count);
+            selected.Count,
+            selected);
     }
 
     private static PruningResult FallbackToTopChunk(
@@ -110,7 +111,8 @@ public sealed class IntelligentPruningService(
             originalTokens,
             prunedTokens,
             scoredChunks.Count,
-            ChunksSelected: 1);
+            ChunksSelected: 1,
+            SelectedChunks: new[] { best });
     }
 
     private static PruningResult PassThrough(string text)
@@ -123,7 +125,8 @@ public sealed class IntelligentPruningService(
             tokens,
             tokens,
             ChunksEvaluated: 0,
-            ChunksSelected: 0);
+            ChunksSelected: 0,
+            SelectedChunks: Array.Empty<ScoredChunk>());
     }
 
     private static string TruncateForLog(string text)

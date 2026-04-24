@@ -9,10 +9,15 @@ namespace CompanyBrain.Pruning;
 /// <param name="PrunedTokens">Estimated token count of the pruned output.</param>
 /// <param name="ChunksEvaluated">Number of chunks scored.</param>
 /// <param name="ChunksSelected">Number of chunks included in the output.</param>
-public readonly record struct PruningResult(
+/// <param name="SelectedChunks">
+/// The actual chunks (with their scores) that were selected for inclusion in the output.
+/// Empty when no pruning occurred (pass-through). Used by the dashboard for snippet display.
+/// </param>
+public sealed record PruningResult(
     string Text,
     bool WasPruned,
     int OriginalTokens,
     int PrunedTokens,
     int ChunksEvaluated,
-    int ChunksSelected);
+    int ChunksSelected,
+    IReadOnlyList<ScoredChunk> SelectedChunks);

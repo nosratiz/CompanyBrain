@@ -44,7 +44,12 @@ internal sealed class CompanyBrainTools(
             : await service.SearchCollectionAsync(collectionId, query, effectiveMaxResults, cancellationToken);
 
         var text = EnsureSuccess(result);
-        var pruned = await governance.PruneTextAsync(text, query, cancellationToken);
+        var pruned = await governance.PruneTextAsync(
+            text,
+            query,
+            toolName: "SearchDocs",
+            sourceAttribution: string.IsNullOrWhiteSpace(collectionId) ? "KnowledgeBase" : collectionId,
+            cancellationToken);
 
         _ = audit.LogAsync(AuditEventType.SearchPerformed, new AuditEntry(
             ActorId: "mcp-tool",
