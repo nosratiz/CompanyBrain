@@ -101,6 +101,42 @@ public sealed class SovereignSyncWorker(
         await Task.WhenAll(schedules.Select(s => ProcessScheduleAsync(s, cancellationToken)));
     }
 
+    /// <summary>
+    /// Forces immediate execution of active schedules for a single <paramref name="sourceType"/>,
+    /// bypassing the cron due-check. Used by per-feature "Sync Now" buttons so other
+    /// connectors are not triggered.
+    /// </summary>
+    public async Task ForceRunBySourceTypeAsync(SourceType sourceType, CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<SyncSchedule> schedules;
+        try
+        {
+            schedules = await scheduleRepository.GetActiveSchedulesAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "SovereignSyncWorker: ForceRunBySourceType failed to fetch active schedules");
+            return;
+        }
+
+        var filtered = schedules.Where(s => s.SourceType == sourceType).ToList();
+
+        if (filtered.Count == 0)
+        {
+            logger.LogDebug("SovereignSyncWorker: ForceRunBySourceType — no active schedules for {SourceType}", sourceType);
+            return;
+        }
+
+        logger.LogInformation(
+            "SovereignSyncWorker: ForceRunBySourceType — running {Count} schedule(s) for {SourceType}",
+            filtered.Count, sourceType);
+        await Task.WhenAll(filtered.Select(s => ProcessScheduleAsync(s, cancellationToken)));
+    }
+
     // ── Core loop ─────────────────────────────────────────────────────────────
 
     private async Task RunCheckCycleAsync(CancellationToken ct)

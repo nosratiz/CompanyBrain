@@ -241,13 +241,31 @@ public partial class SharePointConnector : IDisposable
         _syncingFolderId = folderId;
         StateHasChanged();
 
+        var folderName = _syncedFolders.FirstOrDefault(f => f.Id == folderId)?.FolderPath ?? folderId.ToString();
+
         try
         {
             await SyncService.SyncFolderAsync(folderId, _cts.Token);
+            await AuditService.LogAsync(CompanyBrain.Dashboard.Data.Audit.AuditEventType.SyncScheduleRun,
+                new CompanyBrain.Dashboard.Services.Audit.AuditEntry(
+                    ActorEmail: AuthStore.Email,
+                    ResourceType: "SharePoint.Folder",
+                    ResourceId: folderId.ToString(),
+                    ResourceName: folderName,
+                    Metadata: new { Trigger = "Manual", Source = "SharePointConnector" }));
             Snackbar.Add("Sync completed", Severity.Success);
         }
         catch (Exception ex)
         {
+            await AuditService.LogAsync(CompanyBrain.Dashboard.Data.Audit.AuditEventType.SyncScheduleRun,
+                new CompanyBrain.Dashboard.Services.Audit.AuditEntry(
+                    ActorEmail: AuthStore.Email,
+                    ResourceType: "SharePoint.Folder",
+                    ResourceId: folderId.ToString(),
+                    ResourceName: folderName,
+                    Success: false,
+                    ErrorMessage: ex.Message,
+                    Metadata: new { Trigger = "Manual", Source = "SharePointConnector" }));
             Snackbar.Add($"Sync failed: {ex.Message}", Severity.Error);
         }
         finally
@@ -279,6 +297,14 @@ public partial class SharePointConnector : IDisposable
 
             var (success, failed) = await SyncWorker.TriggerSyncAllAsync(_cts.Token);
             _lastSyncAllUtc = DateTime.UtcNow;
+
+            await AuditService.LogAsync(CompanyBrain.Dashboard.Data.Audit.AuditEventType.SyncScheduleRun,
+                new CompanyBrain.Dashboard.Services.Audit.AuditEntry(
+                    ActorEmail: AuthStore.Email,
+                    ResourceType: "SharePoint.AllFolders",
+                    ResourceName: "All SharePoint folders",
+                    Success: failed == 0,
+                    Metadata: new { Trigger = "ManualAll", Source = "SharePointConnector", Success = success, Failed = failed }));
 
             if (failed == 0 && success > 0)
             {

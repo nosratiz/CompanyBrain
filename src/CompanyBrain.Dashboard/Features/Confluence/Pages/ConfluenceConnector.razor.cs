@@ -1,6 +1,9 @@
+using CompanyBrain.Dashboard.Data.Audit;
+using CompanyBrain.Dashboard.Features.Auth.Services;
 using CompanyBrain.Dashboard.Features.Confluence.Data;
 using CompanyBrain.Dashboard.Features.Confluence.Models;
 using CompanyBrain.Dashboard.Features.Confluence.Services;
+using CompanyBrain.Dashboard.Services.Audit;
 using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor;
@@ -36,6 +39,7 @@ public partial class ConfluenceConnector : IDisposable
     private List<ConfluenceSyncedSpace> _syncedSpaces = [];
     private HashSet<string> _syncedSpaceIds = [];
     private int? _syncingSpaceId;
+    private int _syncedSpacesRevision;
 
     // Sync all
     private bool _syncingAll;
@@ -159,10 +163,14 @@ public partial class ConfluenceConnector : IDisposable
         try
         {
             await using var db = await DbContextFactory.CreateDbContextAsync(_cts.Token);
-            _syncedSpaces = await db.SyncedSpaces
+            var fresh = await db.SyncedSpaces
+                .AsNoTracking()
                 .OrderByDescending(s => s.Id)
                 .ToListAsync(_cts.Token);
-            _syncedSpaceIds = _syncedSpaces.Select(s => s.SpaceId).ToHashSet();
+            _syncedSpaces = fresh;
+            _syncedSpaceIds = fresh.Select(s => s.SpaceId).ToHashSet();
+            _syncedSpacesRevision++;
+            await InvokeAsync(StateHasChanged);
         }
         catch (Exception ex)
         {
@@ -171,6 +179,7 @@ public partial class ConfluenceConnector : IDisposable
         finally
         {
             _loadingSyncedSpaces = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -179,14 +188,31 @@ public partial class ConfluenceConnector : IDisposable
         _syncingSpaceId = spaceId;
         StateHasChanged();
 
+        var spaceName = _syncedSpaces.FirstOrDefault(s => s.Id == spaceId)?.SpaceName
+                        ?? spaceId.ToString();
+
         try
         {
             await SyncWorker.TriggerSyncAsync(spaceId, _cts.Token);
+            await AuditService.LogAsync(AuditEventType.SyncScheduleRun, new AuditEntry(
+                ActorEmail: AuthStore.Email,
+                ResourceType: "Confluence.Space",
+                ResourceId: spaceId.ToString(),
+                ResourceName: spaceName,
+                Metadata: new { Trigger = "Manual", Source = "ConfluenceConnector" }));
             Snackbar.Add("Sync completed", Severity.Success);
             await LoadSyncedSpacesAsync();
         }
         catch (Exception ex)
         {
+            await AuditService.LogAsync(AuditEventType.SyncScheduleRun, new AuditEntry(
+                ActorEmail: AuthStore.Email,
+                ResourceType: "Confluence.Space",
+                ResourceId: spaceId.ToString(),
+                ResourceName: spaceName,
+                Success: false,
+                ErrorMessage: ex.Message,
+                Metadata: new { Trigger = "Manual", Source = "ConfluenceConnector" }));
             Snackbar.Add($"Sync failed: {ex.Message}", Severity.Error);
         }
         finally
@@ -206,6 +232,13 @@ public partial class ConfluenceConnector : IDisposable
         try
         {
             var (success, failed) = await SyncWorker.TriggerSyncAllAsync(_cts.Token);
+
+            await AuditService.LogAsync(AuditEventType.SyncScheduleRun, new AuditEntry(
+                ActorEmail: AuthStore.Email,
+                ResourceType: "Confluence.AllSpaces",
+                ResourceName: "All Confluence spaces",
+                Success: failed == 0,
+                Metadata: new { Trigger = "ManualAll", Source = "ConfluenceConnector", Success = success, Failed = failed }));
 
             if (failed == 0 && success > 0)
             {

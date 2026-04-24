@@ -6,6 +6,7 @@
 @using CompanyBrain.Dashboard.Features.AutoSync.Services
 @using CompanyBrain.Dashboard.Features.SharePoint.Data
 @using CompanyBrain.Dashboard.Features.SharePoint.Services
+@using CompanyBrain.Dashboard.Features.Confluence.Data
 @using CompanyBrain.Dashboard.Features.Confluence.Services
 @using CompanyBrain.Dashboard.Features.Notion.Services
 @using CompanyBrain.Dashboard.Helpers
@@ -20,6 +21,7 @@
 @inject SovereignSyncWorker SyncWorker
 @inject SharePointSyncWorker SharePointWorker
 @inject IDbContextFactory<SharePointDbContext> SharePointDbFactory
+@inject IDbContextFactory<ConfluenceDbContext> ConfluenceDbFactory
 @inject DeepRootSettingsService DeepRootSettings
 @inject McpSessionTracker SessionTracker
 @inject LicenseStateService LicenseState
@@ -28,6 +30,8 @@
 @inject NotionSettingsProvider NotionSettings
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
+@inject CompanyBrain.Dashboard.Services.Audit.IAuditService AuditService
+@inject CompanyBrain.Dashboard.Features.Auth.Services.AuthTokenStore AuthStore
 
 <PageTitle>Dashboard - Deep Root</PageTitle>
 
@@ -512,6 +516,12 @@
             var notionToken = await NotionSettings.GetDecryptedTokenAsync();
             var notionConfigured = !string.IsNullOrEmpty(notionToken);
 
+            // ── Confluence: prefer per-space sync data from ConfluenceSyncedSpaces ─
+            await using var cfDb = await ConfluenceDbFactory.CreateDbContextAsync();
+            var cfSpaces = await cfDb.SyncedSpaces
+                .AsNoTracking()
+                .ToListAsync();
+
             foreach (var st in new[] { SourceType.Confluence, SourceType.Notion })
             {
                 var group = schedules.Where(s => s.SourceType == st).ToList();
@@ -523,9 +533,48 @@
                     _ => false
                 };
 
-                if (group.Count == 0 && !credentialsExist)
+                if (group.Count == 0 && !credentialsExist && (st != SourceType.Confluence || cfSpaces.Count == 0))
                 {
                     rows.Add(new ConnectorHealthRow(st, false, null, null, null, null));
+                    continue;
+                }
+
+                // ── Confluence-specific: derive from ConfluenceSyncedSpaces ───
+                if (st == SourceType.Confluence && cfSpaces.Count > 0)
+                {
+                    var cfLastSync = cfSpaces
+                        .Where(s => s.LastSyncedAtUtc.HasValue)
+                        .Select(s => s.LastSyncedAtUtc!.Value.UtcDateTime)
+                        .DefaultIfEmpty()
+                        .Max();
+                    DateTime? cfLastSyncNullable = cfLastSync == default ? null : cfLastSync;
+
+                    var cfLastError = cfSpaces
+                        .Where(s => !string.IsNullOrEmpty(s.LastSyncError))
+                        .OrderByDescending(s => s.LastSyncedAtUtc)
+                        .FirstOrDefault()?.LastSyncError;
+
+                    string? cfNextRun = null;
+                    if (group.Count > 0)
+                    {
+                        try
+                        {
+                            var cron = Cronos.CronExpression.Parse(group[0].CronExpression, Cronos.CronFormat.Standard);
+                            var next = cron.GetNextOccurrence(DateTime.UtcNow, TimeZoneInfo.Utc);
+                            cfNextRun = next.HasValue ? RelativeTime(next.Value) : null;
+                        }
+                        catch { }
+                    }
+
+                    var cfFailures = cfSpaces.Count(s => !string.IsNullOrEmpty(s.LastSyncError));
+
+                    rows.Add(new ConnectorHealthRow(
+                        st,
+                        true,
+                        cfLastSyncNullable,
+                        cfLastError,
+                        cfNextRun,
+                        cfFailures));
                     continue;
                 }
 
@@ -598,10 +647,22 @@
                 SyncWorker.ForceRunAllAsync(),
                 SharePointWorker.TriggerSyncAllAsync());
             await LoadConnectorHealthAsync();
+            await AuditService.LogAsync(AuditEventType.SyncScheduleRun, new CompanyBrain.Dashboard.Services.Audit.AuditEntry(
+                ActorEmail: AuthStore.Email,
+                ResourceType: "Dashboard.AllConnectors",
+                ResourceName: "All connectors",
+                Metadata: new { Trigger = "Manual", Source = "Dashboard.Home" }));
             Snackbar.Add("Sync complete.", Severity.Success);
         }
         catch (Exception ex)
         {
+            await AuditService.LogAsync(AuditEventType.SyncScheduleRun, new CompanyBrain.Dashboard.Services.Audit.AuditEntry(
+                ActorEmail: AuthStore.Email,
+                ResourceType: "Dashboard.AllConnectors",
+                ResourceName: "All connectors",
+                Success: false,
+                ErrorMessage: ex.Message,
+                Metadata: new { Trigger = "Manual", Source = "Dashboard.Home" }));
             Snackbar.Add($"Sync failed: {ex.Message}", Severity.Error);
         }
         finally

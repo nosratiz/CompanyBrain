@@ -250,6 +250,7 @@ public partial class NotionConnector : IDisposable
         finally
         {
             _loadingSynced = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -307,14 +308,28 @@ public partial class NotionConnector : IDisposable
         try
         {
             await EnsureScheduleExistsAsync();
-            await SyncWorker.ForceRunAllAsync(_cts.Token);
+            await SyncWorker.ForceRunBySourceTypeAsync(SourceType.Notion, _cts.Token);
             await Task.WhenAll(LoadScheduleAsync(), LoadSyncedPagesAsync());
+            await AuditService.LogAsync(CompanyBrain.Dashboard.Data.Audit.AuditEventType.SyncScheduleRun,
+                new CompanyBrain.Dashboard.Services.Audit.AuditEntry(
+                    ActorEmail: AuthStore.Email,
+                    ResourceType: "Notion.AllPages",
+                    ResourceName: "All Notion pages",
+                    Metadata: new { Trigger = "Manual", Source = "NotionConnector", PageCount = _syncedPages.Count }));
             _syncMessage = $"Sync complete — {_syncedPages.Count} page(s) in knowledge base";
             _syncSeverity = Severity.Success;
             Snackbar.Add(_syncMessage, Severity.Success);
         }
         catch (Exception ex)
         {
+            await AuditService.LogAsync(CompanyBrain.Dashboard.Data.Audit.AuditEventType.SyncScheduleRun,
+                new CompanyBrain.Dashboard.Services.Audit.AuditEntry(
+                    ActorEmail: AuthStore.Email,
+                    ResourceType: "Notion.AllPages",
+                    ResourceName: "All Notion pages",
+                    Success: false,
+                    ErrorMessage: ex.Message,
+                    Metadata: new { Trigger = "Manual", Source = "NotionConnector" }));
             _syncMessage = $"Sync failed: {ex.Message}";
             _syncSeverity = Severity.Error;
             Snackbar.Add(_syncMessage, Severity.Error);

@@ -1,7 +1,10 @@
 @page "/confluence"
+@using CompanyBrain.Dashboard.Data.Audit
+@using CompanyBrain.Dashboard.Features.Auth.Services
 @using CompanyBrain.Dashboard.Features.Confluence.Data
 @using CompanyBrain.Dashboard.Features.Confluence.Models
 @using CompanyBrain.Dashboard.Features.Confluence.Services
+@using CompanyBrain.Dashboard.Services.Audit
 @inject ConfluenceSettingsProvider SettingsProvider
 @inject ConfluenceApiService ApiService
 @inject ConfluenceSyncService SyncService
@@ -9,6 +12,8 @@
 @inject IDbContextFactory<ConfluenceDbContext> DbContextFactory
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
+@inject IAuditService AuditService
+@inject AuthTokenStore AuthStore
 
 <MudText Typo="Typo.h4" Class="mb-1" Style="font-weight: 800;">Confluence</MudText>
 <MudText Typo="Typo.body2" Class="mb-6" Style="color: rgba(255,255,255,0.5);">
@@ -232,7 +237,7 @@
             }
             else
             {
-                <MudTable Items="_syncedSpaces" Dense="true" Hover="true"
+                <MudTable @key="_syncedSpacesRevision" Items="_syncedSpaces" Dense="true" Hover="true"
                           Style="background: transparent;"
                           Class="confluence-table">
                     <HeaderContent>
