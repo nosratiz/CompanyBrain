@@ -190,6 +190,47 @@ public static class DashboardServiceCollectionExtensions
     }
     
     /// <summary>
+    /// Adds MCP services for stdio transport (used by Claude Desktop).
+    /// Registers the same tools and governance as the HTTP transport but uses stdin/stdout.
+    /// </summary>
+    public static IServiceCollection AddDashboardMcpStdio(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var externalApiOptions = configuration.GetSection(ExternalApiOptions.SectionName).Get<ExternalApiOptions>()
+            ?? new ExternalApiOptions();
+
+        // IHttpContextAccessor returns null HttpContext in stdio mode — CollectionEntitlementsService handles this gracefully
+        services.AddHttpContextAccessor();
+        services.AddDataProtection();
+        services.AddHttpClient("LicenseEntitlementsHttpClient", (_, client) =>
+        {
+            client.BaseAddress = new Uri(externalApiOptions.AuthApiBaseUrl);
+        });
+
+        services.AddSingleton<McpSessionTracker>();
+        services.AddSingleton<McpGovernanceFilter>();
+        services.AddSingleton<GovernanceToolWrapper>();
+        services.AddSingleton<PruningSessionState>();
+        services.AddSingleton<PruningStateContainer>();
+        services.AddSingleton<CollectionEntitlementsStore>();
+        services.AddSingleton<CollectionEntitlementsService>();
+        services.AddSingleton<CollectionAuthorizationHandler>();
+
+        services
+            .AddMcpServer()
+            .WithStdioServerTransport()
+            .WithTools<CompanyBrainTools>()
+            .WithTools<ResourceTemplateTools>()
+            .WithSharePointTools()
+            .WithDynamicTools()
+            .WithListResourcesHandler(CompositeResourceHandlers.ListResourcesAsync)
+            .WithReadResourceHandler(CompositeResourceHandlers.ReadResourceAsync);
+
+        return services;
+    }
+
+    /// <summary>
     /// Adds scripting services for the Dynamic MCP Tool Builder.
     /// </summary>
     public static IServiceCollection AddDashboardScripting(this IServiceCollection services)

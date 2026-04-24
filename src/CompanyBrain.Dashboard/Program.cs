@@ -9,6 +9,12 @@ using CompanyBrain.Dashboard.Features.SharePoint.DependencyInjection;
 
 const string mcpRoutePattern = "/mcp";
 
+if (args.Contains("--stdio"))
+{
+    await RunMcpStdioAsync(args);
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure logging
@@ -52,3 +58,26 @@ app.MapMcp(mcpRoutePattern);
 
 app.Run();
 
+// --stdio mode: minimal host that speaks MCP over stdin/stdout
+static async Task RunMcpStdioAsync(string[] args)
+{
+    var builder = Host.CreateApplicationBuilder(args);
+
+    // stdout is reserved for the MCP protocol — silence all logging
+    builder.Logging.ClearProviders();
+
+    builder.Services
+        .AddDashboardCompanyBrain(builder.Environment.ContentRootPath)
+        .AddDashboardDatabase(builder.Configuration)
+        .AddDashboardAudit(builder.Configuration)
+        .AddSharePointMirror(builder.Configuration)
+        .AddDashboardScripting()
+        .AddDashboardMcpStdio(builder.Configuration);
+
+    var host = builder.Build();
+
+    await host.Services.InitializeMcpDatabasesAsync();
+    await host.Services.InitializeSharePointDatabaseAsync();
+
+    await host.RunAsync();
+}

@@ -83,6 +83,26 @@ public static class DashboardApplicationBuilderExtensions
         return app;
     }
 
+    /// <summary>
+    /// Initializes the main and audit databases for the stdio MCP host.
+    /// </summary>
+    public static async Task InitializeMcpDatabasesAsync(this IServiceProvider services)
+    {
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<DocumentAssignmentDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        await EnsureCollectionPoliciesTableAsync(db);
+        await EnsureDeepRootEmbeddingSettingsTableAsync(db);
+        await EnsureSyncSchedulesTableAsync(db);
+        await EnsureChatBotSettingsTableAsync(db);
+        await EnsureConversationThreadsTableAsync(db);
+        await EnsureNotionColumnsAsync(db);
+
+        var auditFactory = services.GetRequiredService<IDbContextFactory<AuditDbContext>>();
+        await using var auditDb = await auditFactory.CreateDbContextAsync();
+        await auditDb.Database.EnsureCreatedAsync();
+    }
+
     private static async Task EnsureCollectionPoliciesTableAsync(DocumentAssignmentDbContext db)
     {
         const string createTableSql = """
