@@ -7,7 +7,7 @@
             <MudText Typo="Typo.h6">Savings &amp; Efficiency</MudText>
         </MudStack>
 
-        @if (State.Session.TotalCallsRecorded == 0)
+        @if (!HasData)
         {
             <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-6">
                 <MudIcon Icon="@Icons.Material.Filled.BarChart" Size="Size.Large"
@@ -50,7 +50,7 @@
                                     Tokens Saved
                                 </MudText>
                                 <MudText Typo="Typo.h5" Color="Color.Primary" Style="font-weight: 700;">
-                                    @FormatNumber(State.Session.CumulativeTokensSaved)
+                                    @FormatNumber(TokensSaved)
                                 </MudText>
                             </MudPaper>
                         </MudItem>
@@ -60,7 +60,7 @@
                                     Est. Savings
                                 </MudText>
                                 <MudText Typo="Typo.h5" Color="Color.Success" Style="font-weight: 700;">
-                                    $@State.EstimatedDollarsSaved.ToString("F4")
+                                    $@EstimatedSavings.ToString("F4")
                                 </MudText>
                             </MudPaper>
                         </MudItem>
@@ -70,7 +70,7 @@
                                     Tool Calls
                                 </MudText>
                                 <MudText Typo="Typo.h5" Style="font-weight: 700;">
-                                    @State.Session.TotalCallsRecorded
+                                    @TotalCalls
                                 </MudText>
                             </MudPaper>
                         </MudItem>
@@ -80,7 +80,7 @@
                                     Reduction
                                 </MudText>
                                 <MudText Typo="Typo.h5" Color="Color.Warning" Style="font-weight: 700;">
-                                    @((State.DataKeptLocalRatio * 100).ToString("F1"))%
+                                    @((DataKeptRatio * 100).ToString("F1"))%
                                 </MudText>
                             </MudPaper>
                         </MudItem>
@@ -94,8 +94,8 @@
                 <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="mr-1"
                          Style="vertical-align: text-bottom;" />
                 Estimated at $15.00 per 1M tokens (average Claude/GPT pricing).
-                Original: @FormatNumber(State.Session.CumulativeOriginalTokens) tokens →
-                Sent: @FormatNumber(State.Session.CumulativePrunedTokens) tokens.
+                Original: @FormatNumber(OriginalTokens) tokens →
+                Sent: @FormatNumber(SentTokens) tokens.
             </MudText>
         }
     </MudStack>
@@ -105,6 +105,23 @@
     [Parameter, EditorRequired]
     public PruningStateContainer State { get; set; } = null!;
 
+    /// <summary>
+    /// When provided (loaded from DB), these events override the in-memory session state
+    /// for metrics. This makes the dashboard work even when MCP calls come from a separate
+    /// stdio process (e.g. Claude Desktop).
+    /// </summary>
+    [Parameter]
+    public IReadOnlyList<PruningEvent>? Events { get; set; }
+
+    // ── computed from DB events when available, fall back to in-memory session ──
+    private bool HasData       => Events is { Count: > 0 } || State.Session.TotalCallsRecorded > 0;
+    private int  TotalCalls    => Events?.Count           ?? State.Session.TotalCallsRecorded;
+    private long TokensSaved   => Events != null ? Events.Sum(e => (long)e.TokensSaved)     : State.Session.CumulativeTokensSaved;
+    private long OriginalTokens=> Events != null ? Events.Sum(e => (long)e.OriginalTokens)  : State.Session.CumulativeOriginalTokens;
+    private long SentTokens    => Events != null ? Events.Sum(e => (long)e.PrunedTokens)    : State.Session.CumulativePrunedTokens;
+    private decimal EstimatedSavings => TokensSaved * 15m / 1_000_000m;
+    private double DataKeptRatio => OriginalTokens == 0 ? 0.0 : (double)TokensSaved / OriginalTokens;
+
     private readonly ChartOptions _chartOptions = new()
     {
         ChartPalette = ["#667eea", "#4caf50"]
@@ -112,8 +129,8 @@
 
     private double[] ChartData =>
     [
-        Math.Max(State.DataKeptLocalRatio * 100, 0.1),
-        Math.Max((1 - State.DataKeptLocalRatio) * 100, 0.1)
+        Math.Max(DataKeptRatio * 100, 0.1),
+        Math.Max((1 - DataKeptRatio) * 100, 0.1)
     ];
 
     private string[] ChartLabels => ["Kept Local", "Sent to Cloud"];

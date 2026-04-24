@@ -1,4 +1,6 @@
 @* Pruning Engine control center: aggression slider + enable toggle *@
+@inject SettingsService SettingsService
+@inject ILogger<PruningControlCenter> Logger
 
 <MudPaper Class="pa-4 pruning-panel">
     <MudStack Spacing="4">
@@ -113,6 +115,7 @@
         _enabled = value;
         State.Configuration.Enabled = value;
         State.NotifyConfigurationChanged();
+        _ = PersistAsync();
     }
 
     private void OnThresholdChanged(double value)
@@ -120,6 +123,7 @@
         _threshold = value;
         State.Configuration.RelevanceThreshold = value;
         State.NotifyConfigurationChanged();
+        _ = PersistAsync();
     }
 
     private void OnMaxChunksChanged(int value)
@@ -127,6 +131,7 @@
         _maxChunks = value;
         State.Configuration.MaxChunks = value;
         State.NotifyConfigurationChanged();
+        _ = PersistAsync();
     }
 
     private void OnTokenBudgetChanged(int value)
@@ -134,5 +139,24 @@
         _tokenBudget = value;
         State.Configuration.TokenBudget = value;
         State.NotifyConfigurationChanged();
+        _ = PersistAsync();
+    }
+
+    private async Task PersistAsync()
+    {
+        try
+        {
+            await SettingsService.UpdateSettingsAsync(s =>
+            {
+                s.PruningEnabled            = _enabled;
+                s.PruningRelevanceThreshold = _threshold;
+                s.PruningMaxChunks          = _maxChunks;
+                s.PruningTokenBudget        = _tokenBudget;
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to persist pruning configuration");
+        }
     }
 }

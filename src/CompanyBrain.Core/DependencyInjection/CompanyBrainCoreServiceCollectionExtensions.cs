@@ -2,6 +2,7 @@ using CompanyBrain.Application;
 using CompanyBrain.Constants;
 using CompanyBrain.Hosting;
 using CompanyBrain.Pruning;
+using CompanyBrain.Search.Vector;
 using CompanyBrain.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -18,6 +19,7 @@ public static class CompanyBrainCoreServiceCollectionExtensions
 
         services.AddSingleton(sp => new KnowledgeStore(
             knowledgeRoot,
+            sp.GetRequiredService<DocumentEmbeddingIndexer>(),
             sp.GetRequiredService<ILogger<KnowledgeStore>>()));
 
         services.AddSingleton(sp => new CollectionManagerService(

@@ -8,9 +8,10 @@ public readonly record struct PiiDetectionResult
     public int GitHubTokenCount { get; init; }
     public int SlackTokenCount { get; init; }
     public int AwsKeyCount { get; init; }
+    public int PhoneCount { get; init; }
     
     public int TotalCount => EmailCount + ApiKeyCount + IpAddressCount 
-        + GitHubTokenCount + SlackTokenCount + AwsKeyCount;
+        + GitHubTokenCount + SlackTokenCount + AwsKeyCount + PhoneCount;
     
     public bool HasPii => TotalCount > 0;
 }

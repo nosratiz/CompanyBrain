@@ -37,6 +37,7 @@ public sealed class SqliteVecStoreTests : IDisposable
 
         await store.UpsertAsync(
             "knowledge://General/policy.md",
+            chunkIndex: 0,
             "General",
             "Remote work is allowed.",
             contentHash: "h1",
@@ -46,6 +47,7 @@ public sealed class SqliteVecStoreTests : IDisposable
 
         await store.UpsertAsync(
             "knowledge://General/lunch.md",
+            chunkIndex: 0,
             "General",
             "Lunch is at noon.",
             contentHash: "h2",
@@ -76,6 +78,7 @@ public sealed class SqliteVecStoreTests : IDisposable
 
         await store.UpsertAsync(
             "knowledge://General/x.md",
+            chunkIndex: 0,
             "General",
             "snippet",
             contentHash: "abc123",

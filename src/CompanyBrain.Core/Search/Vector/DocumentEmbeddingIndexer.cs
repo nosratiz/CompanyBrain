@@ -30,8 +30,8 @@ public sealed class DocumentEmbeddingIndexer
     public bool IsEnabled => factory.GetGeneratorOrNull() is not null && factory.GetStoreOrNull() is not null;
 
     /// <summary>
-    /// Re-indexes a single document, skipping the embedding call if the content hash matches
-    /// what's already stored. Returns <c>false</c> when no provider is configured.
+    /// Re-indexes all chunks of a document, skipping the embedding call if the content hash
+    /// matches what is already stored. Returns <c>false</c> when no provider is configured.
     /// </summary>
     public async Task<bool> IndexAsync(
         string resourceUri,
@@ -56,24 +56,37 @@ public sealed class DocumentEmbeddingIndexer
             return false;
         }
 
-        var snippet = BuildRedactedSnippet(fullContent);
+        // Split content into chunks; fall back to full content if no chunks meet min length.
+        var chunks = SearchUtilities.ExtractSnippets(fullContent).ToList();
+        if (chunks.Count == 0)
+        {
+            chunks.Add(fullContent.Length > 1200 ? fullContent[..1200] : fullContent);
+        }
 
+        // Batch-embed all chunks in one API call.
         var generated = await generator
-            .GenerateAsync([snippet], cancellationToken: cancellationToken)
+            .GenerateAsync(chunks, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        var vector = generated[0].Vector.ToArray();
+        // Delete all existing chunks for this URI before upserting fresh ones.
+        await store.DeleteByUriAsync(resourceUri, cancellationToken).ConfigureAwait(false);
 
-        await store.UpsertAsync(
-            resourceUri,
-            collectionId,
-            snippet,
-            hash,
-            factory.ResolvedModel,
-            vector,
-            cancellationToken).ConfigureAwait(false);
+        for (var i = 0; i < chunks.Count; i++)
+        {
+            var vector = generated[i].Vector.ToArray();
+            await store.UpsertAsync(
+                resourceUri,
+                chunkIndex: i,
+                collectionId,
+                redactedSnippet: chunks[i],
+                hash,
+                factory.ResolvedModel,
+                vector,
+                cancellationToken).ConfigureAwait(false);
+        }
 
-        logger.LogInformation("Indexed {Uri} ({Dim} dims, model {Model}).", resourceUri, vector.Length, factory.ResolvedModel);
+        logger.LogInformation("Indexed {Uri} ({Chunks} chunks, {Dim} dims, model {Model}).",
+            resourceUri, chunks.Count, generated[0].Vector.Length, factory.ResolvedModel);
         return true;
     }
 
@@ -108,7 +121,7 @@ public sealed class DocumentEmbeddingIndexer
     public Task DeleteAsync(string resourceUri, CancellationToken cancellationToken)
     {
         var store = factory.GetStoreOrNull();
-        return store is null ? Task.CompletedTask : store.DeleteAsync(resourceUri, cancellationToken);
+        return store is null ? Task.CompletedTask : store.DeleteByUriAsync(resourceUri, cancellationToken);
     }
 
     internal static string ComputeHash(string content)
@@ -117,18 +130,5 @@ public sealed class DocumentEmbeddingIndexer
         return Convert.ToHexString(hash);
     }
 
-    /// <summary>
-    /// First non-empty paragraph, capped at ~1.2 KB. Real PII redaction lives in a follow-up.
-    /// </summary>
-    internal static string BuildRedactedSnippet(string content)
-    {
-        if (string.IsNullOrWhiteSpace(content))
-        {
-            return string.Empty;
-        }
-
-        var firstSnippet = SearchUtilities.ExtractSnippets(content).FirstOrDefault() ?? content;
-        var trimmed = firstSnippet.Trim();
-        return trimmed.Length > 1200 ? trimmed[..1200] : trimmed;
-    }
 }
+

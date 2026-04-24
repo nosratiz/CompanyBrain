@@ -122,6 +122,33 @@ public sealed class AppSettings
     /// Leave empty to sync all pages shared with the integration.
     /// </summary>
     public string NotionWorkspaceFilter { get; set; } = string.Empty;
+
+    // ───────────────────────────────────────────────────────────────
+    // Pruning Engine Settings
+    // ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Whether the intelligent pruning engine is active.
+    /// When false, document content passes through unmodified.
+    /// </summary>
+    public bool PruningEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Minimum relevance score (0.0–1.0) a chunk must reach to be included.
+    /// Lower = broader context; higher = more precise selection.
+    /// </summary>
+    public double PruningRelevanceThreshold { get; set; } = 0.3;
+
+    /// <summary>
+    /// Maximum number of top-scoring chunks returned per document.
+    /// </summary>
+    public int PruningMaxChunks { get; set; } = 3;
+
+    /// <summary>
+    /// Token budget. Documents below this size bypass pruning entirely.
+    /// Approximately 1 token ≈ 4 characters.
+    /// </summary>
+    public int PruningTokenBudget { get; set; } = 2000;
 }
 
 /// <summary>

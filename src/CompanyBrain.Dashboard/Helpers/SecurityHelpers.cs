@@ -120,7 +120,8 @@ public static partial class SecurityHelpers
             IpAddressCount = IpAddressRegex().Matches(content).Count,
             GitHubTokenCount = GitHubTokenRegex().Matches(content).Count,
             SlackTokenCount = SlackTokenRegex().Matches(content).Count,
-            AwsKeyCount = AwsAccessKeyRegex().Matches(content).Count
+            AwsKeyCount = AwsAccessKeyRegex().Matches(content).Count,
+            PhoneCount = PhoneNationalRegex().Matches(content).Count + PhoneIntlRegex().Matches(content).Count
         };
     }
 

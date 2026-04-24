@@ -4,6 +4,8 @@ using CompanyBrain.Dashboard.Features.ChatRelay.Api;
 using CompanyBrain.Dashboard.Features.Confluence.DependencyInjection;
 using CompanyBrain.Dashboard.Features.DocumentTenant;
 using CompanyBrain.Dashboard.Features.SharePoint.DependencyInjection;
+using CompanyBrain.Dashboard.Services;
+using CompanyBrain.Pruning;
 using CompanyBrain.Search.Vector;
 
 namespace CompanyBrain.Dashboard.DependencyInjection;
@@ -34,6 +36,18 @@ public static class DashboardEndpointRouteBuilderExtensions
         // first GenerateAsync call tries to read/write it.
         await app.Services.GetRequiredService<EmbeddingCache>()
                           .EnsureSchemaAsync(CancellationToken.None);
+
+        // Sync pruning engine configuration from the database so that
+        // in-memory defaults are replaced with user-saved values.
+        var savedSettings = await app.Services
+            .GetRequiredService<SettingsService>()
+            .GetSettingsAsync(CancellationToken.None);
+
+        var pruningConfig = app.Services.GetRequiredService<PruningConfiguration>();
+        pruningConfig.Enabled              = savedSettings.PruningEnabled;
+        pruningConfig.RelevanceThreshold   = savedSettings.PruningRelevanceThreshold;
+        pruningConfig.MaxChunks            = savedSettings.PruningMaxChunks;
+        pruningConfig.TokenBudget          = savedSettings.PruningTokenBudget;
     }
 
     /// <summary>

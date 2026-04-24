@@ -37,6 +37,28 @@
                 </MudText>
             </MudStack>
         }
+        else if (!SelectedEvent.WasPruned)
+        {
+            <MudAlert Severity="Severity.Info" Icon="@Icons.Material.Filled.CheckCircle" Class="mb-1">
+                <MudText Typo="Typo.body2">
+                    Document passed through without pruning — it was within the token budget
+                    (@SelectedEvent.OriginalTokens tokens).
+                    All content was forwarded to the AI unchanged.
+                </MudText>
+            </MudAlert>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-2">
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info">
+                    Tool: @SelectedEvent.ToolName
+                </MudChip>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">
+                    @SelectedEvent.OriginalTokens tokens
+                </MudChip>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                         Color="@(SelectedEvent.PiiDetected ? Color.Warning : Color.Success)">
+                    @(SelectedEvent.PiiDetected ? "PII Redacted" : "No PII Found")
+                </MudChip>
+            </MudStack>
+        }
         else
         {
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-1">

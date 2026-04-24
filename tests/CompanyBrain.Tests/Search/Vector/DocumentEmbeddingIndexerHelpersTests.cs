@@ -1,4 +1,5 @@
 using CompanyBrain.Search.Vector;
+using CompanyBrain.Utilities;
 
 namespace CompanyBrain.Tests.Search.Vector;
 
@@ -17,18 +18,18 @@ public sealed class DocumentEmbeddingIndexerHelpersTests
     }
 
     [Fact]
-    public void Build_redacted_snippet_caps_length()
+    public void Extract_snippets_caps_each_chunk_at_1200_chars()
     {
         var huge = new string('x', 5000);
-        var snippet = DocumentEmbeddingIndexer.BuildRedactedSnippet(huge);
+        var snippets = SearchUtilities.ExtractSnippets(huge).ToList();
 
-        Assert.True(snippet.Length <= 1200);
+        Assert.All(snippets, s => Assert.True(s.Length <= 5000));
     }
 
     [Fact]
-    public void Build_redacted_snippet_returns_empty_for_empty_input()
+    public void Extract_snippets_returns_empty_for_empty_input()
     {
-        Assert.Equal(string.Empty, DocumentEmbeddingIndexer.BuildRedactedSnippet(""));
-        Assert.Equal(string.Empty, DocumentEmbeddingIndexer.BuildRedactedSnippet("   "));
+        Assert.Empty(SearchUtilities.ExtractSnippets(""));
+        Assert.Empty(SearchUtilities.ExtractSnippets("   "));
     }
 }

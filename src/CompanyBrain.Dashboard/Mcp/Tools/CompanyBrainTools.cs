@@ -35,8 +35,8 @@ internal sealed class CompanyBrainTools(
         [Description("Search query.")] string query,
         [Description("Maximum number of results to include. Defaults to 5.")] int maxResults,
         [Description("Optional named collection scope (e.g. Engineering, HR).")]
-        string? collectionId,
-        CancellationToken cancellationToken)
+        string? collectionId = null,
+        CancellationToken cancellationToken = default)
     {
         var effectiveMaxResults = maxResults <= 0 ? 5 : maxResults;
         var result = string.IsNullOrWhiteSpace(collectionId)

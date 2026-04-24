@@ -44,6 +44,7 @@ public sealed class SqliteVecStore
 
     /// <summary>
     /// Loads sqlite-vec, creates the schema (idempotent), and verifies the vec0 table dimension.
+    /// Migrates legacy single-row-per-document schemas to per-chunk indexing.
     /// </summary>
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -54,20 +55,42 @@ public sealed class SqliteVecStore
 
         await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
 
+        // Migrate legacy schema that had resource_uri UNIQUE (one row per document).
+        await using (var pragma = connection.CreateCommand())
+        {
+            pragma.CommandText = "PRAGMA table_info(documents)";
+            var columns = new List<string>();
+            await using var reader = await pragma.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                columns.Add(reader.GetString(1));
+            }
+
+            if (columns.Count > 0 && !columns.Contains("chunk_index"))
+            {
+                await using var drop = connection.CreateCommand();
+                drop.CommandText = "DROP TABLE IF EXISTS document_vectors; DROP TABLE IF EXISTS documents;";
+                await drop.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                logger.LogWarning("Vector store schema migrated to per-chunk indexing. All documents must be re-indexed.");
+            }
+        }
+
         await using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = $"""
                 CREATE TABLE IF NOT EXISTS documents (
                     doc_id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                    resource_uri     TEXT NOT NULL UNIQUE,
+                    resource_uri     TEXT NOT NULL,
+                    chunk_index      INTEGER NOT NULL DEFAULT 0,
                     collection_id    TEXT NOT NULL,
                     redacted_snippet TEXT NOT NULL,
                     content_hash     TEXT NOT NULL,
                     model            TEXT NOT NULL,
-                    embedded_utc     TEXT NOT NULL
+                    embedded_utc     TEXT NOT NULL,
+                    UNIQUE(resource_uri, chunk_index)
                 );
                 CREATE INDEX IF NOT EXISTS ix_documents_collection ON documents(collection_id);
-                CREATE INDEX IF NOT EXISTS ix_documents_hash ON documents(content_hash);
+                CREATE INDEX IF NOT EXISTS ix_documents_uri ON documents(resource_uri);
 
                 CREATE VIRTUAL TABLE IF NOT EXISTS document_vectors USING vec0(
                     embedding float[{dimensions}]
@@ -82,6 +105,7 @@ public sealed class SqliteVecStore
 
     /// <summary>
     /// Looks up the stored content hash for a resource (for delta-update decisions).
+    /// Uses chunk 0 as the authoritative hash row.
     /// </summary>
     public async Task<string?> GetStoredHashAsync(string resourceUri, CancellationToken cancellationToken)
     {
@@ -89,17 +113,20 @@ public sealed class SqliteVecStore
 
         await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT content_hash FROM documents WHERE resource_uri = $uri";
+        cmd.CommandText = "SELECT content_hash FROM documents WHERE resource_uri = $uri AND chunk_index = 0";
         cmd.Parameters.AddWithValue("$uri", resourceUri);
         return await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as string;
     }
 
     /// <summary>
-    /// Inserts or replaces the vector + metadata for a resource. The vec0 row is rebuilt
-    /// because sqlite-vec virtual tables don't support in-place updates of the embedding column.
+    /// Inserts or replaces a single chunk vector + metadata.
+    /// Use <paramref name="chunkIndex"/> to store multiple chunks per document.
+    /// The vec0 row is rebuilt because sqlite-vec virtual tables don't support
+    /// in-place updates of the embedding column.
     /// </summary>
     public async Task UpsertAsync(
         string resourceUri,
+        int chunkIndex,
         string collectionId,
         string redactedSnippet,
         string contentHash,
@@ -125,8 +152,9 @@ public sealed class SqliteVecStore
         await using (var existing = connection.CreateCommand())
         {
             existing.Transaction = tx;
-            existing.CommandText = "SELECT doc_id FROM documents WHERE resource_uri = $uri";
+            existing.CommandText = "SELECT doc_id FROM documents WHERE resource_uri = $uri AND chunk_index = $chunk";
             existing.Parameters.AddWithValue("$uri", resourceUri);
+            existing.Parameters.AddWithValue("$chunk", chunkIndex);
             var scalar = await existing.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             docId = scalar is long l ? l : 0L;
         }
@@ -136,11 +164,12 @@ public sealed class SqliteVecStore
             await using var insert = connection.CreateCommand();
             insert.Transaction = tx;
             insert.CommandText = """
-                INSERT INTO documents (resource_uri, collection_id, redacted_snippet, content_hash, model, embedded_utc)
-                VALUES ($uri, $col, $snippet, $hash, $model, $now);
+                INSERT INTO documents (resource_uri, chunk_index, collection_id, redacted_snippet, content_hash, model, embedded_utc)
+                VALUES ($uri, $chunk, $col, $snippet, $hash, $model, $now);
                 SELECT last_insert_rowid();
                 """;
             insert.Parameters.AddWithValue("$uri", resourceUri);
+            insert.Parameters.AddWithValue("$chunk", chunkIndex);
             insert.Parameters.AddWithValue("$col", collectionId);
             insert.Parameters.AddWithValue("$snippet", redactedSnippet);
             insert.Parameters.AddWithValue("$hash", contentHash);
@@ -188,30 +217,37 @@ public sealed class SqliteVecStore
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task DeleteAsync(string resourceUri, CancellationToken cancellationToken)
+    /// <summary>
+    /// Deletes all chunks (and their vectors) for the given resource URI.
+    /// </summary>
+    public async Task DeleteByUriAsync(string resourceUri, CancellationToken cancellationToken)
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
 
         await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        long docId;
+        var docIds = new List<long>();
         await using (var find = connection.CreateCommand())
         {
             find.Transaction = tx;
             find.CommandText = "SELECT doc_id FROM documents WHERE resource_uri = $uri";
             find.Parameters.AddWithValue("$uri", resourceUri);
-            var scalar = await find.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            docId = scalar is long l ? l : 0L;
+            await using var reader = await find.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                docIds.Add(reader.GetInt64(0));
+            }
         }
 
-        if (docId == 0)
+        if (docIds.Count == 0)
         {
             return;
         }
 
-        await using (var deleteVec = connection.CreateCommand())
+        foreach (var docId in docIds)
         {
+            await using var deleteVec = connection.CreateCommand();
             deleteVec.Transaction = tx;
             deleteVec.CommandText = "DELETE FROM document_vectors WHERE rowid = $id";
             deleteVec.Parameters.AddWithValue("$id", docId);
@@ -221,8 +257,8 @@ public sealed class SqliteVecStore
         await using (var deleteDoc = connection.CreateCommand())
         {
             deleteDoc.Transaction = tx;
-            deleteDoc.CommandText = "DELETE FROM documents WHERE doc_id = $id";
-            deleteDoc.Parameters.AddWithValue("$id", docId);
+            deleteDoc.CommandText = "DELETE FROM documents WHERE resource_uri = $uri";
+            deleteDoc.Parameters.AddWithValue("$uri", resourceUri);
             await deleteDoc.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 

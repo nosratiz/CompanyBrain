@@ -31,6 +31,8 @@ public sealed class DocumentAssignmentDbContext : DbContext
 
     public DbSet<ConversationThread> ConversationThreads => Set<ConversationThread>();
 
+    public DbSet<PruningEventRecord> PruningEventRecords => Set<PruningEventRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -43,6 +45,7 @@ public sealed class DocumentAssignmentDbContext : DbContext
         ConfigureSyncSchedules(modelBuilder);
         ConfigureChatBotSettings(modelBuilder);
         ConfigureConversationThreads(modelBuilder);
+        ConfigurePruningEventRecords(modelBuilder);
     }
     
     private static void ConfigureDocumentTenantAssignment(ModelBuilder modelBuilder)
@@ -255,6 +258,23 @@ public sealed class DocumentAssignmentDbContext : DbContext
                 .HasMaxLength(2000)
                 .HasDefaultValue(string.Empty);
 
+            // Pruning engine settings
+            entity.Property(e => e.PruningEnabled)
+                .IsRequired()
+                .HasDefaultValue(true);
+
+            entity.Property(e => e.PruningRelevanceThreshold)
+                .IsRequired()
+                .HasDefaultValue(0.3);
+
+            entity.Property(e => e.PruningMaxChunks)
+                .IsRequired()
+                .HasDefaultValue(3);
+
+            entity.Property(e => e.PruningTokenBudget)
+                .IsRequired()
+                .HasDefaultValue(2000);
+
             // Seed the singleton settings row
             entity.HasData(new AppSettings
             {
@@ -277,7 +297,11 @@ public sealed class DocumentAssignmentDbContext : DbContext
                 SharePointLocalBasePath = string.Empty,
                 SharePointSyncEnabled = false,
                 NotionApiToken = string.Empty,
-                NotionWorkspaceFilter = string.Empty
+                NotionWorkspaceFilter = string.Empty,
+                PruningEnabled = true,
+                PruningRelevanceThreshold = 0.3,
+                PruningMaxChunks = 3,
+                PruningTokenBudget = 2000
             });
         });
     }
@@ -423,6 +447,22 @@ public sealed class DocumentAssignmentDbContext : DbContext
 
             entity.HasIndex(e => new { e.Platform, e.ExternalThreadId }).IsUnique();
             entity.HasIndex(e => e.IsActive);
+        });
+    }
+
+    private static void ConfigurePruningEventRecords(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<PruningEventRecord>(entity =>
+        {
+            entity.ToTable("PruningEventRecords");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ToolName).IsRequired().HasDefaultValue("");
+            entity.Property(e => e.Query).IsRequired().HasDefaultValue("");
+            entity.Property(e => e.SourceAttribution).IsRequired().HasDefaultValue("");
+            entity.Property(e => e.SnippetsJson).IsRequired().HasDefaultValue("[]");
+
+            // Index for polling: quickly find records newer than the last seen Id
+            entity.HasIndex(e => e.TimestampUnixMs);
         });
     }
 }

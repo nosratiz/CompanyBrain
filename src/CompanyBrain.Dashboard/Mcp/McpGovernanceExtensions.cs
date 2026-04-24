@@ -1,9 +1,11 @@
+using CompanyBrain.Dashboard.Data;
+using CompanyBrain.Dashboard.Data.Models;
 using CompanyBrain.Dashboard.Helpers;
 using CompanyBrain.Dashboard.Services;
 using CompanyBrain.Pruning;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Protocol;
-using ModelContextProtocol.Server;
+using System.Text.Json;
 
 namespace CompanyBrain.Dashboard.Mcp;
 
@@ -32,6 +34,7 @@ public sealed class GovernanceToolWrapper(
     SettingsService settingsService,
     IntelligentPruningService pruningService,
     PruningStateContainer pruningState,
+    IDbContextFactory<DocumentAssignmentDbContext> dbFactory,
     ILogger<GovernanceToolWrapper> logger)
 {
     /// <summary>
@@ -212,7 +215,7 @@ public sealed class GovernanceToolWrapper(
             // Build snippet detail from the chunks the engine actually selected.
             var settings = settingsService.GetCachedSettings()
                 ?? await settingsService.GetSettingsAsync(cancellationToken);
-            var maskingEnabled = settings?.EnablePiiMasking ?? false;
+            var maskingEnabled = settings.EnablePiiMasking;
 
             var piiDetected = false;
             var snippets = new List<SnippetDetail>(result.SelectedChunks.Count);
@@ -253,9 +256,41 @@ public sealed class GovernanceToolWrapper(
             };
 
             pruningState.NotifyEventRecorded(pruningEvent);
+            await PersistEventAsync(pruningEvent, cancellationToken);
         }
 
-        return result.Text;
+        var finalSettings = settingsService.GetCachedSettings()
+            ?? await settingsService.GetSettingsAsync(cancellationToken);
+        return finalSettings.EnablePiiMasking
+            ? SecurityHelpers.RedactPii(result.Text)
+            : result.Text;
+    }
+
+    private async Task PersistEventAsync(PruningEvent pruningEvent, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+            db.PruningEventRecords.Add(new PruningEventRecord
+            {
+                ToolName          = pruningEvent.ToolName,
+                Query             = pruningEvent.Query,
+                SourceAttribution = pruningEvent.SourceAttribution,
+                TimestampUnixMs   = pruningEvent.Timestamp.ToUnixTimeMilliseconds(),
+                OriginalTokens    = pruningEvent.OriginalTokens,
+                PrunedTokens      = pruningEvent.PrunedTokens,
+                ChunksEvaluated   = pruningEvent.ChunksEvaluated,
+                ChunksSelected    = pruningEvent.ChunksSelected,
+                WasPruned         = pruningEvent.WasPruned,
+                PiiDetected       = pruningEvent.PiiDetected,
+                SnippetsJson      = JsonSerializer.Serialize(pruningEvent.Snippets)
+            });
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to persist pruning event to database");
+        }
     }
 
     private static CallToolResult CreateSecurityErrorResult(string message)

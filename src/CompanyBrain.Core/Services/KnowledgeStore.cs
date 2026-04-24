@@ -3,6 +3,7 @@ using CompanyBrain.Constants;
 using CompanyBrain.Application.Results;
 using FluentResults;
 using CompanyBrain.Models;
+using CompanyBrain.Search.Vector;
 using CompanyBrain.Utilities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -14,10 +15,12 @@ public sealed class KnowledgeStore
     private const string DefaultCollection = "General";
     private readonly ILogger<KnowledgeStore> logger;
     private readonly string rootPath;
+    private readonly DocumentEmbeddingIndexer? embeddingIndexer;
 
-    public KnowledgeStore(string rootPath, ILogger<KnowledgeStore>? logger = null)
+    public KnowledgeStore(string rootPath, DocumentEmbeddingIndexer? embeddingIndexer = null, ILogger<KnowledgeStore>? logger = null)
     {
         this.rootPath = rootPath;
+        this.embeddingIndexer = embeddingIndexer;
         this.logger = logger ?? NullLogger<KnowledgeStore>.Instance;
     }
 
@@ -55,7 +58,22 @@ public sealed class KnowledgeStore
         await File.WriteAllTextAsync(filePath, normalized, Encoding.UTF8, cancellationToken);
 
         var resourcePath = $"{safeCollection}/{fileName}";
-        return new SavedKnowledgeDocument(resourcePath, filePath, ToResourceUri(resourcePath), existed);
+        var saved = new SavedKnowledgeDocument(resourcePath, filePath, ToResourceUri(resourcePath), existed);
+
+        if (embeddingIndexer?.IsEnabled == true)
+        {
+            try
+            {
+                await embeddingIndexer.IndexAsync(saved.ResourceUri, safeCollection, normalized, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Vector indexing failed for '{ResourceUri}'. Search will fall back to keyword matching.", saved.ResourceUri);
+            }
+        }
+
+        return saved;
     }
 
     public Task<IReadOnlyList<KnowledgeResourceDescriptor>> ListResourcesAsync(CancellationToken cancellationToken)
@@ -147,6 +165,40 @@ public sealed class KnowledgeStore
         }
 
         maxResults = Math.Clamp(maxResults, 1, 20);
+
+        // Prefer vector (semantic) search when an embedding provider is configured.
+        if (embeddingIndexer?.IsEnabled == true)
+        {
+            try
+            {
+                var vectorResults = await embeddingIndexer.SearchAsync(query, maxResults, collectionId, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (vectorResults.Count > 0)
+                {
+                    var sb = new StringBuilder();
+                    sb.AppendLine($"Search results for '{query}':");
+                    sb.AppendLine();
+                    foreach (var r in vectorResults)
+                    {
+                        var fileName = Uri.UnescapeDataString(
+                            r.ResourceUri[CompanyBrainConstants.ResourceScheme.Length..].Trim('/'));
+                        sb.AppendLine($"- @resources/{fileName} ({r.ResourceUri})");
+                        sb.AppendLine($"  {MarkdownUtilities.ToBlockQuote(r.RedactedSnippet)}");
+                    }
+                    logger.LogInformation("Vector search returned {Count} results for query '{Query}'.", vectorResults.Count, query);
+                    return Result.Ok(sb.ToString().TrimEnd());
+                }
+
+                logger.LogDebug("Vector search returned no results for query '{Query}'. Falling back to keyword search.", query);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Vector search failed for query '{Query}'. Falling back to keyword search.", query);
+            }
+        }
+
+        // Keyword search fallback.
         var terms = SearchUtilities.Tokenize(query).ToArray();
         if (terms.Length == 0)
         {

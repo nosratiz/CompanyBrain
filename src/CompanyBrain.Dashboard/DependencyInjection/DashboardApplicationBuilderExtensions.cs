@@ -65,6 +65,8 @@ public static class DashboardApplicationBuilderExtensions
         await EnsureChatBotSettingsTableAsync(db);
         await EnsureConversationThreadsTableAsync(db);
         await EnsureNotionColumnsAsync(db);
+        await EnsurePruningColumnsAsync(db);
+        await EnsurePruningEventsTableAsync(db);
 
         return app;
     }
@@ -97,6 +99,8 @@ public static class DashboardApplicationBuilderExtensions
         await EnsureChatBotSettingsTableAsync(db);
         await EnsureConversationThreadsTableAsync(db);
         await EnsureNotionColumnsAsync(db);
+        await EnsurePruningColumnsAsync(db);
+        await EnsurePruningEventsTableAsync(db);
 
         var auditFactory = services.GetRequiredService<IDbContextFactory<AuditDbContext>>();
         await using var auditDb = await auditFactory.CreateDbContextAsync();
@@ -251,5 +255,60 @@ public static class DashboardApplicationBuilderExtensions
         {
             // Column already exists.
         }
+    }
+
+    private static async Task EnsurePruningColumnsAsync(DocumentAssignmentDbContext db)
+    {
+        // SQLite throws when you add a column that already exists; wrap each in try/catch.
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE AppSettings ADD COLUMN \"PruningEnabled\" INTEGER NOT NULL DEFAULT 1");
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException) { /* already exists */ }
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE AppSettings ADD COLUMN \"PruningRelevanceThreshold\" REAL NOT NULL DEFAULT 0.3");
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException) { /* already exists */ }
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE AppSettings ADD COLUMN \"PruningMaxChunks\" INTEGER NOT NULL DEFAULT 3");
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException) { /* already exists */ }
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE AppSettings ADD COLUMN \"PruningTokenBudget\" INTEGER NOT NULL DEFAULT 2000");
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException) { /* already exists */ }
+    }
+
+    private static async Task EnsurePruningEventsTableAsync(DocumentAssignmentDbContext db)
+    {
+        const string sql = """
+            CREATE TABLE IF NOT EXISTS "PruningEventRecords" (
+                "Id"                INTEGER NOT NULL CONSTRAINT "PK_PruningEventRecords" PRIMARY KEY AUTOINCREMENT,
+                "ToolName"          TEXT NOT NULL DEFAULT '',
+                "Query"             TEXT NOT NULL DEFAULT '',
+                "SourceAttribution" TEXT NOT NULL DEFAULT '',
+                "TimestampUnixMs"   INTEGER NOT NULL DEFAULT 0,
+                "OriginalTokens"    INTEGER NOT NULL DEFAULT 0,
+                "PrunedTokens"      INTEGER NOT NULL DEFAULT 0,
+                "ChunksEvaluated"   INTEGER NOT NULL DEFAULT 0,
+                "ChunksSelected"    INTEGER NOT NULL DEFAULT 0,
+                "WasPruned"         INTEGER NOT NULL DEFAULT 0,
+                "PiiDetected"       INTEGER NOT NULL DEFAULT 0,
+                "SnippetsJson"      TEXT NOT NULL DEFAULT '[]'
+            );
+            CREATE INDEX IF NOT EXISTS "IX_PruningEventRecords_TimestampUnixMs"
+                ON "PruningEventRecords" ("TimestampUnixMs");
+            """;
+        await db.Database.ExecuteSqlRawAsync(sql);
     }
 }
