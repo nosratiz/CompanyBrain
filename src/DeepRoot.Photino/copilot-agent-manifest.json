@@ -1,0 +1,89 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/copilot/plugin/v2.2/schema.json",
+  "schemaVersion": "v2.2",
+  "nameForHuman": "CompanyBrain",
+  "descriptionForHuman": "Search and retrieve internal company knowledge, SharePoint documents, and wiki content.",
+  "descriptionForModel": "Use this plugin to search the company\u0027s internal knowledge base. It contains synced SharePoint documents, wiki pages, internal policies, and technical documentation. Query it when the user asks about company-specific information, internal processes, or organizational knowledge.",
+  "logoUrl": "http://localhost:8080/favicon.ico",
+  "contactEmail": "admin@companybrain.local",
+  "namespace": "CompanyBrain",
+  "capabilities": {
+    "conversationStarters": [
+      {
+        "text": "Search our knowledge base for onboarding procedures"
+      },
+      {
+        "text": "What SharePoint documents do we have about project guidelines?"
+      },
+      {
+        "text": "Find internal policies about remote work"
+      }
+    ]
+  },
+  "runtimes": [
+    {
+      "type": "OpenApi",
+      "auth": {
+        "type": "None"
+      },
+      "spec": {
+        "url": "http://localhost:8080/swagger/v1/swagger.json"
+      },
+      "runForFunctions": [
+        "searchDocs",
+        "listResources",
+        "searchSharePoint"
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "searchDocs",
+      "description": "Search the company knowledge base using full-text search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query"
+          },
+          "maxResults": {
+            "type": "integer",
+            "description": "Maximum results to return (default 10)"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "listResources",
+      "description": "List all available knowledge resources and documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "searchSharePoint",
+      "description": "Search locally mirrored SharePoint content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query"
+          },
+          "maxResults": {
+            "type": "integer",
+            "description": "Maximum results (default 10)"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    }
+  ]
+}

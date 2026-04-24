@@ -23,6 +23,8 @@ using CompanyBrain.Dashboard.Services;
 using CompanyBrain.Search.Vector;
 using FluentValidation;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
 
@@ -53,7 +55,7 @@ public static class DashboardServiceCollectionExtensions
             .AddDashboardCors()
             .AddDashboardMcp()
             .AddDashboardScripting()
-            .AddDashboardHttpClients(configuration, environment)
+            .AddDashboardHttpClients(configuration)
             .AddDashboardDatabase(configuration)
             .AddDashboardAudit(configuration)
             .AddDashboardValidation()
@@ -246,11 +248,8 @@ public static class DashboardServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddDashboardHttpClients(
         this IServiceCollection services,
-        IConfiguration configuration,
-        IWebHostEnvironment environment)
+        IConfiguration configuration)
     {
-        var dashboardOptions = configuration.GetSection(DashboardOptions.SectionName).Get<DashboardOptions>()
-            ?? new DashboardOptions();
         var externalApiOptions = configuration.GetSection(ExternalApiOptions.SectionName).Get<ExternalApiOptions>()
             ?? new ExternalApiOptions();
 
@@ -261,30 +260,21 @@ public static class DashboardServiceCollectionExtensions
         // Knowledge API client for Blazor pages
         services.AddHttpClient<KnowledgeApiClient>((sp, client) =>
         {
-            var env = sp.GetRequiredService<IWebHostEnvironment>();
-            client.BaseAddress = new Uri(env.IsDevelopment()
-                ? dashboardOptions.DevelopmentBaseUrl
-                : dashboardOptions.ProductionBaseUrl);
+            client.BaseAddress = ResolveSelfBaseUri(sp);
         })
         .AddHttpMessageHandler<UnauthorizedRedirectHandler>();
 
         // MCP Status client
         services.AddHttpClient<McpStatusClient>((sp, client) =>
         {
-            var env = sp.GetRequiredService<IWebHostEnvironment>();
-            client.BaseAddress = new Uri(env.IsDevelopment()
-                ? dashboardOptions.DevelopmentBaseUrl
-                : dashboardOptions.ProductionBaseUrl);
+            client.BaseAddress = ResolveSelfBaseUri(sp);
         })
         .AddHttpMessageHandler<UnauthorizedRedirectHandler>();
 
         // Document-Tenant API client (internal API)
         services.AddHttpClient<DocumentTenantApiClient>((sp, client) =>
         {
-            var env = sp.GetRequiredService<IWebHostEnvironment>();
-            client.BaseAddress = new Uri(env.IsDevelopment()
-                ? dashboardOptions.DevelopmentBaseUrl
-                : dashboardOptions.ProductionBaseUrl);
+            client.BaseAddress = ResolveSelfBaseUri(sp);
         })
         .AddHttpMessageHandler<UnauthorizedRedirectHandler>();
 
@@ -374,5 +364,46 @@ public static class DashboardServiceCollectionExtensions
         services.AddSingleton<IAuditService, AuditService>();
 
         return services;
+    }
+
+    // -----------------------------------------------------------------------
+    // Self-URL resolution — used by all internal HTTP clients so they can
+    // call back into the same Kestrel process regardless of which port it
+    // bound to at startup.
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Resolves the base URI of the currently running Kestrel server.
+    /// The factory delegate is called lazily on first use of an HttpClient,
+    /// which is always after <c>app.StartAsync()</c> / <c>app.Run()</c>,
+    /// so <see cref="IServerAddressesFeature"/> is already populated.
+    /// </summary>
+    private static Uri ResolveSelfBaseUri(IServiceProvider sp)
+    {
+        // Read the actual bound address from Kestrel.
+        var addresses = sp.GetService<IServer>()
+                          ?.Features.Get<IServerAddressesFeature>()
+                          ?.Addresses;
+
+        if (addresses is { Count: > 0 })
+        {
+            // Normalize wildcard bindings (0.0.0.0 / [::]/ +) → loopback so the
+            // client can actually connect.
+            var raw = addresses.First();
+            raw = raw.Replace("://0.0.0.0:",      "://127.0.0.1:", StringComparison.OrdinalIgnoreCase)
+                     .Replace("://[::]:",          "://127.0.0.1:", StringComparison.OrdinalIgnoreCase)
+                     .Replace("://+:",             "://127.0.0.1:", StringComparison.OrdinalIgnoreCase);
+            return new Uri(raw);
+        }
+
+        // Explicit override — useful for integration tests or reverse-proxy
+        // deployments where the server binds to a non-standard address.
+        var url = sp.GetRequiredService<IConfiguration>()["Dashboard:SelfBaseUrl"];
+        if (!string.IsNullOrEmpty(url))
+            return new Uri(url);
+
+        throw new InvalidOperationException(
+            "Cannot resolve self base URL: IServerAddressesFeature has no addresses " +
+            "and Dashboard:SelfBaseUrl is not set in configuration.");
     }
 }

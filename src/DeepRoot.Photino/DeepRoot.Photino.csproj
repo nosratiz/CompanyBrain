@@ -1,0 +1,87 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    DeepRoot.Photino — cross-platform desktop shell.
+    Boots the full CompanyBrain.Dashboard WebApplication on a localhost
+    port and points a Photino native window at it. No Photino.Blazor —
+    the Dashboard already runs Blazor Server inside Kestrel.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>DeepRoot.Photino</RootNamespace>
+    <AssemblyName>DeepRoot</AssemblyName>
+    <UserSecretsId>deeproot-photino-shell</UserSecretsId>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Enable the static web assets pipeline so that the Dashboard's
+         wwwroot AND every referenced library's _content/* assets
+         (MudBlazor, Blazor framework JS, etc.) are served at runtime. -->
+    <StaticWebAssetsEnabled>true</StaticWebAssetsEnabled>
+    <!-- Application identity & version -->
+    <Product>DeepRoot</Product>
+    <Company>DeepRoot</Company>
+    <Copyright>Copyright © DeepRoot 2026</Copyright>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>1.0.0</InformationalVersion>
+    <!-- macOS app icon (used by the OS, not Photino) -->
+    <ApplicationIcon Condition="$([MSBuild]::IsOSPlatform('Windows'))">Assets\deeproot.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <!-- Ship Dashboard's appsettings alongside the desktop binary so the
+       Kestrel host can find them via the default ConfigurationBuilder.
+       The wwwroot itself flows in automatically through the Dashboard
+       ProjectReference + the StaticWebAssets pipeline. -->
+  <ItemGroup>
+    <Content Include="..\CompanyBrain.Dashboard\appsettings.json"
+             Link="appsettings.json"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\CompanyBrain.Dashboard\appsettings.Development.json"
+             Link="appsettings.Development.json"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Condition="Exists('..\CompanyBrain.Dashboard\appsettings.Development.json')" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <PublishAot Condition="'$(PublishAot)' == ''">false</PublishAot>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <RuntimeIdentifiers>win-x64;osx-arm64;osx-x64;linux-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Photino.NET" Version="4.0.16" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CompanyBrain.Dashboard\CompanyBrain.Dashboard.csproj" />
+  </ItemGroup>
+
+  <!-- Ship the platform icons so Photino can set the window icon at runtime -->
+  <ItemGroup>
+    <Content Include="Assets\deeproot.ico"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+    <Content Include="Assets/deeproot.icns"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Condition="$([MSBuild]::IsOSPlatform('OSX'))" />
+    <Content Include="Assets/deeproot.png"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) and Exists('/opt/homebrew/opt/openssl@3/lib')">
+    <LinkerArg Include="-L/opt/homebrew/opt/openssl@3/lib" />
+  </ItemGroup>
+
+</Project>

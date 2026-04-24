@@ -1,24 +1,6 @@
 namespace CompanyBrain.Dashboard.DependencyInjection;
 
 /// <summary>
-/// Configuration options for the Dashboard application.
-/// </summary>
-public sealed class DashboardOptions
-{
-    public const string SectionName = "Dashboard";
-
-    /// <summary>
-    /// Base URL for the application in development.
-    /// </summary>
-    public string DevelopmentBaseUrl { get; set; } = "http://localhost:5202";
-
-    /// <summary>
-    /// Base URL for the application in production.
-    /// </summary>
-    public string ProductionBaseUrl { get; set; } = "http://localhost:8080";
-}
-
-/// <summary>
 /// Configuration options for external API clients.
 /// </summary>
 public sealed class ExternalApiOptions

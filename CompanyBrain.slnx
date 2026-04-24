@@ -2,6 +2,8 @@
   <Folder Name="/src/">
     <Project Path="src/CompanyBrain.Core/CompanyBrain.Core.csproj" />
     <Project Path="src/CompanyBrain.Dashboard/CompanyBrain.Dashboard.csproj" />
+    <Project Path="src/DeepRoot.Shared/DeepRoot.Shared.csproj" />
+    <Project Path="src/DeepRoot.Photino/DeepRoot.Photino.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CompanyBrain.Tests/CompanyBrain.Tests.csproj" />

@@ -1,0 +1,23 @@
+@*
+    Root Razor component for the DeepRoot desktop shell.
+    Hosted by DeepRoot.Photino through Photino.Blazor.
+*@
+
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Color="Color.Primary">
+        <MudText Typo="Typo.h6">DeepRoot</MudText>
+    </MudAppBar>
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
+            <MudText Typo="Typo.h4">Welcome</MudText>
+            <MudText Typo="Typo.body1">
+                The DeepRoot MCP server desktop shell is running.
+            </MudText>
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
