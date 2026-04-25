@@ -1,0 +1,234 @@
+# =============================================================================
+# DeepRoot Desktop – Photino Release
+#
+# Triggers on: push of a version tag  (v1.0.0, v2.3.1, …)
+#
+# Builds self-contained desktop binaries for all three operating systems:
+#   Windows  – win-x64   (Intel / AMD)
+#   Linux    – linux-x64 (Intel / AMD)
+#   macOS    – osx-arm64 (Apple Silicon M1/M2/M3)
+#   macOS    – osx-x64   (Intel Mac)
+#
+# Each build is zipped/tar'd and uploaded to Azure Blob Storage:
+#   https://<storage>.blob.core.windows.net/deeproot-releases/<version>/<artifact>
+#
+# Required GitHub Secrets:
+#   AZURE_RELEASES_STORAGE_CONNECTION_STRING
+#     → value of Terraform output  releases_storage_connection_string
+#     → obtain with: terraform output -raw releases_storage_connection_string
+#
+# Required GitHub Variables (or hard-code below):
+#   RELEASES_CONTAINER_NAME  (default: deeproot-releases)
+#
+# Artifact naming:
+#   DeepRoot-<version>-win-x64.zip
+#   DeepRoot-<version>-linux-x64.tar.gz
+#   DeepRoot-<version>-macos-arm64.tar.gz
+#   DeepRoot-<version>-macos-x64.tar.gz
+# =============================================================================
+
+name: DeepRoot Desktop – Photino Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  PROJECT_PATH: "src/DeepRoot.Photino/DeepRoot.Photino.csproj"
+  CONTAINER_NAME: ${{ vars.RELEASES_CONTAINER_NAME || 'deeproot-releases' }}
+
+jobs:
+  # ============================================================
+  # Build matrix – one job per target platform
+  # ============================================================
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── Windows x64 ────────────────────────────────────
+          - rid: win-x64
+            label: Windows (x64)
+            runner: windows-latest
+            archive_ext: zip
+            archive_cmd: zip
+
+          # ── Linux x64 ──────────────────────────────────────
+          - rid: linux-x64
+            label: Linux (x64)
+            runner: ubuntu-latest
+            archive_ext: tar.gz
+            archive_cmd: tar
+
+          # ── macOS Apple Silicon (arm64) ─────────────────────
+          - rid: osx-arm64
+            label: macOS Apple Silicon (arm64)
+            runner: macos-latest          # GitHub's arm64 runner (M-series)
+            archive_ext: tar.gz
+            archive_cmd: tar
+
+          # ── macOS Intel (x64) ──────────────────────────────
+          - rid: osx-x64
+            label: macOS Intel (x64)
+            runner: macos-13              # Last Intel-based macOS runner
+            archive_ext: tar.gz
+            archive_cmd: tar
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Resolve version ───────────────────────────────────────────────
+      - name: Extract version
+        id: version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=DeepRoot-${VERSION}-${{ matrix.rid }}" >> "$GITHUB_OUTPUT"
+
+      # ── 3. Setup .NET ────────────────────────────────────────────────────
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # ── 4. Restore ───────────────────────────────────────────────────────
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.PROJECT_PATH }}
+
+      # ── 5. Publish self-contained binary ─────────────────────────────────
+      - name: Publish – ${{ matrix.rid }}
+        shell: bash
+        run: |
+          dotnet publish "${{ env.PROJECT_PATH }}" \
+            --configuration Release \
+            --runtime "${{ matrix.rid }}" \
+            --self-contained true \
+            --output "publish/${{ matrix.rid }}" \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:Version="${{ steps.version.outputs.version }}" \
+            --nologo
+
+      # ── 6a. Archive – Windows (.zip) ─────────────────────────────────────
+      - name: Archive – Windows zip
+        if: matrix.archive_cmd == 'zip'
+        shell: pwsh
+        run: |
+          $src  = "publish/${{ matrix.rid }}"
+          $dest = "${{ steps.version.outputs.artifact_name }}.zip"
+          Compress-Archive -Path "$src/*" -DestinationPath $dest
+          echo "ARTIFACT_FILE=$dest" >> $env:GITHUB_ENV
+
+      # ── 6b. Archive – Linux / macOS (.tar.gz) ────────────────────────────
+      - name: Archive – Unix tar.gz
+        if: matrix.archive_cmd == 'tar'
+        shell: bash
+        run: |
+          DEST="${{ steps.version.outputs.artifact_name }}.tar.gz"
+          tar -czf "$DEST" -C "publish/${{ matrix.rid }}" .
+          echo "ARTIFACT_FILE=$DEST" >> "$GITHUB_ENV"
+
+      # ── 7. Upload artifact (inter-job handoff) ───────────────────────────
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.artifact_name }}
+          path: ${{ env.ARTIFACT_FILE }}
+          retention-days: 7
+
+  # ============================================================
+  # Upload all artifacts to Azure Blob Storage
+  # ============================================================
+  publish:
+    name: Publish to Azure Blob Storage
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      # ── 1. Checkout (needed for az CLI action) ────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Resolve version ───────────────────────────────────────────────
+      - name: Extract version
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      # ── 3. Download all build artifacts ──────────────────────────────────
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/           # each artifact lands in artifacts/<name>/
+
+      # ── 4. Install Azure CLI ──────────────────────────────────────────────
+      - name: Setup Azure CLI
+        run: |
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+      # ── 5. Upload each archive to Blob Storage ────────────────────────────
+      #
+      # Blob path layout:
+      #   deeproot-releases/
+      #     1.2.3/
+      #       DeepRoot-1.2.3-win-x64.zip
+      #       DeepRoot-1.2.3-linux-x64.tar.gz
+      #       DeepRoot-1.2.3-macos-arm64.tar.gz    (osx-arm64)
+      #       DeepRoot-1.2.3-macos-x64.tar.gz      (osx-x64)
+      #
+      - name: Upload to Azure Blob Storage
+        env:
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_RELEASES_STORAGE_CONNECTION_STRING }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -e
+          CONTAINER="${{ env.CONTAINER_NAME }}"
+
+          echo "Uploading DeepRoot ${VERSION} desktop builds to Blob Storage…"
+          echo "Container: ${CONTAINER}"
+
+          find artifacts/ -type f \( -name "*.zip" -o -name "*.tar.gz" \) | while read FILE; do
+            FILENAME=$(basename "$FILE")
+
+            # Rename osx-arm64 → macos-arm64 and osx-x64 → macos-x64 for user friendliness
+            FRIENDLY=$(echo "$FILENAME" | sed 's/osx-arm64/macos-arm64/g' | sed 's/osx-x64/macos-x64/g')
+            BLOB_PATH="${VERSION}/${FRIENDLY}"
+
+            echo "  → ${BLOB_PATH}"
+            az storage blob upload \
+              --connection-string "$AZURE_STORAGE_CONNECTION_STRING" \
+              --container-name   "$CONTAINER" \
+              --name             "$BLOB_PATH" \
+              --file             "$FILE" \
+              --overwrite        true \
+              --content-type     "application/octet-stream"
+          done
+
+          echo "Upload complete."
+
+      # ── 6. Job summary ────────────────────────────────────────────────────
+      - name: Job summary
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "### DeepRoot Desktop ${VERSION} published :package:" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Artifacts uploaded to Azure Blob Storage:" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Platform | File |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Windows (x64)              | \`DeepRoot-${VERSION}-win-x64.zip\`        |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Linux (x64)                | \`DeepRoot-${VERSION}-linux-x64.tar.gz\`   |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| macOS Apple Silicon (arm64) | \`DeepRoot-${VERSION}-macos-arm64.tar.gz\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| macOS Intel (x64)          | \`DeepRoot-${VERSION}-macos-x64.tar.gz\`   |" >> "$GITHUB_STEP_SUMMARY"
